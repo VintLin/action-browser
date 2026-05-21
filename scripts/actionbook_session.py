@@ -1,0 +1,550 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Generic ActionBook extension-session bootstrap helper.
+
+It reuses a healthy session when possible, opens a fresh tab in that session,
+and only falls back to creating a new session when reuse is not possible.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import random
+import subprocess
+import time
+from datetime import datetime
+from typing import Any
+from urllib.parse import urlparse
+
+
+DEFAULT_SESSION = "task-1"
+DEFAULT_TAB = ""
+CHROME_APP_NAME = "Google Chrome"
+
+
+def log(message: str) -> None:
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] {message}", flush=True)
+
+
+def sleep_between(low: float = 0.8, high: float = 1.8) -> None:
+    time.sleep(random.uniform(low, high))
+
+
+def run_command(args: list[str], timeout: float = 30.0, check: bool = True) -> str:
+    result = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+    output = ((result.stdout or "") + (result.stderr or "")).strip()
+    if check and result.returncode != 0:
+        raise RuntimeError(output or f"command failed: {' '.join(args)}")
+    return output
+
+
+def is_chrome_running() -> bool:
+    result = subprocess.run(
+        ["pgrep", "-f", "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"],
+        capture_output=True,
+        text=True,
+        timeout=5.0,
+    )
+    return result.returncode == 0
+
+
+def ensure_chrome_app_running(timeout_secs: float = 12.0) -> None:
+    if is_chrome_running():
+        return
+    log("未检测到 Chrome 进程，直接打开 Chrome 应用")
+    run_command(["open", "-a", CHROME_APP_NAME], timeout=10.0)
+    deadline = time.time() + timeout_secs
+    while time.time() < deadline:
+        if is_chrome_running():
+            sleep_between(1.0, 1.6)
+            return
+        sleep_between(0.4, 0.8)
+    raise RuntimeError("Google Chrome did not start after opening the app directly")
+
+
+def ensure_chrome_window() -> None:
+    run_command(["open", "-a", CHROME_APP_NAME], timeout=10.0)
+    sleep_between(1.0, 1.6)
+
+
+def parse_actionbook_output(output: str) -> Any:
+    if not output:
+        return None
+    try:
+        envelope = json.loads(output)
+    except json.JSONDecodeError:
+        return output
+    return unwrap_actionbook_envelope(envelope)
+
+
+def unwrap_actionbook_envelope(envelope: Any) -> Any:
+    if not isinstance(envelope, dict) or "ok" not in envelope:
+        return envelope
+    if not envelope.get("ok"):
+        error = envelope.get("error") or {}
+        if isinstance(error, dict):
+            raise RuntimeError(error.get("message") or json.dumps(error, ensure_ascii=False))
+        raise RuntimeError(json.dumps(envelope, ensure_ascii=False))
+    data = envelope.get("data")
+    if isinstance(data, dict) and "value" in data:
+        return data.get("value")
+    return data
+
+
+class ActionBookSession:
+    def __init__(self, session: str, tab: str = "", allow_adopt: bool = True) -> None:
+        self.session = session
+        self.tab = tab
+        self.allow_adopt = allow_adopt
+
+    def start(self, url: str) -> None:
+        ensure_chrome_app_running()
+        self._check_extension(require_connected=False)
+        last_error = ""
+        for attempt in range(3):
+            try:
+                self._recover_or_attach(url)
+                self._check_extension(require_connected=True)
+                self._ensure_target_url(url)
+                return
+            except Exception as exc:  # noqa: BLE001
+                last_error = str(exc)
+                if attempt < 2 and self._is_recoverable_start_error(last_error):
+                    log(f"ActionBook 会话恢复失败，准备重试: {last_error}")
+                    self._safe_close_session()
+                    sleep_between(0.8, 1.4)
+                    continue
+                break
+        raise RuntimeError(last_error or "failed to start ActionBook extension session")
+
+    def goto(self, url: str) -> None:
+        self.browser("goto", url, timeout=45.0)
+
+    def open_new_tab(self, url: str) -> str:
+        tab_id = self._open_new_tab(url)
+        if not tab_id:
+            raise RuntimeError(f"failed to open new tab: {url}")
+        return tab_id
+
+    def eval(self, script: str, timeout: float = 30.0) -> Any:
+        return self.browser("eval", script, timeout=timeout)
+
+    def browser(self, subcommand: str, *args: str, timeout: float = 30.0, tab: str | None = None) -> Any:
+        active_tab = tab or self.tab
+        if not active_tab:
+            raise RuntimeError(f"ActionBook tab is not ready for session {self.session!r}")
+        envelope = self._run_browser_command(subcommand, *args, timeout=timeout, tab=active_tab)
+        return unwrap_actionbook_envelope(envelope)
+
+    def describe(self) -> dict[str, str]:
+        return {
+            "session_id": self.session,
+            "tab_id": self.tab,
+            "url": str(self.browser("url", timeout=10.0) or ""),
+            "title": str(self.browser("title", timeout=10.0) or ""),
+        }
+
+    def _recover_or_attach(self, url: str) -> None:
+        existing_tab = self._find_accessible_tab(preferred_tab=self.tab or None, target_url=url)
+        if existing_tab:
+            self.tab = existing_tab
+            return
+        if self._session_exists():
+            new_tab = self._open_new_tab(url)
+            if new_tab:
+                self.tab = new_tab
+                return
+            log(f"发现空会话或失效 tab，关闭并重建: session={self.session}")
+            self._safe_close_session()
+        if self.allow_adopt and self._adopt_running_session(url):
+            return
+        self._start_new_session(url)
+        tab_id = self._wait_for_accessible_tab(preferred_tab=self.tab or None, target_url=url)
+        if not tab_id:
+            raise RuntimeError(f"session started but no accessible tab found: session={self.session}")
+        self.tab = tab_id
+
+    def _start_new_session(self, url: str) -> None:
+        commands = [
+            [
+                "actionbook",
+                "browser",
+                "start",
+                "--mode",
+                "extension",
+                "--session",
+                self.session,
+                "--open-url",
+                url,
+                "--timeout",
+                "30000",
+                "--json",
+            ],
+            [
+                "actionbook",
+                "browser",
+                "start",
+                "--mode",
+                "extension",
+                "--set-session-id",
+                self.session,
+                "--open-url",
+                url,
+                "--timeout",
+                "30000",
+                "--json",
+            ],
+        ]
+        last_error = ""
+        for command in commands:
+            for attempt in range(2):
+                try:
+                    envelope = self._run_raw_command(command, timeout=35.0)
+                    data = unwrap_actionbook_envelope(envelope)
+                    if isinstance(data, dict):
+                        tab_info = data.get("tab") if isinstance(data.get("tab"), dict) else {}
+                        tab_id = str((tab_info or {}).get("tab_id") or "").strip()
+                        if tab_id:
+                            self.tab = tab_id
+                    sleep_between(0.8, 1.2)
+                    return
+                except Exception as exc:  # noqa: BLE001
+                    last_error = str(exc)
+                    if attempt == 0 and self._is_recoverable_start_error(last_error):
+                        sleep_between(0.8, 1.4)
+                        continue
+                    break
+        raise RuntimeError(last_error or "failed to start ActionBook extension session")
+
+    def _run_raw_command(self, command: list[str], timeout: float = 30.0) -> Any:
+        output = run_command(command, timeout=timeout, check=False)
+        if not output:
+            return None
+        try:
+            return json.loads(output)
+        except json.JSONDecodeError:
+            return output
+
+    def _run_browser_command(
+        self,
+        subcommand: str,
+        *args: str,
+        timeout: float = 30.0,
+        tab: str | None = None,
+    ) -> Any:
+        command = ["actionbook", "browser", subcommand, *args, "--session", self.session]
+        if tab:
+            command.extend(["--tab", tab])
+        command.append("--json")
+        return self._run_raw_command(command, timeout=timeout)
+
+    def _session_exists(self) -> bool:
+        sessions = self._list_sessions()
+        return any(
+            isinstance(item, dict) and str(item.get("session_id") or "") == self.session
+            for item in sessions
+        )
+
+    def _list_sessions(self) -> list[dict[str, Any]]:
+        envelope = self._run_raw_command(
+            ["actionbook", "browser", "list-sessions", "--json"],
+            timeout=10.0,
+        )
+        data = unwrap_actionbook_envelope(envelope)
+        sessions = data.get("sessions") if isinstance(data, dict) else None
+        return sessions if isinstance(sessions, list) else []
+
+    def _list_tabs(self) -> list[dict[str, Any]]:
+        envelope = self._run_browser_command("list-tabs", timeout=10.0)
+        if isinstance(envelope, dict) and envelope.get("ok") is False:
+            error = envelope.get("error") or {}
+            if isinstance(error, dict) and error.get("code") == "SESSION_NOT_FOUND":
+                return []
+        data = unwrap_actionbook_envelope(envelope)
+        tabs = data.get("tabs") if isinstance(data, dict) else None
+        return tabs if isinstance(tabs, list) else []
+
+    def _find_accessible_tab(self, preferred_tab: str | None = None, target_url: str = "") -> str:
+        tabs = self._list_tabs()
+        if not tabs:
+            return ""
+        tab_urls = {
+            str(tab.get("tab_id") or "").strip(): str(tab.get("url") or "").strip()
+            for tab in tabs
+            if isinstance(tab, dict) and str(tab.get("tab_id") or "").strip()
+        }
+        target_origin = self._origin_key(target_url)
+        ordered_tab_ids: list[str] = []
+        if preferred_tab:
+            ordered_tab_ids.append(preferred_tab)
+        ordered_tab_ids.extend(
+            str(tab.get("tab_id") or "").strip()
+            for tab in tabs
+            if (
+                isinstance(tab, dict)
+                and str(tab.get("tab_id") or "").strip()
+                and (not target_origin or self._origin_key(str(tab.get("url") or "")) == target_origin)
+            )
+        )
+        if not target_origin:
+            ordered_tab_ids.extend(
+                str(tab.get("tab_id") or "").strip()
+                for tab in tabs
+                if isinstance(tab, dict) and str(tab.get("tab_id") or "").strip()
+            )
+        seen: set[str] = set()
+        for tab_id in ordered_tab_ids:
+            if not tab_id or tab_id in seen:
+                continue
+            seen.add(tab_id)
+            if target_origin and self._origin_key(tab_urls.get(tab_id, "")) != target_origin:
+                continue
+            if self._is_tab_accessible(tab_id):
+                return tab_id
+        return ""
+
+    def _wait_for_accessible_tab(
+        self,
+        preferred_tab: str | None = None,
+        target_url: str = "",
+        timeout_secs: float = 12.0,
+    ) -> str:
+        deadline = time.time() + timeout_secs
+        last_error = ""
+        while time.time() < deadline:
+            try:
+                tab_id = self._find_accessible_tab(preferred_tab=preferred_tab, target_url=target_url)
+                if tab_id:
+                    return tab_id
+            except Exception as exc:  # noqa: BLE001
+                last_error = str(exc)
+            sleep_between(0.4, 0.8)
+        if last_error:
+            raise RuntimeError(last_error)
+        return ""
+
+    def _open_new_tab(self, url: str, timeout_secs: float = 15.0) -> str:
+        before_tabs = {
+            str(tab.get("tab_id") or "").strip()
+            for tab in self._list_tabs()
+            if isinstance(tab, dict)
+        }
+        command = [
+            "actionbook",
+            "browser",
+            "new-tab",
+            url,
+            "--session",
+            self.session,
+            "--timeout",
+            "30000",
+            "--json",
+        ]
+        try:
+            envelope = self._run_raw_command(command, timeout=35.0)
+            data = unwrap_actionbook_envelope(envelope)
+        except RuntimeError as exc:
+            if "No current window" not in str(exc):
+                raise
+            log("Chrome 已连接但没有可用窗口，直接打开 Chrome 窗口后重试")
+            ensure_chrome_window()
+            envelope = self._run_raw_command(command, timeout=35.0)
+            data = unwrap_actionbook_envelope(envelope)
+        returned_tab = self._extract_tab_id(data)
+        if returned_tab and self._is_tab_accessible(returned_tab):
+            return returned_tab
+        deadline = time.time() + timeout_secs
+        while time.time() < deadline:
+            tabs = self._list_tabs()
+            new_tab_ids = [
+                str(tab.get("tab_id") or "").strip()
+                for tab in tabs
+                if isinstance(tab, dict) and str(tab.get("tab_id") or "").strip() not in before_tabs
+            ]
+            for tab_id in new_tab_ids:
+                if self._is_tab_accessible(tab_id):
+                    return tab_id
+            for tab_id in new_tab_ids:
+                if tab_id:
+                    return tab_id
+            sleep_between(0.4, 0.8)
+        return ""
+
+    def _adopt_running_session(self, url: str) -> bool:
+        original_session = self.session
+        original_tab = self.tab
+        for item in self._list_sessions():
+            if not isinstance(item, dict):
+                continue
+            session_id = str(item.get("session_id") or "").strip()
+            if not session_id or session_id == original_session:
+                continue
+            if str(item.get("mode") or "") != "extension":
+                continue
+            if str(item.get("status") or "").lower() != "running":
+                continue
+            self.session = session_id
+            self.tab = ""
+            try:
+                tab_id = self._find_accessible_tab(target_url=url)
+                if tab_id:
+                    self.tab = tab_id
+                    log(f"复用现有扩展会话: session={self.session} tab={self.tab}")
+                    return True
+                fresh_tab = self._open_new_tab(url)
+                if fresh_tab:
+                    self.tab = fresh_tab
+                    log(f"复用现有扩展会话: session={self.session} tab={self.tab}")
+                    return True
+            except Exception:
+                continue
+        self.session = original_session
+        self.tab = original_tab
+        return False
+
+    def _is_tab_accessible(self, tab_id: str) -> bool:
+        try:
+            self.browser("title", timeout=10.0, tab=tab_id)
+            current_url = str(self.browser("url", timeout=10.0, tab=tab_id) or "")
+            if current_url.startswith(("chrome://", "chrome-extension://", "devtools://")):
+                return False
+            return True
+        except Exception:
+            return False
+
+    def _safe_close_session(self) -> None:
+        if not self._session_exists():
+            return
+        run_command(
+            ["actionbook", "browser", "close", "--session", self.session],
+            timeout=15.0,
+            check=False,
+        )
+        self.tab = ""
+
+    @staticmethod
+    def _extract_tab_id(data: Any) -> str:
+        if not isinstance(data, dict):
+            return ""
+        candidates = [
+            data.get("tab_id"),
+            data.get("tabId"),
+            data.get("id"),
+        ]
+        tab = data.get("tab")
+        if isinstance(tab, dict):
+            candidates.extend([tab.get("tab_id"), tab.get("tabId"), tab.get("id")])
+        for candidate in candidates:
+            tab_id = str(candidate or "").strip()
+            if tab_id:
+                return tab_id
+        return ""
+
+    def _ensure_target_url(self, url: str) -> None:
+        if not self.tab:
+            raise RuntimeError(f"ActionBook tab is not ready for session {self.session!r}")
+        try:
+            current_url = str(self.browser("url", timeout=10.0) or "").strip()
+        except Exception as exc:
+            if "chrome:// URL" not in str(exc):
+                raise
+            current_url = ""
+        target = self._normalize_url(url)
+        current = self._normalize_url(current_url)
+        if current == target:
+            return
+        if not current or current.startswith("chrome://") or current != target:
+            self.goto(url)
+
+    def _check_extension(self, timeout_secs: float = 8.0, require_connected: bool = True) -> None:
+        deadline = time.time() + timeout_secs
+        last_output = ""
+        while time.time() < deadline:
+            output = run_command(["actionbook", "extension", "status", "--json"], timeout=10.0, check=False)
+            last_output = output
+            try:
+                data = parse_actionbook_output(output)
+            except Exception:
+                sleep_between(0.4, 0.7)
+                continue
+            if (
+                isinstance(data, dict)
+                and data.get("bridge") == "listening"
+                and data.get("extension_connected") is True
+            ):
+                return
+            if not require_connected and isinstance(data, dict):
+                log(
+                    "ActionBook extension 尚未连接，继续尝试 browser start 触发 bridge: "
+                    f"bridge={data.get('bridge')} connected={data.get('extension_connected')}"
+                )
+                return
+            sleep_between(0.4, 0.7)
+        raise RuntimeError(
+            "ActionBook extension is not connected. Open Chrome with the extension connected, then retry. "
+            f"last_status={last_output}"
+        )
+
+    @staticmethod
+    def _is_recoverable_start_error(message: str) -> bool:
+        return any(
+            term in message
+            for term in (
+                "session closed",
+                "SESSION_NOT_FOUND",
+                "TAB_NOT_FOUND",
+                "BRIDGE_BIND_FAILED",
+                "bridge: not_listening",
+                "not_listening",
+                "No current window",
+                "no accessible tab found",
+                "ActionBook tab is not ready",
+            )
+        )
+
+    @staticmethod
+    def _normalize_url(value: str) -> str:
+        return str(value or "").strip().rstrip("/")
+
+    @staticmethod
+    def _origin_key(value: str) -> str:
+        parsed = urlparse(str(value or ""))
+        if not parsed.scheme or not parsed.netloc:
+            return ""
+        hostname = parsed.hostname or ""
+        if hostname.startswith("www."):
+            hostname = hostname[4:]
+        return f"{parsed.scheme}://{hostname}"
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Ensure a usable ActionBook extension session/tab for browser tasks."
+    )
+    parser.add_argument("--session", default=DEFAULT_SESSION, help="Preferred ActionBook session id")
+    parser.add_argument("--tab", default=DEFAULT_TAB, help="Preferred ActionBook tab id; auto-detect when omitted")
+    parser.add_argument("--url", default="about:blank", help="Target URL to open or attach to")
+    parser.add_argument("--json", action="store_true", help="Print final session state as JSON")
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    session = ActionBookSession(args.session, args.tab)
+    session.start(args.url)
+    state = session.describe()
+    if args.json:
+        print(json.dumps(state, ensure_ascii=False, indent=2))
+    else:
+        print(f"session={state['session_id']}")
+        print(f"tab={state['tab_id']}")
+        print(f"url={state['url']}")
+        print(f"title={state['title']}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

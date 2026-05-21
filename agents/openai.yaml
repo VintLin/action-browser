@@ -1,0 +1,4 @@
+interface:
+  display_name: "浏览器操作"
+  short_description: "用 ActionBook 控制真实浏览器完成网页操作"
+  default_prompt: "使用 $action-browser 通过 ActionBook 打开网页、点击、填写表单、读取页面或提取结构化数据。"
