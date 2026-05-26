@@ -1,0 +1,13 @@
+{
+  "name": "01_action-browser",
+  "source": "/Users/Vint/.codex/skills/action-browser",
+  "destination": ".",
+  "status": "active",
+  "delete_removed": false,
+  "exclude": [
+    ".git",
+    ".DS_Store",
+    ".skill-updates"
+  ],
+  "notes": "Latest local source is the installed Codex skill."
+}
