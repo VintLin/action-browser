@@ -13,9 +13,11 @@ import argparse
 import json
 import re
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from actionbook_interrupts import install_interrupt_handlers
 from actionbook_session import ActionBookSession as ActionBook
@@ -68,6 +70,83 @@ def unwrap_eval(value: Any) -> Any:
     return value
 
 
+def api_eval(book: ActionBook, script: str, label: str, timeout: float = 45.0) -> Any:
+    last_error = ""
+    for attempt in range(3):
+        try:
+            data = unwrap_eval(book.eval(script, timeout=timeout))
+            if isinstance(data, dict) and data.get("error"):
+                raise RuntimeError(f"{label}: {data.get('error')}")
+            return data
+        except RuntimeError as exc:
+            last_error = str(exc)
+            transient = (
+                "Detached while handling command" in last_error
+                or "Execution context was destroyed" in last_error
+                or "Cannot find context" in last_error
+            )
+            if transient and attempt < 2:
+                time.sleep(1.0 + attempt)
+                continue
+            if last_error.startswith(label):
+                raise
+            raise RuntimeError(f"{label}: {last_error}") from exc
+    raise RuntimeError(f"{label}: {last_error or 'unknown eval failure'}")
+
+
+def require_list_payload(value: Any, label: str) -> list[dict[str, Any]]:
+    if isinstance(value, list):
+        for index, item in enumerate(value, start=1):
+            if not isinstance(item, dict):
+                raise RuntimeError(f"{label}: malformed element at index {index}")
+        return value
+    if isinstance(value, dict) and value.get("error"):
+        raise RuntimeError(f"{label}: {value.get('error')}")
+    raise RuntimeError(f"{label}: malformed payload")
+
+
+def require_dict_payload(value: Any, label: str) -> dict[str, Any]:
+    if isinstance(value, dict) and value.get("error"):
+        raise RuntimeError(f"{label}: {value.get('error')}")
+    if not isinstance(value, dict):
+        raise RuntimeError(f"{label}: malformed payload")
+    return value
+
+
+def require_cart_payload(value: Any, label: str) -> list[dict[str, Any]]:
+    if isinstance(value, dict) and value.get("error"):
+        raise RuntimeError(f"{label}: {value.get('error')}")
+    if not isinstance(value, dict) or "items" not in value or not isinstance(value.get("items"), list):
+        raise RuntimeError(f"{label}: malformed payload")
+    records = value["items"]
+    for index, item in enumerate(records, start=1):
+        if not isinstance(item, dict):
+            raise RuntimeError(f"{label}: malformed element at index {index}")
+    if not records and not bool(value.get("loaded")):
+        raise RuntimeError(f"{label}: not fully loaded")
+    return records
+
+
+def get_page_state(book: ActionBook) -> dict[str, str]:
+    data = api_eval(
+        book,
+        """
+        (() => ({
+          href: location.href,
+          title: document.title,
+          text: (document.body?.innerText || '').slice(0, 1200),
+        }))()
+        """,
+        "读取淘宝页面状态失败",
+    )
+    state = data if isinstance(data, dict) else {}
+    return {
+        "href": str(state.get("href") or ""),
+        "title": normalize_text(state.get("title")),
+        "text": normalize_text(state.get("text")),
+    }
+
+
 def page_has_login_or_risk(state: dict[str, str]) -> bool:
     href = str(state.get("href") or "").lower()
     title = normalize_text(state.get("title"))
@@ -79,7 +158,7 @@ def page_has_login_or_risk(state: dict[str, str]) -> bool:
         "passport",
         "verify",
         "captcha",
-        "请登录",
+        "请登录后",
         "登录后",
         "扫码登录",
         "验证码",
@@ -90,6 +169,20 @@ def page_has_login_or_risk(state: dict[str, str]) -> bool:
     )
     risk_pattern = "|".join(re.escape(term) for term in risk_terms)
     return re.search(risk_pattern, haystack, re.I) is not None
+
+
+def ensure_ready(book: ActionBook) -> None:
+    state = get_page_state(book)
+    if page_has_login_or_risk(state):
+        raise LoginRequiredError(
+            "LOGIN_REQUIRED: 淘宝需要登录或安全验证；请在 ActionBook 连接的 Chrome 窗口完成后重试。"
+        )
+
+
+def start_book(args: argparse.Namespace, url: str) -> ActionBook:
+    book = ActionBook(args.session, args.tab)
+    book.start(url)
+    return book
 
 
 def write_json(path: Path, data: Any) -> None:
@@ -123,7 +216,7 @@ def write_records(records: list[dict[str, Any]], output_dir: Path, title: str) -
 def finish(records: list[dict[str, Any]], args: argparse.Namespace, area: str, title: str) -> int:
     output_dir = Path(args.output) if args.output else default_output_dir(area)
     write_records(records, output_dir, title)
-    log(f"已写入: {output_dir}")
+    log(f"已写入: {output_dir} 条目数={len(records)}")
     return 0
 
 
@@ -174,27 +267,392 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+SEARCH_SCRIPT = """
+(async () => {
+  const limit = LIMIT_PLACEHOLDER;
+  const normalize = value => (value || '').replace(/\\s+/g, ' ').trim();
+  const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+  for (let i = 0; i < 30; i++) {
+    const text = document.body?.innerText || '';
+    if (/login\\.taobao\\.com|安全验证|验证码|扫码登录|请登录后/.test(location.href + ' ' + text)) {
+      return { error: 'auth-required' };
+    }
+    if (document.querySelectorAll('[class*="doubleCard--"], a[href*="item.taobao.com/item.htm"], a[href*="detail.tmall.com/item.htm"]').length > 4) break;
+    await sleep(500);
+  }
+  for (let i = 0; i < 3; i++) {
+    window.scrollBy(0, Math.max(700, window.innerHeight * 0.9));
+    await sleep(900);
+  }
+  const text = document.body?.innerText || '';
+  if (/login\\.taobao\\.com|安全验证|验证码|扫码登录|请登录后/.test(location.href + ' ' + text)) {
+    return { error: 'auth-required' };
+  }
+  const cardSet = new Set();
+  for (const card of document.querySelectorAll('[class*="doubleCard--"]')) cardSet.add(card);
+  for (const link of document.querySelectorAll('a[href*="item.taobao.com/item.htm"], a[href*="detail.tmall.com/item.htm"]')) {
+    let node = link;
+    for (let i = 0; i < 5 && node; i++) {
+      const body = normalize(node.innerText || node.textContent);
+      if (body.length > 30 && /[￥¥]\\s*\\d/.test(body)) {
+        cardSet.add(node);
+        break;
+      }
+      node = node.parentElement;
+    }
+  }
+  const results = [];
+  const seenIds = new Set();
+  const seenTitles = new Set();
+  for (const card of cardSet) {
+    const body = normalize(card.innerText || card.textContent);
+    if (body.length < 10) continue;
+    const titleEl = card.querySelector('[class*="title--"], [class*="Title--"], a[href*="item.taobao.com/item.htm"], a[href*="detail.tmall.com/item.htm"]');
+    let title = normalize(titleEl?.innerText || titleEl?.textContent || '');
+    if (!title) {
+      title = body.split(/[\\n￥¥]/).map(normalize).find(line => line.length >= 4 && line.length <= 120) || '';
+    }
+    title = title.replace(/^广告\\s*/, '').slice(0, 120);
+    if (!title || title.length < 3 || seenTitles.has(title)) continue;
+    const link = card.querySelector('a[href*="item.taobao.com/item.htm"], a[href*="detail.tmall.com/item.htm"]');
+    const href = link?.href || link?.getAttribute('href') || '';
+    const idMatch = href.match(/[?&]id=(\\d+)/) || body.match(/\\bid[=:](\\d{8,})\\b/);
+    let itemId = idMatch ? idMatch[1] : '';
+    if (!itemId) {
+      let wrapper = card;
+      for (let i = 0; i < 4 && wrapper; i++) {
+        const spmId = wrapper.getAttribute('data-spm-act-id') || wrapper.getAttribute('data-item-id') || '';
+        if (/^\\d{8,}$/.test(spmId)) {
+          itemId = spmId;
+          break;
+        }
+        wrapper = wrapper.parentElement;
+      }
+    }
+    if (itemId && seenIds.has(itemId)) continue;
+    const intEl = card.querySelector('[class*="priceInt--"], [class*="price-int"]');
+    const floatEl = card.querySelector('[class*="priceFloat--"], [class*="price-float"]');
+    const priceMatch = body.match(/[￥¥]\\s*([\\d,.]+(?:\\.\\d{1,2})?)/);
+    const price = intEl
+      ? '¥' + normalize(intEl.textContent) + normalize(floatEl?.textContent || '')
+      : (priceMatch ? '¥' + priceMatch[1] : '');
+    const salesEl = card.querySelector('[class*="realSales--"], [class*="sales--"]');
+    const salesMatch = body.match(/(?:月销|付款|已售)\\s*([\\d.]+万?\\+?)/);
+    const sales = normalize(salesEl?.textContent || '') || (salesMatch ? salesMatch[0] : '');
+    const shopEl = card.querySelector('[class*="shopName--"], [class*="ShopName--"], [class*="shop--"] a, a[href*="shop"]');
+    let shop = normalize(shopEl?.innerText || shopEl?.textContent || '');
+    shop = normalize(shop.replace(/^\\d+年老店/, '').replace(/^回头客[\\d万]+/, ''));
+    const locEls = card.querySelectorAll('[class*="procity--"], [class*="location--"]');
+    let itemLocation = Array.from(locEls).map(el => normalize(el.textContent)).join('');
+    if (!itemLocation) {
+      const locMatch = body.match(/(?:上海|北京|天津|重庆|广东|浙江|江苏|福建|山东|河南|河北|湖南|湖北|四川|陕西|安徽|江西|辽宁|吉林|黑龙江|广西|云南|贵州|海南|山西|甘肃|青海|内蒙古|宁夏|新疆|西藏)[\\u4e00-\\u9fa5]{0,4}/);
+      itemLocation = locMatch ? locMatch[0] : '';
+    }
+    seenTitles.add(title);
+    if (itemId) seenIds.add(itemId);
+    results.push({
+      rank: results.length + 1,
+      title,
+      price,
+      sales,
+      shop,
+      location: itemLocation,
+      item_id: itemId,
+      url: itemId ? 'https://item.taobao.com/item.htm?id=' + itemId : (href ? new URL(href, location.href).href : ''),
+    });
+    if (results.length >= limit) break;
+  }
+  if (!results.length && !/没有找到|暂无相关|无结果/.test(text)) {
+    return { error: 'no search cards found' };
+  }
+  return results;
+})()
+"""
+
+
+DETAIL_SCRIPT = """
+(() => {
+  const itemId = ITEM_ID_PLACEHOLDER;
+  const normalize = value => (value || '').replace(/\\s+/g, ' ').trim();
+  const text = document.body?.innerText || '';
+  if (/login\\.taobao\\.com|安全验证|验证码|扫码登录|请登录后/.test(location.href + ' ' + text)) {
+    return { error: 'auth-required' };
+  }
+  if (/error\\.item\\.taobao\\.com|\\/error\\/noitem|宝贝不存在|商品不存在|已下架|已删除/.test(location.href + ' ' + text)) {
+    return { error: 'item unavailable or removed' };
+  }
+  const titleEl = document.querySelector('[class*="mainTitle--"], [class*="ItemTitle--"], h1');
+  const titleFromDoc = normalize(document.title.replace(/^【[^】]+】/, '').split(/[-_]/)[0]);
+  let title = normalize(titleEl?.innerText || titleEl?.textContent || '');
+  if (!title || /用户评价|累计评价|商品详情|店铺/.test(title)) title = titleFromDoc;
+  if (!title || title.length < 2 || text.length < 100) {
+    return { error: 'detail payload missing title' };
+  }
+  const priceEl = document.querySelector('[class*="priceText--"], [class*="Price--"], [class*="price--"]');
+  const prices = [];
+  for (const match of text.matchAll(/[￥¥]\\s*(\\d+(?:\\.\\d{1,2})?)/g)) {
+    const price = Number(match[1]);
+    if (price > 0.1 && price < 100000) prices.push(price);
+    if (prices.length >= 5) break;
+  }
+  let price = normalize(priceEl?.innerText || priceEl?.textContent || '');
+  if (!price || price.length > 30) price = prices.length ? '¥' + Math.min(...prices) : price.slice(0, 60);
+  const salesMatch = text.match(/(\\d+(?:\\.\\d+)?万?\\+?)\\s*人付款/) || text.match(/月销\\s*(\\d+(?:\\.\\d+)?万?\\+?)/);
+  const reviewMatch = text.match(/累计评价\\s*(\\d+(?:\\.\\d+)?万?\\+?)/) || text.match(/评价[（(]?\\s*(\\d+(?:\\.\\d+)?万?\\+?)/);
+  const shopEl = document.querySelector('[class*="shopName--"], [class*="ShopName--"], a[href*="shop"], [class*="seller"] a');
+  let shop = normalize(shopEl?.innerText || shopEl?.textContent || '');
+  if (!shop) {
+    const shopMatch = text.match(/([\\u4e00-\\u9fa5A-Za-z0-9]{2,30}(?:旗舰店|专卖店|企业店|专营店|淘宝店|官方店))/);
+    shop = shopMatch ? shopMatch[1] : '';
+  }
+  if (/免费开店|卖家中心|千牛/.test(shop)) shop = '';
+  const locMatch = text.match(/发货地[：:]*\\s*([\\u4e00-\\u9fa5]{2,10})/) || text.match(/([\\u4e00-\\u9fa5]{2,4}(?:省|市))\\s*发货/);
+  const sourceUrl = location.href.split('#')[0].split('&spm=')[0];
+  return [
+    { field: '商品名称', value: title.slice(0, 120) },
+    { field: '价格', value: price },
+    { field: '销量', value: salesMatch ? salesMatch[0] : '' },
+    { field: '评价数', value: reviewMatch ? reviewMatch[1] : '' },
+    { field: '店铺', value: shop },
+    { field: '发货地', value: locMatch ? locMatch[1] : '' },
+    { field: 'ID', value: itemId },
+    { field: '链接', value: sourceUrl || ('https://item.taobao.com/item.htm?id=' + itemId) },
+  ];
+})()
+"""
+
+
+REVIEWS_SCRIPT = """
+(async () => {
+  const itemId = ITEM_ID_PLACEHOLDER;
+  const limit = LIMIT_PLACEHOLDER;
+  const normalize = value => (value || '').replace(/\\s+/g, ' ').trim();
+  const text = document.body?.innerText || '';
+  if (/login\\.taobao\\.com|安全验证|验证码|扫码登录|请登录后/.test(location.href + ' ' + text)) {
+    return { error: 'auth-required' };
+  }
+  const html = document.documentElement?.innerHTML || '';
+  let sellerId = '';
+  const sellerMatch = html.match(/sellerId['"\\s:=]+['"]?(\\d+)/)
+    || html.match(/userId['"\\s:=]+['"]?(\\d+)/)
+    || html.match(/shopId['"\\s:=]+['"]?(\\d+)/);
+  if (sellerMatch) sellerId = sellerMatch[1];
+  if (!sellerId) {
+    const shopLink = document.querySelector('a[href*="shopId="], a[href*="seller_id="], a[href*="userId="]');
+    const href = shopLink?.getAttribute('href') || '';
+    const match = href.match(/(?:shopId|seller_id|userId)=(\\d+)/);
+    if (match) sellerId = match[1];
+  }
+  const endpoint = 'https://rate.tmall.com/list_detail_rate.htm?itemId=' + itemId
+    + (sellerId ? '&sellerId=' + sellerId : '')
+    + '&order=3&currentPage=1&append=0&content=1&tagId=&posi=&picture=&groupValue=&needFold=0&_ksTS=' + Date.now();
+  return await new Promise(resolve => {
+    const cbName = '__ab_rate_' + Date.now() + '_' + Math.floor(Math.random() * 100000);
+    const script = document.createElement('script');
+    let settled = false;
+    const cleanup = value => {
+      if (settled) return;
+      settled = true;
+      try { delete window[cbName]; } catch {}
+      script.remove();
+      resolve(value);
+    };
+    window[cbName] = payload => {
+      const list = payload?.rateDetail?.rateList;
+      if (!Array.isArray(list)) {
+        cleanup({ error: 'reviews payload missing rate list' });
+        return;
+      }
+      cleanup(list.slice(0, limit).map((item, index) => ({
+        rank: index + 1,
+        user: normalize(item.displayUserNick || item.userNick || '').slice(0, 40),
+        content: normalize(item.rateContent || '').slice(0, 300),
+        date: String(item.rateDate || '').slice(0, 19),
+        spec: normalize(item.auctionSku || '').slice(0, 120),
+      })).filter(item => item.content));
+    };
+    script.onerror = () => cleanup({ error: 'reviews request failed' });
+    script.src = endpoint + '&callback=' + cbName;
+    document.head.appendChild(script);
+    setTimeout(() => cleanup({ error: 'reviews request timed out' }), 12000);
+  });
+})()
+"""
+
+
+CART_SCRIPT = """
+(async () => {
+  const limit = LIMIT_PLACEHOLDER;
+  const normalize = value => (value || '').replace(/\\s+/g, ' ').trim();
+  const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+  for (let i = 0; i < 14; i++) {
+    const text = document.body?.innerText || '';
+    if (/login\\.taobao\\.com|安全验证|验证码|扫码登录|请登录后/.test(location.href + ' ' + text)) {
+      return { auth_required: true };
+    }
+    if (text.length > 500 || /购物车空空|还没有添加|全部商品|结算/.test(text)) break;
+    await sleep(500);
+  }
+  for (let i = 0; i < 3; i++) {
+    window.scrollBy(0, Math.max(700, window.innerHeight * 0.85));
+    await sleep(700);
+  }
+  const text = document.body?.innerText || '';
+  if (/login\\.taobao\\.com|安全验证|验证码|扫码登录|请登录后/.test(location.href + ' ' + text)) {
+    return { auth_required: true };
+  }
+  const emptyCart = /购物车空空|还没有添加|空空如也/.test(text);
+  const roots = new Set();
+  for (const node of document.querySelectorAll('[class*="item"], [class*="cart"], [data-id], [data-itemid]')) {
+    const body = normalize(node.innerText || node.textContent);
+    if (body.length > 30 && /[￥¥]\\s*\\d/.test(body)) roots.add(node);
+  }
+  const items = [];
+  const seen = new Set();
+  const blockedTitle = /^(删除|全选|全部商品|合计|结算|找相似|移入收藏|优惠|券|店铺|宝贝|数量|单价|小计|已选)/;
+  for (const root of roots) {
+    const lines = (root.innerText || root.textContent || '').split('\\n').map(normalize).filter(Boolean);
+    if (lines.length < 2) continue;
+    const priceLine = lines.find(line => /[￥¥]\\s*\\d/.test(line)) || '';
+    if (!priceLine) continue;
+    let title = '';
+    for (const line of lines) {
+      if (line.length > title.length && line.length >= 8 && line.length < 180 && !/[￥¥]\\s*\\d/.test(line) && !blockedTitle.test(line)) {
+        title = line;
+      }
+    }
+    if (!title || seen.has(title)) continue;
+    const spec = lines.find(line => /^(颜色分类|尺码|规格|套餐|型号|版本|配置)[：:]/.test(line)) || '';
+    let shop = '';
+    const shopLine = lines.find(line => line.length >= 2 && line.length <= 40 && /店|旗舰|官方|专营|专卖/.test(line) && !blockedTitle.test(line));
+    if (shopLine && shopLine !== title) shop = shopLine;
+    const priceMatch = priceLine.match(/[￥¥]\\s*([\\d,.]+(?:\\.\\d{1,2})?)/);
+    seen.add(title);
+    items.push({
+      index: items.length + 1,
+      title: title.slice(0, 120),
+      price: priceMatch ? '¥' + priceMatch[1] : priceLine.slice(0, 40),
+      spec: spec.slice(0, 120),
+      shop: shop.slice(0, 80),
+    });
+    if (items.length >= limit) break;
+  }
+  if (items.length > 0) return { items, loaded: true };
+  return { items: [], loaded: emptyCart };
+})()
+"""
+
+
+WHOAMI_SCRIPT = """
+(() => {
+  const normalize = value => (value || '').replace(/\\s+/g, ' ').trim();
+  const text = document.body?.innerText || '';
+  if (/login\\.taobao\\.com|安全验证|验证码|扫码登录|请登录后/.test(location.href + ' ' + text)) {
+    return { auth_required: true };
+  }
+  const firstText = selectors => {
+    for (const selector of selectors) {
+      const node = document.querySelector(selector);
+      const value = normalize(node?.innerText || node?.textContent || node?.getAttribute('content') || '');
+      if (value) return value;
+    }
+    return '';
+  };
+  const html = document.body?.innerHTML || '';
+  const idMatch = html.match(/userId['"\\s:=]+['"]?(\\d+)/i)
+    || html.match(/user_id['"\\s:=]+['"]?(\\d+)/i)
+    || html.match(/uid['"\\s:=]+['"]?(\\d+)/i);
+  const nickname = firstText(['.user-nick', '.site-nav-user', '.user-name', '[class*="nick"]', '[class*="Nick"]']);
+  const userId = idMatch ? idMatch[1] : '';
+  if (!nickname && !userId) return { auth_required: true };
+  return {
+    logged_in: true,
+    nickname,
+    user_id: userId,
+    source_url: location.href,
+  };
+})()
+"""
+
+
+def navigate_from_home(args: argparse.Namespace, target_url: str) -> ActionBook:
+    book = start_book(args, TAOBAO_HOME_URL)
+    api_eval(book, f"setTimeout(() => {{ location.href = {json.dumps(target_url)}; }}, 0); true", "打开淘宝页面失败")
+    time.sleep(2.0)
+    return book
+
+
 def run_search(args: argparse.Namespace) -> int:
-    return finish([], args, "search", f"淘宝搜索: {args.query}")
+    query = normalize_text(args.query)
+    if not query:
+        raise RuntimeError("taobao search: query is required")
+    count = read_count(args.count, default=10, max_value=40)
+    sort_map = {"default": "", "sale": "&sort=sale-desc", "price": "&sort=price-asc"}
+    sort_param = sort_map.get(str(args.sort or "default"), "")
+    url = f"{TAOBAO_SEARCH_URL}?q={quote(query)}{sort_param}"
+    book = navigate_from_home(args, url)
+    ensure_ready(book)
+    records = require_list_payload(
+        api_eval(book, SEARCH_SCRIPT.replace("LIMIT_PLACEHOLDER", str(count)), "读取淘宝搜索结果失败", timeout=60.0),
+        "taobao search",
+    )
+    return finish(records[:count], args, "search", f"淘宝搜索: {query}")
 
 
 def run_detail(args: argparse.Namespace) -> int:
     item_id = normalize_numeric_id(args.id, "--id", "827563850178")
-    return finish([{"field": "ID", "value": item_id}], args, "detail", f"淘宝商品详情: {item_id}")
+    url = f"https://item.taobao.com/item.htm?id={item_id}"
+    book = navigate_from_home(args, url)
+    ensure_ready(book)
+    records = require_list_payload(
+        api_eval(book, DETAIL_SCRIPT.replace("ITEM_ID_PLACEHOLDER", json.dumps(item_id)), "读取淘宝商品详情失败"),
+        "taobao detail",
+    )
+    return finish(records, args, "detail", f"淘宝商品详情: {item_id}")
 
 
 def run_reviews(args: argparse.Namespace) -> int:
     item_id = normalize_numeric_id(args.id, "--id", "827563850178")
-    return finish([], args, "reviews", f"淘宝商品评价: {item_id}")
+    count = read_count(args.count, default=10, max_value=20)
+    url = f"https://item.taobao.com/item.htm?id={item_id}"
+    book = navigate_from_home(args, url)
+    ensure_ready(book)
+    records = require_list_payload(
+        api_eval(
+            book,
+            REVIEWS_SCRIPT.replace("ITEM_ID_PLACEHOLDER", json.dumps(item_id)).replace("LIMIT_PLACEHOLDER", str(count)),
+            "读取淘宝商品评价失败",
+            timeout=60.0,
+        ),
+        "taobao reviews",
+    )
+    return finish(records[:count], args, "reviews", f"淘宝商品评价: {item_id}")
 
 
 def run_cart(args: argparse.Namespace) -> int:
-    return finish([], args, "cart", "淘宝购物车")
+    count = read_count(args.count, default=20, max_value=50)
+    book = navigate_from_home(args, "https://cart.taobao.com/cart.htm")
+    ensure_ready(book)
+    data = api_eval(book, CART_SCRIPT.replace("LIMIT_PLACEHOLDER", str(count)), "读取淘宝购物车失败", timeout=60.0)
+    if isinstance(data, dict) and data.get("auth_required"):
+        raise LoginRequiredError(
+            "LOGIN_REQUIRED: 淘宝购物车需要已登录会话；请在 ActionBook 连接的 Chrome 窗口登录后重试。"
+        )
+    records = require_cart_payload(data, "taobao cart")
+    return finish(records[:count], args, "cart", "淘宝购物车")
 
 
 def run_whoami(args: argparse.Namespace) -> int:
-    records = [{"logged_in": False, "nickname": "", "user_id": "", "source_url": TAOBAO_HOME_URL}]
-    return finish(records, args, "whoami", "淘宝当前账号")
+    book = navigate_from_home(args, "https://i.taobao.com/my_itaobao")
+    ensure_ready(book)
+    record = require_dict_payload(api_eval(book, WHOAMI_SCRIPT, "读取淘宝当前账号失败"), "taobao whoami")
+    if record.get("auth_required"):
+        raise LoginRequiredError(
+            "LOGIN_REQUIRED: 未检测到淘宝登录态；请在 ActionBook 连接的 Chrome 窗口登录后重试。"
+        )
+    record["logged_in"] = True
+    record["source_url"] = record.get("source_url") or "https://i.taobao.com/my_itaobao"
+    return finish([record], args, "whoami", "淘宝当前账号")
 
 
 def main(argv: list[str] | None = None) -> int:

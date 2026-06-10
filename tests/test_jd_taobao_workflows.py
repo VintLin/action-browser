@@ -203,6 +203,62 @@ class TaobaoWorkflowContractTests(unittest.TestCase):
         self.assertTrue(self.module.page_has_login_or_risk({"href": "", "title": "", "text": "请登录后查看购物车"}))
         self.assertFalse(self.module.page_has_login_or_risk({"href": "https://item.taobao.com/item.htm?id=827563850178", "title": "商品详情", "text": "淘宝 商品"}))
 
+    def test_api_eval_unwraps_values_and_raises_labeled_errors(self) -> None:
+        class Book:
+            def __init__(self) -> None:
+                self.next_value = {"value": {"ok": True}}
+
+            def eval(self, script: str, timeout: float = 45.0):  # noqa: ARG002
+                return self.next_value
+
+        book = Book()
+        self.assertEqual(self.module.api_eval(book, "1 + 1", "sample"), {"ok": True})
+
+        book.next_value = {"error": "blocked"}
+        with self.assertRaisesRegex(RuntimeError, "sample: blocked"):
+            self.module.api_eval(book, "1 + 1", "sample")
+
+    def test_get_page_state_returns_normalized_state(self) -> None:
+        class Book:
+            def eval(self, script: str, timeout: float = 45.0):  # noqa: ARG002
+                return {"value": {"href": "https://item.taobao.com/item.htm?id=1", "title": " 商品 ", "text": " A\nB "}}
+
+        self.assertEqual(
+            self.module.get_page_state(Book()),
+            {"href": "https://item.taobao.com/item.htm?id=1", "title": "商品", "text": "A B"},
+        )
+
+    def test_require_list_payload_rejects_malformed_payloads(self) -> None:
+        records = [{"rank": 1}]
+        self.assertIs(self.module.require_list_payload(records, "taobao search"), records)
+
+        with self.assertRaisesRegex(RuntimeError, "taobao search: x"):
+            self.module.require_list_payload({"error": "x"}, "taobao search")
+
+        for value in ({}, None, "bad"):
+            with self.assertRaisesRegex(RuntimeError, "taobao search: malformed payload"):
+                self.module.require_list_payload(value, "taobao search")
+
+        with self.assertRaisesRegex(RuntimeError, "taobao search: malformed element"):
+            self.module.require_list_payload(["bad"], "taobao search")
+
+    def test_require_cart_payload_handles_explicit_empty_and_api_failures(self) -> None:
+        self.assertEqual(self.module.require_cart_payload({"items": [], "loaded": True}, "taobao cart"), [])
+        self.assertEqual(
+            self.module.require_cart_payload({"items": [{"index": 1}], "loaded": True}, "taobao cart"),
+            [{"index": 1}],
+        )
+
+        for value in ({}, None, "bad", {"items": "bad"}):
+            with self.assertRaisesRegex(RuntimeError, "taobao cart: malformed payload"):
+                self.module.require_cart_payload(value, "taobao cart")
+
+        with self.assertRaisesRegex(RuntimeError, "taobao cart: malformed element"):
+            self.module.require_cart_payload({"items": ["bad"], "loaded": True}, "taobao cart")
+
+        with self.assertRaisesRegex(RuntimeError, "taobao cart: not fully loaded"):
+            self.module.require_cart_payload({"items": [], "loaded": False}, "taobao cart")
+
     def test_write_records_outputs_standard_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp)
