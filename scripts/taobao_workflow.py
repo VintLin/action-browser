@@ -88,7 +88,8 @@ def page_has_login_or_risk(state: dict[str, str]) -> bool:
         "访问频繁",
         "滑块",
     )
-    return any(term in haystack for term in risk_terms)
+    risk_pattern = "|".join(re.escape(term) for term in risk_terms)
+    return re.search(risk_pattern, haystack, re.I) is not None
 
 
 def write_json(path: Path, data: Any) -> None:
