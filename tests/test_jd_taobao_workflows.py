@@ -132,6 +132,20 @@ class JDWorkflowContractTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "jd search: malformed payload"):
                 self.module.require_list_payload(value, "jd search")
 
+        with self.assertRaisesRegex(RuntimeError, "jd search: malformed element"):
+            self.module.require_list_payload(["bad"], "jd search")
+
+    def test_require_dict_payload_rejects_malformed_payloads(self) -> None:
+        record = {"title": "测试商品"}
+        self.assertIs(self.module.require_dict_payload(record, "jd item"), record)
+
+        with self.assertRaisesRegex(RuntimeError, "jd item: x"):
+            self.module.require_dict_payload({"error": "x"}, "jd item")
+
+        for value in ([], None, "bad"):
+            with self.assertRaisesRegex(RuntimeError, "jd item: malformed payload"):
+                self.module.require_dict_payload(value, "jd item")
+
     def test_require_cart_payload_handles_explicit_empty_and_api_failures(self) -> None:
         self.assertEqual(self.module.require_cart_payload({"items": []}, "jd cart"), [])
         self.assertEqual(
@@ -145,6 +159,9 @@ class JDWorkflowContractTests(unittest.TestCase):
         for value in ({}, None, "bad", {"items": "bad"}):
             with self.assertRaisesRegex(RuntimeError, "jd cart: malformed payload"):
                 self.module.require_cart_payload(value, "jd cart")
+
+        with self.assertRaisesRegex(RuntimeError, "jd cart: malformed element"):
+            self.module.require_cart_payload({"items": ["bad"]}, "jd cart")
 
         with self.assertRaisesRegex(RuntimeError, "jd cart: api failed"):
             self.module.require_cart_payload({"items": [], "api_error": "api failed", "dom_fallback_used": True}, "jd cart")

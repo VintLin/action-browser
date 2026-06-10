@@ -78,10 +78,21 @@ def api_eval(book: ActionBook, script: str, label: str, timeout: float = 45.0) -
 
 def require_list_payload(value: Any, label: str) -> list[dict[str, Any]]:
     if isinstance(value, list):
+        for index, item in enumerate(value, start=1):
+            if not isinstance(item, dict):
+                raise RuntimeError(f"{label}: malformed element at index {index}")
         return value
     if isinstance(value, dict) and value.get("error"):
         raise RuntimeError(f"{label}: {value.get('error')}")
     raise RuntimeError(f"{label}: malformed payload")
+
+
+def require_dict_payload(value: Any, label: str) -> dict[str, Any]:
+    if isinstance(value, dict) and value.get("error"):
+        raise RuntimeError(f"{label}: {value.get('error')}")
+    if not isinstance(value, dict):
+        raise RuntimeError(f"{label}: malformed payload")
+    return value
 
 
 def require_cart_payload(value: Any, label: str) -> list[dict[str, Any]]:
@@ -90,6 +101,9 @@ def require_cart_payload(value: Any, label: str) -> list[dict[str, Any]]:
     if not isinstance(value, dict) or "items" not in value or not isinstance(value.get("items"), list):
         raise RuntimeError(f"{label}: malformed payload")
     records = value["items"]
+    for index, item in enumerate(records, start=1):
+        if not isinstance(item, dict):
+            raise RuntimeError(f"{label}: malformed element at index {index}")
     api_error = normalize_text(value.get("api_error"))
     dom_fallback_used = bool(value.get("dom_fallback_used"))
     if api_error and dom_fallback_used and not records:
@@ -558,14 +572,15 @@ def run_item(args: argparse.Namespace) -> int:
     url = f"https://item.jd.com/{sku}.html"
     book = start_book(args, url)
     ensure_ready(book)
-    record = api_eval(
-        book,
-        ITEM_SCRIPT.replace("SKU_PLACEHOLDER", json.dumps(sku)).replace("IMAGE_LIMIT_PLACEHOLDER", str(image_limit)),
-        "读取京东商品信息失败",
-        timeout=60.0,
+    record = require_dict_payload(
+        api_eval(
+            book,
+            ITEM_SCRIPT.replace("SKU_PLACEHOLDER", json.dumps(sku)).replace("IMAGE_LIMIT_PLACEHOLDER", str(image_limit)),
+            "读取京东商品信息失败",
+            timeout=60.0,
+        ),
+        "jd item",
     )
-    if not isinstance(record, dict):
-        record = {"title": "", "price": "", "shop": "", "specs": {}, "main_images": [], "detail_images": [], "source_url": url}
     record["source_url"] = record.get("source_url") or url
     return finish([record], args, "item", f"京东商品: {sku}")
 
@@ -575,9 +590,10 @@ def run_detail(args: argparse.Namespace) -> int:
     url = f"https://item.jd.com/{sku}.html"
     book = start_book(args, url)
     ensure_ready(book)
-    records = api_eval(book, DETAIL_SCRIPT.replace("SKU_PLACEHOLDER", json.dumps(sku)), "读取京东商品详情失败")
-    if not isinstance(records, list):
-        records = [{"field": "SKU", "value": sku}, {"field": "链接", "value": url}]
+    records = require_list_payload(
+        api_eval(book, DETAIL_SCRIPT.replace("SKU_PLACEHOLDER", json.dumps(sku)), "读取京东商品详情失败"),
+        "jd detail",
+    )
     return finish(records, args, "detail", f"京东商品详情: {sku}")
 
 
