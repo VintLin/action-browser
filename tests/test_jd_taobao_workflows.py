@@ -11,6 +11,18 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "scripts"
+FORBIDDEN_WRITE_COMMANDS = (
+    "add-cart",
+    "checkout",
+    "buy",
+    "order",
+    "delete",
+    "submit",
+    "结算",
+    "提交订单",
+    "加入购物车",
+    "删除",
+)
 
 
 def load_script(name: str):
@@ -28,6 +40,26 @@ def load_script(name: str):
             sys.path.remove(str(SCRIPTS))
         except ValueError:
             pass
+
+
+def run_help(script_name: str, *args: str) -> str:
+    result = subprocess.run(
+        ["python3", str(SCRIPTS / f"{script_name}_workflow.py"), *args, "--help"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return result.stdout
+
+
+def assert_area_has_only_view(script_name: str, area: str) -> None:
+    help_text = run_help(script_name, area)
+    if "view" not in help_text:
+        raise AssertionError(f"{script_name} {area} help does not expose view mode")
+    for command in FORBIDDEN_WRITE_COMMANDS:
+        if command in help_text:
+            raise AssertionError(f"{script_name} {area} help exposes write command: {command}")
 
 
 class JDWorkflowContractTests(unittest.TestCase):
@@ -54,18 +86,14 @@ class JDWorkflowContractTests(unittest.TestCase):
             self.assertEqual(json.loads((out / "failures.json").read_text(encoding="utf-8")), [])
 
     def test_help_exposes_only_read_only_commands(self) -> None:
-        result = subprocess.run(
-            [sys.executable, str(SCRIPTS / "jd_workflow.py"), "--help"],
-            cwd=ROOT,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        help_text = result.stdout
+        help_text = run_help("jd")
         for command in ("search", "item", "detail", "reviews", "cart", "whoami"):
             self.assertIn(command, help_text)
-        self.assertNotIn("add-cart", help_text)
-        self.assertNotIn("checkout", help_text)
+        for command in FORBIDDEN_WRITE_COMMANDS:
+            self.assertNotIn(command, help_text)
+
+        for area in ("search", "item", "detail", "reviews", "cart", "whoami"):
+            assert_area_has_only_view("jd", area)
 
 
 class TaobaoWorkflowContractTests(unittest.TestCase):
@@ -92,18 +120,14 @@ class TaobaoWorkflowContractTests(unittest.TestCase):
             self.assertEqual(json.loads((out / "failures.json").read_text(encoding="utf-8")), [])
 
     def test_help_exposes_only_read_only_commands(self) -> None:
-        result = subprocess.run(
-            [sys.executable, str(SCRIPTS / "taobao_workflow.py"), "--help"],
-            cwd=ROOT,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        help_text = result.stdout
+        help_text = run_help("taobao")
         for command in ("search", "detail", "reviews", "cart", "whoami"):
             self.assertIn(command, help_text)
-        self.assertNotIn("add-cart", help_text)
-        self.assertNotIn("checkout", help_text)
+        for command in FORBIDDEN_WRITE_COMMANDS:
+            self.assertNotIn(command, help_text)
+
+        for area in ("search", "detail", "reviews", "cart", "whoami"):
+            assert_area_has_only_view("taobao", area)
 
 
 if __name__ == "__main__":
