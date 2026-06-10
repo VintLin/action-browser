@@ -32,10 +32,27 @@ DEFAULT_TAB = ""
 SKILL_DIR = Path(__file__).resolve().parent.parent
 ASSETS_DIR = SKILL_DIR / "assets" / "zhipin"
 CITY_NAMES = {
+    "100010000": "全国",
+    "101010100": "北京",
     "101020100": "上海",
+    "101280100": "广州",
+    "101280600": "深圳",
     "101210100": "杭州",
     "101230100": "福州",
 }
+IDENTITY_MISMATCH_CODE = 24
+TYPE_MAP = {
+    1: "文本",
+    2: "图片",
+    3: "招呼",
+    4: "简历",
+    5: "系统",
+    6: "名片",
+    7: "语音",
+    8: "视频",
+    9: "表情",
+}
+COOKIE_EXPIRED_CODES = {7, 37}
 SALARY_FONT_MAP = str.maketrans({
     "\ue031": "0",
     "\ue032": "1",
@@ -163,6 +180,18 @@ def build_job_url(job_id: str) -> str:
     return f"{ZHIPIN_HOME_URL}/job_detail/{job_id}.html" if job_id else ""
 
 
+def format_timestamp(value: Any) -> str:
+    try:
+        timestamp = int(value)
+    except (TypeError, ValueError):
+        return ""
+    if timestamp <= 0:
+        return ""
+    if timestamp > 10_000_000_000:
+        timestamp = timestamp // 1000
+    return datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S")
+
+
 def normalize_api_job(raw: dict[str, Any]) -> dict[str, Any]:
     region = "·".join(
         part for part in [
@@ -219,6 +248,130 @@ def normalize_dom_job(raw: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def normalize_detail_payload(payload: dict[str, Any], security_id: str = "") -> dict[str, Any]:
+    zp_data = payload.get("zpData") if isinstance(payload, dict) else None
+    if not isinstance(zp_data, dict):
+        raise RuntimeError("zhipin detail: malformed payload")
+    job_info = zp_data.get("jobInfo") or {}
+    boss_info = zp_data.get("bossInfo") or {}
+    brand_info = zp_data.get("brandComInfo") or {}
+    if not isinstance(job_info, dict) or not normalize_text(job_info.get("jobName")):
+        raise RuntimeError("zhipin detail: job is offline or missing")
+    if not isinstance(boss_info, dict):
+        boss_info = {}
+    if not isinstance(brand_info, dict):
+        brand_info = {}
+    encrypt_id = normalize_text(job_info.get("encryptId") or job_info.get("encryptJobId"))
+    return {
+        "source": "detail_api",
+        "title": normalize_text(job_info.get("jobName")),
+        "salary": normalize_text(job_info.get("salaryDesc")),
+        "experience": normalize_text(job_info.get("experienceName")),
+        "degree": normalize_text(job_info.get("degreeName")),
+        "city": normalize_text(job_info.get("locationName")),
+        "district": "·".join(
+            part
+            for part in [
+                normalize_text(job_info.get("areaDistrict")),
+                normalize_text(job_info.get("businessDistrict")),
+            ]
+            if part
+        ),
+        "description": normalize_text(job_info.get("postDescription")),
+        "skills": [normalize_text(item) for item in job_info.get("showSkills") or [] if normalize_text(item)],
+        "welfare": [normalize_text(item) for item in brand_info.get("labels") or [] if normalize_text(item)],
+        "boss_name": normalize_text(boss_info.get("name")),
+        "boss_title": normalize_text(boss_info.get("title")),
+        "boss_active_time": normalize_text(boss_info.get("activeTimeDesc")),
+        "company": normalize_text(brand_info.get("brandName") or boss_info.get("brandName")),
+        "company_industry": normalize_text(brand_info.get("industryName")),
+        "company_scale": normalize_text(brand_info.get("scaleName")),
+        "company_stage": normalize_text(brand_info.get("stageName")),
+        "address": normalize_text(job_info.get("address")),
+        "security_id": normalize_text(security_id),
+        "encrypt_job_id": encrypt_id,
+        "url": build_job_url(encrypt_id),
+        "raw": zp_data,
+    }
+
+
+def map_boss_chat_row(raw: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "source": "boss_chatlist",
+        "name": normalize_text(raw.get("name")),
+        "company": "",
+        "job": normalize_text(raw.get("jobName")),
+        "title": "",
+        "last_msg": normalize_text((raw.get("lastMessageInfo") or {}).get("text") or raw.get("lastMsg")),
+        "last_time": normalize_text(raw.get("lastTime")) or format_timestamp(raw.get("updateTime")),
+        "uid": normalize_text(raw.get("encryptUid")),
+        "numeric_uid": raw.get("uid"),
+        "security_id": normalize_text(raw.get("securityId")),
+        "raw": raw,
+    }
+
+
+def map_geek_chat_row(raw: dict[str, Any]) -> dict[str, Any]:
+    last_message = raw.get("lastMessageInfo") or {}
+    return {
+        "source": "geek_chatlist",
+        "name": normalize_text(raw.get("name")),
+        "company": normalize_text(raw.get("brandName")),
+        "job": normalize_text(raw.get("jobName")),
+        "title": normalize_text(raw.get("bossTitle")),
+        "last_msg": normalize_text(last_message.get("showText") or raw.get("lastMsg")),
+        "last_time": normalize_text(raw.get("lastTime")) or format_timestamp(last_message.get("msgTime") or raw.get("updateTime")),
+        "uid": normalize_text(raw.get("encryptUid") or raw.get("encryptFriendId") or raw.get("uid") or raw.get("friendId")),
+        "numeric_uid": raw.get("uid") or raw.get("friendId"),
+        "friend_id": raw.get("friendId"),
+        "security_id": normalize_text(raw.get("securityId")),
+        "raw": raw,
+    }
+
+
+def message_text(raw: dict[str, Any]) -> str:
+    body = raw.get("body") if isinstance(raw.get("body"), dict) else {}
+    return normalize_text(
+        raw.get("text")
+        or body.get("text")
+        or body.get("content")
+        or body.get("showText")
+        or (json.dumps(body, ensure_ascii=False)[:120] if body else "")
+    )
+
+
+def map_boss_chat_messages(messages: list[dict[str, Any]], friend: dict[str, Any]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    friend_uid = str(friend.get("uid") or "")
+    for raw in messages:
+        from_obj = raw.get("from") if isinstance(raw.get("from"), dict) else {}
+        from_uid = str(from_obj.get("uid") or "")
+        rows.append({
+            "from": "我" if from_uid and from_uid != friend_uid else normalize_text(from_obj.get("name") or friend.get("name") or "对方"),
+            "type": TYPE_MAP.get(raw.get("type"), f"其他({raw.get('type')})"),
+            "text": message_text(raw),
+            "time": format_timestamp(raw.get("time")),
+            "raw": raw,
+        })
+    return rows
+
+
+def map_geek_chat_messages(messages: list[dict[str, Any]], friend: dict[str, Any]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    friend_uid = str(friend.get("uid") or "")
+    for raw in messages:
+        from_obj = raw.get("from") if isinstance(raw.get("from"), dict) else {}
+        from_uid = str(from_obj.get("uid") or "")
+        rows.append({
+            "from": "对方" if from_uid and from_uid == friend_uid else "我",
+            "type": TYPE_MAP.get(raw.get("type"), f"其他({raw.get('type')})"),
+            "text": message_text(raw),
+            "time": format_timestamp(raw.get("time")),
+            "raw": raw,
+        })
+    return rows
+
+
 def filter_job(job: dict[str, Any], args: argparse.Namespace) -> bool:
     include = split_words(getattr(args, "include_title_any", ""))
     exclude = split_words(getattr(args, "exclude_title_any", ""))
@@ -245,12 +398,38 @@ def dedupe_append(target: list[dict[str, Any]], seen: set[str], job: dict[str, A
     return True
 
 
-def fetch_json(book: ActionBook, path: str, params: dict[str, Any], label: str) -> dict[str, Any]:
+def fetch_json(
+    book: ActionBook,
+    path: str,
+    params: dict[str, Any],
+    label: str,
+    *,
+    method: str = "GET",
+    body: str = "",
+    allow_nonzero: bool = False,
+) -> dict[str, Any]:
+    request = {
+        "path": path,
+        "params": {k: str(v) for k, v in params.items()},
+        "method": method,
+        "body": body,
+    }
     script = f"""
     (async () => {{
-      const params = new URLSearchParams({json.dumps({k: str(v) for k, v in params.items()}, ensure_ascii=False)});
+      const request = {json.dumps(request, ensure_ascii=False)};
+      const params = new URLSearchParams(request.params);
       params.set('_', String(Date.now()));
-      const res = await fetch({json.dumps(path)} + '?' + params.toString(), {{ credentials: 'include' }});
+      const url = request.method === 'GET' ? request.path + '?' + params.toString() : request.path;
+      const options = {{
+        method: request.method,
+        credentials: 'include',
+        headers: {{ Accept: 'application/json' }}
+      }};
+      if (request.method === 'POST') {{
+        options.headers['Content-Type'] = 'application/x-www-form-urlencoded';
+        options.body = request.body;
+      }}
+      const res = await fetch(url, options);
       const text = await res.text();
       let data;
       try {{ data = JSON.parse(text); }} catch (error) {{
@@ -267,9 +446,94 @@ def fetch_json(book: ActionBook, path: str, params: dict[str, Any], label: str) 
     data = value.get("data")
     if not isinstance(data, dict):
         raise RuntimeError(f"{label}: missing JSON object")
-    if data.get("code") not in (0, "0", None):
+    code = data.get("code")
+    if code in COOKIE_EXPIRED_CODES:
+        raise RuntimeError(f"{label}: BOSS Zhipin login expired; please re-login in the connected Chrome window")
+    if code not in (0, "0", None) and not allow_nonzero:
         raise RuntimeError(f"{label}: code={data.get('code')} message={data.get('message')}")
     return data
+
+
+def fetch_boss_friend_list(book: ActionBook, page_num: int, job_id: str, allow_nonzero: bool = False) -> Any:
+    data = fetch_json(
+        book,
+        "/wapi/zprelation/friend/getBossFriendListV2.json",
+        {"page": page_num, "status": 0, "jobId": job_id},
+        "boss chatlist",
+        allow_nonzero=allow_nonzero,
+    )
+    if allow_nonzero and data.get("code") not in (0, "0", None):
+        return data
+    friend_list = (data.get("zpData") or {}).get("friendList")
+    if not isinstance(friend_list, list):
+        raise RuntimeError("boss chatlist: missing zpData.friendList")
+    return friend_list
+
+
+def read_encrypt_system_id(book: ActionBook) -> str:
+    value = api_eval(book, """
+    (() => {
+      try {
+        const appEl = document.querySelector('#app') || document.querySelector('[data-v-app]');
+        const vueApp = appEl && (appEl.__vue_app__ || appEl._vei);
+        const pinia = vueApp?.config?.globalProperties?.$pinia;
+        if (pinia?.state?.value) {
+          for (const store of Object.values(pinia.state.value)) {
+            const flat = JSON.stringify(store);
+            const match = flat.match(/"encryptSystemId":"([^"]+)"/);
+            if (match) return match[1];
+          }
+        }
+        const query = vueApp?.config?.globalProperties?.$router?.currentRoute?.value?.query;
+        if (query?.encryptSystemId) return query.encryptSystemId;
+      } catch (_) {}
+      try {
+        for (const entry of performance.getEntriesByType('resource')) {
+          if (!entry.name.includes('geekFilterByLabel')) continue;
+          const value = new URL(entry.name).searchParams.get('encryptSystemId');
+          if (value) return value;
+        }
+      } catch (_) {}
+      return '';
+    })()
+    """, "read geek encryptSystemId", timeout=10.0)
+    return normalize_text(value)
+
+
+def fetch_geek_friend_label_list(book: ActionBook, encrypt_system_id: str) -> list[dict[str, Any]]:
+    data = fetch_json(
+        book,
+        "/wapi/zprelation/friend/geekFilterByLabel",
+        {"labelId": 0, "encryptSystemId": encrypt_system_id},
+        "geek chat label list",
+    )
+    friend_list = (data.get("zpData") or {}).get("friendList")
+    if not isinstance(friend_list, list):
+        raise RuntimeError("geek chat label list: missing zpData.friendList")
+    return friend_list
+
+
+def fetch_geek_friend_info_list(book: ActionBook, friend_ids: list[Any]) -> list[dict[str, Any]]:
+    if not friend_ids:
+        return []
+    results: list[dict[str, Any]] = []
+    for index in range(0, len(friend_ids), 50):
+        batch = [normalize_text(item) for item in friend_ids[index:index + 50] if normalize_text(item)]
+        if not batch:
+            continue
+        data = fetch_json(
+            book,
+            "/wapi/zprelation/friend/getGeekFriendList.json",
+            {},
+            "geek chat friend info",
+            method="POST",
+            body=f"friendIds={','.join(batch)}",
+        )
+        rows = (data.get("zpData") or {}).get("result")
+        if not isinstance(rows, list):
+            raise RuntimeError("geek chat friend info: missing zpData.result")
+        results.extend(row for row in rows if isinstance(row, dict))
+    return results
 
 
 def command_filters(args: argparse.Namespace) -> int:
@@ -485,6 +749,198 @@ def command_search(args: argparse.Namespace) -> int:
     return 0 if not failures else 1
 
 
+def command_detail(args: argparse.Namespace) -> int:
+    book = start_book(args, f"{ZHIPIN_HOME_URL}/web/geek/job")
+    output_dir = Path(args.output_dir) if args.output_dir else default_output_dir("views", f"detail-{slugify(args.security_id)}")
+    failures: list[dict[str, Any]] = []
+    records: list[dict[str, Any]] = []
+    try:
+        data = fetch_json(
+            book,
+            "/wapi/zpgeek/job/detail.json",
+            {"securityId": args.security_id},
+            "zhipin detail",
+        )
+        records.append(normalize_detail_payload(data, security_id=args.security_id))
+    except Exception as exc:  # noqa: BLE001
+        failures.append({"security_id": args.security_id, "error": str(exc)})
+    meta = {
+        "mode": "detail",
+        "security_id": args.security_id,
+        "record_count": len(records),
+        "status": "done" if records else "failed",
+    }
+    write_records_outputs(output_dir, "BOSS Zhipin Job Detail", records, meta, failures, record_key="records")
+    log(f"wrote {len(records)} detail records to {output_dir}")
+    return 0 if records and not failures else 1
+
+
+def merge_geek_chat_rows(labels: list[dict[str, Any]], enriched: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
+    enriched_by_id = {normalize_text(row.get("friendId") or row.get("uid")): row for row in enriched}
+    rows: list[dict[str, Any]] = []
+    for label in labels[:limit]:
+        key = normalize_text(label.get("friendId") or label.get("uid"))
+        raw = {**label, **enriched_by_id.get(key, {})}
+        rows.append(map_geek_chat_row(raw))
+    return rows
+
+
+def command_chatlist(args: argparse.Namespace) -> int:
+    output_dir = Path(args.output_dir) if args.output_dir else default_output_dir("views", f"chatlist-{args.side}")
+    failures: list[dict[str, Any]] = []
+    records: list[dict[str, Any]] = []
+    try:
+        if args.side == "boss":
+            book = start_book(args, f"{ZHIPIN_HOME_URL}/web/chat/index")
+            friends = fetch_boss_friend_list(book, args.page, args.job_id)
+            records = [map_boss_chat_row(item) for item in friends[:args.limit]]
+        elif args.side == "geek":
+            book = start_book(args, f"{ZHIPIN_HOME_URL}/web/geek/chat")
+            labels = fetch_geek_friend_label_list(book, read_encrypt_system_id(book))
+            enriched = fetch_geek_friend_info_list(book, [item.get("friendId") for item in labels[:args.limit]])
+            records = merge_geek_chat_rows(labels, enriched, args.limit)
+        else:
+            book = start_book(args, f"{ZHIPIN_HOME_URL}/web/chat/index")
+            boss_result = fetch_boss_friend_list(book, args.page, args.job_id, allow_nonzero=True)
+            if isinstance(boss_result, list):
+                records = [map_boss_chat_row(item) for item in boss_result[:args.limit]]
+            elif boss_result.get("code") == IDENTITY_MISMATCH_CODE:
+                book.start(f"{ZHIPIN_HOME_URL}/web/geek/chat")
+                ensure_ready(book)
+                labels = fetch_geek_friend_label_list(book, read_encrypt_system_id(book))
+                enriched = fetch_geek_friend_info_list(book, [item.get("friendId") for item in labels[:args.limit]])
+                records = merge_geek_chat_rows(labels, enriched, args.limit)
+            else:
+                raise RuntimeError(f"boss chatlist: code={boss_result.get('code')} message={boss_result.get('message')}")
+    except Exception as exc:  # noqa: BLE001
+        failures.append({"side": args.side, "page": args.page, "error": str(exc)})
+    meta = {
+        "mode": "chatlist",
+        "side": args.side,
+        "page": args.page,
+        "limit": args.limit,
+        "record_count": len(records),
+        "status": "done" if records else "failed",
+    }
+    write_records_outputs(output_dir, "BOSS Zhipin Chat List", records, meta, failures, record_key="records")
+    log(f"wrote {len(records)} chat records to {output_dir}")
+    return 0 if records and not failures else 1
+
+
+def find_boss_friend_by_uid(book: ActionBook, uid: str, max_pages: int) -> dict[str, Any] | None:
+    for page_num in range(1, max_pages + 1):
+        friends = fetch_boss_friend_list(book, page_num, "0")
+        for friend in friends:
+            if normalize_text(friend.get("encryptUid")) == uid or normalize_text(friend.get("uid")) == uid:
+                return friend
+        if not friends:
+            break
+    return None
+
+
+def find_geek_friend_by_uid(book: ActionBook, uid: str) -> dict[str, Any] | None:
+    labels = fetch_geek_friend_label_list(book, read_encrypt_system_id(book))
+    candidates = [
+        item for item in labels
+        if uid in {
+            normalize_text(item.get("encryptFriendId")),
+            normalize_text(item.get("encryptUid")),
+            normalize_text(item.get("uid")),
+            normalize_text(item.get("friendId")),
+        }
+    ]
+    if not candidates:
+        return None
+    enriched = fetch_geek_friend_info_list(book, [candidates[0].get("friendId")])
+    return {**candidates[0], **(enriched[0] if enriched else {})}
+
+
+def fetch_boss_messages(book: ActionBook, friend: dict[str, Any], page_num: int) -> list[dict[str, Any]]:
+    if not friend.get("securityId"):
+        raise RuntimeError("boss chatmsg: missing securityId")
+    data = fetch_json(
+        book,
+        "/wapi/zpchat/boss/historyMsg",
+        {
+            "gid": friend.get("uid"),
+            "securityId": friend.get("securityId"),
+            "page": page_num,
+            "c": 20,
+            "src": 0,
+        },
+        "boss chatmsg",
+    )
+    messages = (data.get("zpData") or {}).get("messages") or (data.get("zpData") or {}).get("historyMsgList")
+    if not isinstance(messages, list):
+        raise RuntimeError("boss chatmsg: missing message list")
+    return messages
+
+
+def fetch_geek_messages(book: ActionBook, friend: dict[str, Any], page_num: int) -> list[dict[str, Any]]:
+    if not friend.get("securityId"):
+        raise RuntimeError("geek chatmsg: missing securityId")
+    data = fetch_json(
+        book,
+        "/wapi/zpchat/geek/historyMsg",
+        {
+            "bossId": friend.get("uid"),
+            "securityId": friend.get("securityId"),
+            "page": page_num,
+            "c": 20,
+            "src": 0,
+        },
+        "geek chatmsg",
+    )
+    messages = (data.get("zpData") or {}).get("messages") or (data.get("zpData") or {}).get("historyMsgList")
+    if not isinstance(messages, list):
+        raise RuntimeError("geek chatmsg: missing message list")
+    return messages
+
+
+def command_chatmsg(args: argparse.Namespace) -> int:
+    output_dir = Path(args.output_dir) if args.output_dir else default_output_dir("views", f"chatmsg-{args.side}-{slugify(args.uid)}")
+    failures: list[dict[str, Any]] = []
+    records: list[dict[str, Any]] = []
+    try:
+        if args.side == "boss":
+            book = start_book(args, f"{ZHIPIN_HOME_URL}/web/chat/index")
+            friend = find_boss_friend_by_uid(book, args.uid, args.max_pages)
+            if not friend:
+                raise RuntimeError("boss chatmsg: uid not found")
+            records = map_boss_chat_messages(fetch_boss_messages(book, friend, args.page), friend)
+        elif args.side == "geek":
+            book = start_book(args, f"{ZHIPIN_HOME_URL}/web/geek/chat")
+            friend = find_geek_friend_by_uid(book, args.uid)
+            if not friend:
+                raise RuntimeError("geek chatmsg: uid not found")
+            records = map_geek_chat_messages(fetch_geek_messages(book, friend, args.page), friend)
+        else:
+            book = start_book(args, f"{ZHIPIN_HOME_URL}/web/chat/index")
+            friend = find_boss_friend_by_uid(book, args.uid, args.max_pages)
+            if friend:
+                records = map_boss_chat_messages(fetch_boss_messages(book, friend, args.page), friend)
+            else:
+                book.start(f"{ZHIPIN_HOME_URL}/web/geek/chat")
+                ensure_ready(book)
+                geek_friend = find_geek_friend_by_uid(book, args.uid)
+                if not geek_friend:
+                    raise RuntimeError("chatmsg: uid not found on boss or geek side")
+                records = map_geek_chat_messages(fetch_geek_messages(book, geek_friend, args.page), geek_friend)
+    except Exception as exc:  # noqa: BLE001
+        failures.append({"side": args.side, "uid": args.uid, "page": args.page, "error": str(exc)})
+    meta = {
+        "mode": "chatmsg",
+        "side": args.side,
+        "uid": args.uid,
+        "page": args.page,
+        "record_count": len(records),
+        "status": "done" if records else "failed",
+    }
+    write_records_outputs(output_dir, "BOSS Zhipin Chat Messages", records, meta, failures, record_key="records")
+    log(f"wrote {len(records)} messages to {output_dir}")
+    return 0 if records and not failures else 1
+
+
 def filter_config_from_args(args: argparse.Namespace) -> dict[str, Any]:
     return {
         "include_title_any": split_words(getattr(args, "include_title_any", "")),
@@ -518,6 +974,51 @@ def write_outputs(
     write_json(output_dir / "progress.json", {**meta, "output_dir": str(output_dir)})
 
 
+def write_records_summary_md(path: Path, title: str, records: list[dict[str, Any]], meta: dict[str, Any]) -> None:
+    lines = [f"# {title}", ""]
+    lines.append("## 元数据")
+    lines.append("")
+    for key, value in meta.items():
+        if isinstance(value, (dict, list)):
+            value = json.dumps(value, ensure_ascii=False)
+        lines.append(f"- {key}: {value}")
+    lines.append("")
+    lines.append("## 记录")
+    lines.append("")
+    for index, record in enumerate(records, start=1):
+        heading = record.get("title") or record.get("name") or record.get("from") or str(index)
+        lines.extend([f"### {index}. {heading}", ""])
+        for key, value in record.items():
+            if key == "raw" or value in ("", None, [], {}):
+                continue
+            if isinstance(value, (dict, list)):
+                value = json.dumps(value, ensure_ascii=False)
+            lines.append(f"- {key}: {value}")
+        lines.append("")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+
+
+def write_records_outputs(
+    output_dir: Path,
+    title: str,
+    records: list[dict[str, Any]],
+    meta: dict[str, Any],
+    failures: list[dict[str, Any]],
+    *,
+    record_key: str,
+) -> None:
+    payload = {
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "meta": meta,
+        record_key: records,
+    }
+    write_json(output_dir / "summary.json", payload)
+    write_records_summary_md(output_dir / "summary.md", title, records, meta)
+    write_json(output_dir / "failures.json", failures)
+    write_json(output_dir / "progress.json", {**meta, "output_dir": str(output_dir)})
+
+
 def add_common_browser_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--session", default=DEFAULT_SESSION, help="ActionBook session id")
     parser.add_argument("--tab", default=DEFAULT_TAB, help="ActionBook tab id")
@@ -541,6 +1042,11 @@ def add_condition_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--degree", default="", help="degree code, e.g. 203 for bachelor")
     parser.add_argument("--industry", default="", help="industry code")
     parser.add_argument("--scale", default="", help="company scale code")
+
+
+def add_chat_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--side", choices=["auto", "boss", "geek"], default="auto", help="Identity side")
+    parser.add_argument("--page", type=int, default=1, help="Page number")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -571,6 +1077,25 @@ def build_parser() -> argparse.ArgumentParser:
     search.add_argument("--max-scroll-rounds", type=int, default=30)
     search.add_argument("--max-stable-rounds", type=int, default=4)
     search.set_defaults(func=command_search)
+
+    detail = subparsers.add_parser("detail", help="Read one job detail via same-origin API")
+    add_common_browser_args(detail)
+    detail.add_argument("--security-id", required=True, dest="security_id", help="securityId from search or recommend output")
+    detail.set_defaults(func=command_detail)
+
+    chatlist = subparsers.add_parser("chatlist", help="Read chat list without writing messages")
+    add_common_browser_args(chatlist)
+    add_chat_args(chatlist)
+    chatlist.add_argument("--limit", type=int, default=20, help="Maximum records to output")
+    chatlist.add_argument("--job-id", default="0", dest="job_id", help="Recruiter-side job filter, 0 means all")
+    chatlist.set_defaults(func=command_chatlist)
+
+    chatmsg = subparsers.add_parser("chatmsg", help="Read chat message history without writing messages")
+    add_common_browser_args(chatmsg)
+    add_chat_args(chatmsg)
+    chatmsg.add_argument("--uid", required=True, help="Encrypted uid from chatlist output")
+    chatmsg.add_argument("--max-pages", type=int, default=3, help="Recruiter-side chatlist pages to scan in auto/boss mode")
+    chatmsg.set_defaults(func=command_chatmsg)
 
     return parser
 

@@ -305,5 +305,113 @@ class TaobaoWorkflowContractTests(unittest.TestCase):
         assert_script_avoids_sensitive_browser_reads("taobao")
 
 
+class ZhipinWorkflowContractTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.module = load_script("zhipin")
+
+    def test_help_exposes_only_read_only_commands(self) -> None:
+        help_text = run_help("zhipin")
+        for command in ("filters", "recommend", "search", "detail", "chatlist", "chatmsg"):
+            self.assertIn(command, help_text)
+        for command in FORBIDDEN_WRITE_COMMANDS + (
+            "greet",
+            "batchgreet",
+            "send",
+            "exchange",
+            "invite",
+            "mark",
+            "resume",
+        ):
+            self.assertNotIn(command, help_text)
+
+    def test_script_avoids_sensitive_browser_reads(self) -> None:
+        assert_script_avoids_sensitive_browser_reads("zhipin")
+
+    def test_normalize_detail_payload_maps_opencli_fields(self) -> None:
+        payload = {
+            "zpData": {
+                "jobInfo": {
+                    "jobName": "AI Agent 工程师",
+                    "salaryDesc": "30-50K",
+                    "experienceName": "3-5年",
+                    "degreeName": "本科",
+                    "locationName": "上海",
+                    "areaDistrict": "浦东新区",
+                    "businessDistrict": "张江",
+                    "postDescription": "负责智能体应用开发",
+                    "showSkills": ["Python", "LLM"],
+                    "address": "上海市浦东新区",
+                    "encryptId": "job-enc",
+                },
+                "bossInfo": {"name": "王女士", "title": "HRBP", "activeTimeDesc": "刚刚活跃"},
+                "brandComInfo": {
+                    "brandName": "测试科技",
+                    "industryName": "人工智能",
+                    "scaleName": "100-499人",
+                    "stageName": "B轮",
+                    "labels": ["五险一金"],
+                },
+            }
+        }
+
+        detail = self.module.normalize_detail_payload(payload, security_id="sec-1")
+
+        self.assertEqual(detail["title"], "AI Agent 工程师")
+        self.assertEqual(detail["salary"], "30-50K")
+        self.assertEqual(detail["district"], "浦东新区·张江")
+        self.assertEqual(detail["description"], "负责智能体应用开发")
+        self.assertEqual(detail["skills"], ["Python", "LLM"])
+        self.assertEqual(detail["welfare"], ["五险一金"])
+        self.assertEqual(detail["boss_name"], "王女士")
+        self.assertEqual(detail["company"], "测试科技")
+        self.assertEqual(detail["security_id"], "sec-1")
+        self.assertEqual(detail["url"], "https://www.zhipin.com/job_detail/job-enc.html")
+
+    def test_chatlist_mappers_cover_boss_and_geek_rows(self) -> None:
+        boss_row = self.module.map_boss_chat_row({
+            "name": "李候选人",
+            "jobName": "后端工程师",
+            "lastMessageInfo": {"text": "你好"},
+            "lastTime": "10:00",
+            "encryptUid": "uid-1",
+            "securityId": "sec-1",
+        })
+        geek_row = self.module.map_geek_chat_row({
+            "name": "张经理",
+            "brandName": "测试科技",
+            "jobName": "AI Agent 工程师",
+            "bossTitle": "技术负责人",
+            "lastMessageInfo": {"showText": "方便聊聊吗", "msgTime": 1716000000000},
+            "encryptUid": "uid-2",
+            "securityId": "sec-2",
+        })
+
+        self.assertEqual(boss_row["name"], "李候选人")
+        self.assertEqual(boss_row["job"], "后端工程师")
+        self.assertEqual(boss_row["last_msg"], "你好")
+        self.assertEqual(boss_row["uid"], "uid-1")
+        self.assertEqual(geek_row["company"], "测试科技")
+        self.assertEqual(geek_row["title"], "技术负责人")
+        self.assertEqual(geek_row["last_msg"], "方便聊聊吗")
+        self.assertEqual(geek_row["security_id"], "sec-2")
+
+    def test_chatmsg_mappers_preserve_direction_and_text(self) -> None:
+        boss_messages = self.module.map_boss_chat_messages(
+            [{"from": {"uid": 123, "name": "候选人"}, "type": 1, "text": "你好", "time": 1716000000000}],
+            {"uid": 123, "name": "候选人"},
+        )
+        geek_messages = self.module.map_geek_chat_messages(
+            [{"from": {"uid": 456}, "type": 3, "body": {"showText": "打招呼"}, "time": 1716000000000}],
+            {"uid": 456},
+        )
+
+        self.assertEqual(boss_messages[0]["from"], "候选人")
+        self.assertEqual(boss_messages[0]["type"], "文本")
+        self.assertEqual(boss_messages[0]["text"], "你好")
+        self.assertEqual(geek_messages[0]["from"], "对方")
+        self.assertEqual(geek_messages[0]["type"], "招呼")
+        self.assertEqual(geek_messages[0]["text"], "打招呼")
+
+
 if __name__ == "__main__":
     unittest.main()

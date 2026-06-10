@@ -88,6 +88,9 @@ Supported subcommands:
 - `filters`: read filter code lists and the logged-in user's recommendation expectation list.
 - `recommend`: read recommendation jobs through the same-origin list API with explicit city/filter parameters.
 - `search`: open a keyword search page and slowly scroll/extract visible list cards.
+- `detail`: read one job detail by `securityId` from a search/recommend result.
+- `chatlist`: read recruiter-side or job-seeker-side chat list metadata.
+- `chatmsg`: read message history for one chat by `uid` from `chatlist`.
 
 Examples:
 
@@ -118,6 +121,23 @@ python3 /Users/Vint/.codex/skills/action-browser/scripts/zhipin_workflow.py sear
   --query "AI Agent" \
   --count 50 \
   --max-scroll-rounds 20
+
+# Read a job detail from a search/recommend `security_id`.
+python3 /Users/Vint/.codex/skills/action-browser/scripts/zhipin_workflow.py detail \
+  --session zhipin-task \
+  --security-id "<security_id>"
+
+# Read chat list metadata without sending messages.
+python3 /Users/Vint/.codex/skills/action-browser/scripts/zhipin_workflow.py chatlist \
+  --session zhipin-task \
+  --side auto \
+  --limit 20
+
+# Read message history for one chat uid returned by chatlist.
+python3 /Users/Vint/.codex/skills/action-browser/scripts/zhipin_workflow.py chatmsg \
+  --session zhipin-task \
+  --side auto \
+  --uid "<uid>"
 ```
 
 The workflow writes:
@@ -136,6 +156,7 @@ Workflow limitations:
 
 - `recommend` is best for reproducible crawls because it uses explicit API parameters.
 - `search` is DOM-based and may miss fields that are not rendered in cards.
+- `chatlist` and `chatmsg` are read-only inspection commands. They do not type into editors, send messages, greet candidates, exchange contact details, invite, mark, upload resumes, or change chat state.
 - The workflow is read-only. It does not click `收藏`, `立即沟通`, upload resume, report, or send chat messages.
 - Project-specific scoring, resume matching, and salary analytics should be done in downstream scripts using `summary.json`, not inside the workflow script.
 
@@ -155,6 +176,11 @@ GET /wapi/zpgeek/search/job/condition.json
 GET /wapi/zpgeek/search/job/sidebar.json
 GET /wapi/zpgeek/search/job/seo/data.json
 GET /wapi/zpgeek/search/job/tdk.json
+GET /wapi/zprelation/friend/getBossFriendListV2.json
+GET /wapi/zprelation/friend/geekFilterByLabel
+POST /wapi/zprelation/friend/getGeekFriendList.json
+GET /wapi/zpchat/boss/historyMsg
+GET /wapi/zpchat/geek/historyMsg
 ```
 
 Observed recommendation list parameters:
