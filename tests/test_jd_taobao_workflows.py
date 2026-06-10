@@ -81,6 +81,31 @@ class JDWorkflowContractTests(unittest.TestCase):
         self.assertTrue(self.module.page_has_login_or_risk({"href": "", "title": "安全验证", "text": ""}))
         self.assertFalse(self.module.page_has_login_or_risk({"href": "https://item.jd.com/100291143898.html", "title": "商品详情", "text": "京东 商品"}))
 
+    def test_api_eval_unwraps_values_and_raises_labeled_errors(self) -> None:
+        class Book:
+            def __init__(self) -> None:
+                self.next_value = {"value": {"ok": True}}
+
+            def eval(self, script: str, timeout: float = 45.0):  # noqa: ARG002
+                return self.next_value
+
+        book = Book()
+        self.assertEqual(self.module.api_eval(book, "1 + 1", "sample"), {"ok": True})
+
+        book.next_value = {"error": "blocked"}
+        with self.assertRaisesRegex(RuntimeError, "sample: blocked"):
+            self.module.api_eval(book, "1 + 1", "sample")
+
+    def test_get_page_state_returns_normalized_state(self) -> None:
+        class Book:
+            def eval(self, script: str, timeout: float = 45.0):  # noqa: ARG002
+                return {"value": {"href": "https://item.jd.com/1.html", "title": " 商品 ", "text": " A\nB "}}
+
+        self.assertEqual(
+            self.module.get_page_state(Book()),
+            {"href": "https://item.jd.com/1.html", "title": "商品", "text": "A B"},
+        )
+
     def test_write_records_outputs_standard_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp)

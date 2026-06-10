@@ -16,6 +16,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from actionbook_interrupts import install_interrupt_handlers
 from actionbook_session import ActionBookSession as ActionBook
@@ -68,6 +69,33 @@ def unwrap_eval(value: Any) -> Any:
     return value
 
 
+def api_eval(book: ActionBook, script: str, label: str, timeout: float = 45.0) -> Any:
+    data = unwrap_eval(book.eval(script, timeout=timeout))
+    if isinstance(data, dict) and data.get("error"):
+        raise RuntimeError(f"{label}: {data.get('error')}")
+    return data
+
+
+def get_page_state(book: ActionBook) -> dict[str, str]:
+    data = api_eval(
+        book,
+        """
+        (() => ({
+          href: location.href,
+          title: document.title,
+          text: (document.body?.innerText || '').slice(0, 1200),
+        }))()
+        """,
+        "读取京东页面状态失败",
+    )
+    state = data if isinstance(data, dict) else {}
+    return {
+        "href": str(state.get("href") or ""),
+        "title": normalize_text(state.get("title")),
+        "text": normalize_text(state.get("text")),
+    }
+
+
 def page_has_login_or_risk(state: dict[str, str]) -> bool:
     href = str(state.get("href") or "").lower()
     title = normalize_text(state.get("title"))
@@ -84,6 +112,20 @@ def page_has_login_or_risk(state: dict[str, str]) -> bool:
         "登录京东",
     )
     return any(term in haystack for term in risk_terms)
+
+
+def ensure_ready(book: ActionBook) -> None:
+    state = get_page_state(book)
+    if page_has_login_or_risk(state):
+        raise LoginRequiredError(
+            "LOGIN_REQUIRED: 京东需要登录或安全验证；请在 ActionBook 连接的 Chrome 窗口完成后重试。"
+        )
+
+
+def start_book(args: argparse.Namespace, url: str) -> ActionBook:
+    book = ActionBook(args.session, args.tab)
+    book.start(url)
+    return book
 
 
 def write_json(path: Path, data: Any) -> None:
@@ -172,32 +214,344 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+SEARCH_SCRIPT = """
+(async () => {
+  const limit = LIMIT_PLACEHOLDER;
+  const normalize = value => (value || '').replace(/\\s+/g, ' ').trim();
+  const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+  for (let i = 0; i < 20; i++) {
+    if (document.querySelectorAll('div[data-sku]').length > 0) break;
+    await sleep(500);
+  }
+  for (let i = 0; i < 2; i++) {
+    window.scrollBy(0, Math.max(600, window.innerHeight * 0.9));
+    await sleep(900);
+  }
+  const results = [];
+  for (const el of document.querySelectorAll('div[data-sku]')) {
+    const sku = el.getAttribute('data-sku') || '';
+    if (!sku || results.some(item => item.sku === sku)) continue;
+    const priceEl = el.querySelector('.p-price i, .p-price strong, [class*="price"] i');
+    const titleEl = el.querySelector('.p-name em, .p-name a, [class*="name"] em, a[href*="item.jd.com"]');
+    const shopEl = el.querySelector('.p-shop a, .p-shop span, [class*="shop"] a');
+    const text = normalize(el.innerText || el.textContent);
+    const priceMatch = text.match(/¥\\s*([\\d,.]+)/);
+    const title = normalize(titleEl?.innerText || titleEl?.textContent || '').replace(/^京东价\\s*/, '');
+    let shop = normalize(shopEl?.innerText || shopEl?.textContent || '');
+    if (!shop) {
+      const shopMatch = text.match(/(\\S{2,24}(?:旗舰店|专卖店|自营店|官方旗舰店|京东自营))/);
+      shop = shopMatch ? shopMatch[1] : '';
+    }
+    const url = new URL(`/` + sku + `.html`, 'https://item.jd.com').href;
+    if (!title || title.length < 2) continue;
+    results.push({
+      rank: results.length + 1,
+      title: title.slice(0, 120),
+      price: normalize(priceEl?.innerText || priceEl?.textContent) || (priceMatch ? '¥' + priceMatch[1] : ''),
+      shop,
+      sku,
+      url,
+    });
+    if (results.length >= limit) break;
+  }
+  return results;
+})()
+"""
+
+
+DETAIL_SCRIPT = """
+(() => {
+  const sku = SKU_PLACEHOLDER;
+  const normalize = value => (value || '').replace(/\\s+/g, ' ').trim();
+  const text = document.body?.innerText || '';
+  const titleNode = document.querySelector('.sku-name, #name h1, h1, [class*="sku-name"]');
+  const titleFromDoc = document.title.replace(/^【[^】]*】/, '').split('【')[0];
+  const title = normalize(titleNode?.innerText || titleNode?.textContent || titleFromDoc);
+  const priceNode = document.querySelector('.price, .p-price, .summary-price [class*="price"], [class*="price"]');
+  const priceMatch = text.match(/¥\\s*([\\d,.]+)/);
+  const shopNode = document.querySelector('#popbox .name a, .J-hove-wrap a, .seller-infor a, [class*="shop"] a');
+  let shop = normalize(shopNode?.innerText || shopNode?.textContent || '');
+  if (!shop) {
+    const shopMatch = text.match(/(\\S{2,24}(?:京东自营旗舰店|官方旗舰店|旗舰店|专卖店|自营店|京东自营))/);
+    shop = shopMatch ? shopMatch[1] : '';
+  }
+  const records = [
+    { field: '商品名称', value: title },
+    { field: '价格', value: normalize(priceNode?.innerText || priceNode?.textContent) || (priceMatch ? '¥' + priceMatch[1] : '') },
+    { field: '店铺', value: shop },
+    { field: 'SKU', value: sku },
+    { field: '链接', value: location.href },
+  ];
+  return records.filter(item => item.value);
+})()
+"""
+
+
+ITEM_SCRIPT = """
+(async () => {
+  const sku = SKU_PLACEHOLDER;
+  const imageLimit = IMAGE_LIMIT_PLACEHOLDER;
+  const normalize = value => (value || '').replace(/\\s+/g, ' ').trim();
+  const normalizeUrl = value => {
+    let url = String(value || '').trim();
+    if (!url) return '';
+    if (url.startsWith('//')) url = 'https:' + url;
+    if (!/^https?:\\/\\//.test(url) || !url.includes('360buyimg.com')) return '';
+    return url.replace(/\\?.*$/, '');
+  };
+  const pushUrl = (list, value) => {
+    const url = normalizeUrl(value);
+    if (url && !list.includes(url)) list.push(url);
+  };
+  const collectFrom = root => {
+    const urls = [];
+    for (const img of root.querySelectorAll?.('img[src*="360buyimg.com"], img[data-src*="360buyimg.com"], img[data-lazy-img*="360buyimg.com"], img[data-original*="360buyimg.com"]') || []) {
+      pushUrl(urls, img.currentSrc || img.src);
+      pushUrl(urls, img.getAttribute('data-src'));
+      pushUrl(urls, img.getAttribute('data-lazy-img'));
+      pushUrl(urls, img.getAttribute('data-original'));
+    }
+    for (const source of root.querySelectorAll?.('source[srcset*="360buyimg.com"], source[data-srcset*="360buyimg.com"]') || []) {
+      pushUrl(urls, (source.getAttribute('srcset') || '').split(/\\s+/)[0]);
+      pushUrl(urls, (source.getAttribute('data-srcset') || '').split(/\\s+/)[0]);
+    }
+    for (const el of root.querySelectorAll?.('[style*="360buyimg.com"]') || []) {
+      for (const match of (el.getAttribute('style') || '').matchAll(/url\\(["']?([^"')]+360buyimg\\.com[^"')]+)["']?\\)/g)) {
+        pushUrl(urls, match[1]);
+      }
+    }
+    return urls;
+  };
+  const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+  for (let i = 0; i < 2; i++) {
+    window.scrollBy(0, Math.max(800, window.innerHeight));
+    await sleep(800);
+  }
+  const text = document.body?.innerText || '';
+  const titleNode = document.querySelector('.sku-name, #name h1, h1, [class*="sku-name"]');
+  const title = normalize(titleNode?.innerText || titleNode?.textContent || document.title.split('【')[0]);
+  const priceNode = document.querySelector('.price, .p-price, .summary-price [class*="price"], [class*="price"]');
+  const priceMatch = text.match(/¥\\s*([\\d,.]+)/);
+  const shopNode = document.querySelector('#popbox .name a, .J-hove-wrap a, .seller-infor a, [class*="shop"] a');
+  const specs = {};
+  for (const item of document.querySelectorAll('.p-parameter li, .parameter2 li, [class*="parameter"] li')) {
+    const value = normalize(item.innerText || item.textContent);
+    const parts = value.split(/[：:]/);
+    if (parts.length >= 2 && Object.keys(specs).length < 30) specs[normalize(parts[0])] = normalize(parts.slice(1).join(':'));
+  }
+  const allImages = collectFrom(document);
+  const mainImages = [];
+  const detailImages = [];
+  for (const url of allImages) {
+    if (/\\/(n\\d+|pcpubliccms)\\/jfs\\//.test(url) && !/(detail|desc|sku|shaidan|comment|review)/i.test(url)) {
+      pushUrl(mainImages, url);
+    } else {
+      pushUrl(detailImages, url);
+    }
+  }
+  for (const url of allImages) {
+    if (mainImages.length + detailImages.length >= imageLimit) break;
+    if (!mainImages.includes(url) && !detailImages.includes(url)) pushUrl(detailImages, url);
+  }
+  return {
+    title,
+    price: normalize(priceNode?.innerText || priceNode?.textContent) || (priceMatch ? '¥' + priceMatch[1] : ''),
+    shop: normalize(shopNode?.innerText || shopNode?.textContent || ''),
+    specs,
+    main_images: mainImages.slice(0, imageLimit),
+    detail_images: detailImages.slice(0, Math.max(0, imageLimit - mainImages.slice(0, imageLimit).length)),
+    source_url: location.href || `https://item.jd.com/${sku}.html`,
+  };
+})()
+"""
+
+
+REVIEWS_SCRIPT = """
+(async () => {
+  const limit = LIMIT_PLACEHOLDER;
+  const normalize = value => (value || '').replace(/\\s+/g, ' ').trim();
+  const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+  const reviewAnchor = document.querySelector('#comment, #comment-0, .comment, [clstag*="comment"]');
+  if (reviewAnchor) reviewAnchor.scrollIntoView({ block: 'center' });
+  else window.scrollBy(0, Math.max(1200, window.innerHeight * 2));
+  await sleep(1200);
+  const records = [];
+  for (const item of document.querySelectorAll('.comment-item, .comment-con, [class*="comment-item"]')) {
+    const user = normalize(item.querySelector('.user-info, .user-column, [class*="user"]')?.innerText || '');
+    const content = normalize(item.querySelector('.comment-con, .comment-content, [class*="content"]')?.innerText || item.innerText || '');
+    const dateMatch = content.match(/20\\d{2}[-./年]\\d{1,2}[-./月]\\d{1,2}/);
+    const date = dateMatch ? dateMatch[0] : '';
+    if (content.length < 5) continue;
+    records.push({ rank: records.length + 1, user, content: content.slice(0, 200), date });
+    if (records.length >= limit) return records;
+  }
+  const text = document.body?.innerText || '';
+  const start = text.indexOf('买家评价');
+  if (start < 0) return records;
+  const section = text.slice(start, start + 4000);
+  const lines = section.split('\\n').map(normalize).filter(Boolean);
+  const userPattern = /^[a-zA-Z0-9*_\\u4e00-\\u9fa5-]{2,24}$/;
+  for (let i = 0; i < lines.length && records.length < limit; i++) {
+    if (!userPattern.test(lines[i]) || i + 1 >= lines.length) continue;
+    const content = lines[i + 1];
+    if (content.length < 5 || /^(全部评价|问大家|查看更多|商品问答)/.test(content)) continue;
+    const dateMatch = content.match(/20\\d{2}[-./年]\\d{1,2}[-./月]\\d{1,2}/);
+    records.push({ rank: records.length + 1, user: lines[i], content: content.slice(0, 200), date: dateMatch ? dateMatch[0] : '' });
+  }
+  return records;
+})()
+"""
+
+
+CART_SCRIPT = """
+(async () => {
+  const limit = LIMIT_PLACEHOLDER;
+  const normalize = value => (value || '').replace(/\\s+/g, ' ').trim();
+  const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+  for (let i = 0; i < 12; i++) {
+    if ((document.body?.innerText || '').length > 400) break;
+    await sleep(500);
+  }
+  const text = document.body?.innerText || '';
+  if (/请登录|登录后|passport\\.jd\\.com|安全验证/.test(text) || location.href.includes('passport.jd.com')) {
+    return { auth_required: true };
+  }
+  try {
+    const resp = await fetch('https://api.m.jd.com/api?appid=JDC_mall_cart&functionId=pcCart_jc_getCurrentCart&body=%7B%22serInfo%22%3A%7B%7D%7D', {
+      credentials: 'include',
+      headers: { referer: 'https://cart.jd.com/' },
+    });
+    if (resp.ok) {
+      const json = await resp.json();
+      const vendors = json?.resultData?.cartInfo?.vendors || json?.cartInfo?.vendors || [];
+      const items = [];
+      for (const vendor of vendors) {
+        for (const node of (vendor.sorted || vendor.items || [])) {
+          const product = node.item || node;
+          const sku = String(product.Id || product.skuId || product.sku || '');
+          if (!sku) continue;
+          items.push({
+            index: items.length + 1,
+            title: normalize(product.name || product.Name || product.title).slice(0, 120),
+            price: product.price ? '¥' + product.price : '',
+            quantity: String(product.num || product.Num || product.quantity || 1),
+            sku,
+          });
+          if (items.length >= limit) return { items };
+        }
+      }
+      if (items.length) return { items };
+    }
+  } catch (error) {}
+  const lines = text.split('\\n').map(normalize).filter(Boolean);
+  const items = [];
+  for (let i = 0; i < lines.length && items.length < limit; i++) {
+    const priceMatch = lines[i].match(/¥\\s*([\\d,.]+)/);
+    if (!priceMatch || i === 0) continue;
+    const title = lines.slice(Math.max(0, i - 3), i).reverse().find(line => line.length > 5 && !/^¥/.test(line)) || '';
+    if (!title) continue;
+    const skuMatch = lines.slice(Math.max(0, i - 8), i + 4).join(' ').match(/\\b(\\d{6,})\\b/);
+    items.push({ index: items.length + 1, title: title.slice(0, 120), price: '¥' + priceMatch[1], quantity: '', sku: skuMatch ? skuMatch[1] : '' });
+  }
+  return { items };
+})()
+"""
+
+
+WHOAMI_SCRIPT = """
+(() => {
+  const normalize = value => (value || '').replace(/\\s+/g, ' ').trim();
+  const text = document.body?.innerText || '';
+  if (/请登录|登录京东|passport\\.jd\\.com|安全验证/.test(text) || location.href.includes('passport.jd.com')) {
+    return { auth_required: true };
+  }
+  const pinCookie = (document.cookie.split('; ').find(item => item.startsWith('pin=')) || '').split('=')[1] || '';
+  const decodedPin = pinCookie ? decodeURIComponent(pinCookie) : '';
+  const nickname = normalize(document.querySelector('.user-info, #aliveUserName, .name, .user-name, [class*="nickname"]')?.innerText || '');
+  if (!decodedPin && !nickname) return { auth_required: true };
+  return { logged_in: true, nickname, user_id: decodedPin, source_url: location.href };
+})()
+"""
+
+
 def run_search(args: argparse.Namespace) -> int:
-    return finish([], args, "search", f"京东搜索: {args.query}")
+    count = read_count(args.count, default=10, max_value=30)
+    url = f"{JD_SEARCH_URL}?keyword={quote(normalize_text(args.query))}&enc=utf-8"
+    book = start_book(args, url)
+    ensure_ready(book)
+    records = api_eval(book, SEARCH_SCRIPT.replace("LIMIT_PLACEHOLDER", str(count)), "读取京东搜索结果失败")
+    if not isinstance(records, list):
+        records = []
+    return finish(records[:count], args, "search", f"京东搜索: {args.query}")
 
 
 def run_item(args: argparse.Namespace) -> int:
     sku = normalize_numeric_id(args.sku, "--sku", "100291143898")
-    return finish([{"sku": sku, "source_url": f"https://item.jd.com/{sku}.html"}], args, "item", f"京东商品: {sku}")
+    image_limit = read_count(args.images, default=200, max_value=200)
+    url = f"https://item.jd.com/{sku}.html"
+    book = start_book(args, url)
+    ensure_ready(book)
+    record = api_eval(
+        book,
+        ITEM_SCRIPT.replace("SKU_PLACEHOLDER", json.dumps(sku)).replace("IMAGE_LIMIT_PLACEHOLDER", str(image_limit)),
+        "读取京东商品信息失败",
+        timeout=60.0,
+    )
+    if not isinstance(record, dict):
+        record = {"title": "", "price": "", "shop": "", "specs": {}, "main_images": [], "detail_images": [], "source_url": url}
+    record["source_url"] = record.get("source_url") or url
+    return finish([record], args, "item", f"京东商品: {sku}")
 
 
 def run_detail(args: argparse.Namespace) -> int:
     sku = normalize_numeric_id(args.sku, "--sku", "100291143898")
-    return finish([{"field": "SKU", "value": sku}], args, "detail", f"京东商品详情: {sku}")
+    url = f"https://item.jd.com/{sku}.html"
+    book = start_book(args, url)
+    ensure_ready(book)
+    records = api_eval(book, DETAIL_SCRIPT.replace("SKU_PLACEHOLDER", json.dumps(sku)), "读取京东商品详情失败")
+    if not isinstance(records, list):
+        records = [{"field": "SKU", "value": sku}, {"field": "链接", "value": url}]
+    return finish(records, args, "detail", f"京东商品详情: {sku}")
 
 
 def run_reviews(args: argparse.Namespace) -> int:
     sku = normalize_numeric_id(args.sku, "--sku", "100291143898")
-    return finish([], args, "reviews", f"京东商品评价: {sku}")
+    count = read_count(args.count, default=10, max_value=20)
+    url = f"https://item.jd.com/{sku}.html"
+    book = start_book(args, url)
+    ensure_ready(book)
+    records = api_eval(book, REVIEWS_SCRIPT.replace("LIMIT_PLACEHOLDER", str(count)), "读取京东商品评价失败")
+    if not isinstance(records, list):
+        records = []
+    return finish(records[:count], args, "reviews", f"京东商品评价: {sku}")
 
 
 def run_cart(args: argparse.Namespace) -> int:
-    return finish([], args, "cart", "京东购物车")
+    count = read_count(args.count, default=20, max_value=50)
+    book = start_book(args, "https://cart.jd.com/cart_index")
+    ensure_ready(book)
+    data = api_eval(book, CART_SCRIPT.replace("LIMIT_PLACEHOLDER", str(count)), "读取京东购物车失败", timeout=60.0)
+    if isinstance(data, dict) and data.get("auth_required"):
+        raise LoginRequiredError(
+            "LOGIN_REQUIRED: 京东购物车需要已登录会话；请在 ActionBook 连接的 Chrome 窗口登录后重试。"
+        )
+    records = data.get("items") if isinstance(data, dict) else []
+    if not isinstance(records, list):
+        records = []
+    return finish(records[:count], args, "cart", "京东购物车")
 
 
 def run_whoami(args: argparse.Namespace) -> int:
-    records = [{"logged_in": False, "nickname": "", "user_id": "", "source_url": JD_HOME_URL}]
-    return finish(records, args, "whoami", "京东当前账号")
+    book = start_book(args, "https://home.jd.com/")
+    ensure_ready(book)
+    record = api_eval(book, WHOAMI_SCRIPT, "读取京东当前账号失败")
+    if isinstance(record, dict) and record.get("auth_required"):
+        raise LoginRequiredError(
+            "LOGIN_REQUIRED: 未检测到京东登录态；请在 ActionBook 连接的 Chrome 窗口登录后重试。"
+        )
+    if not isinstance(record, dict):
+        record = {"logged_in": False, "nickname": "", "user_id": "", "source_url": JD_HOME_URL}
+    return finish([record], args, "whoami", "京东当前账号")
 
 
 def main(argv: list[str] | None = None) -> int:
