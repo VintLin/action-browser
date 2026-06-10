@@ -34,6 +34,8 @@ Load only what applies:
 | YouTube | `references/youtube.md`, `scripts/youtube_workflow.py` |
 | Douyin | `references/douyin.md`, `scripts/douyin_workflow.py` |
 | Bilibili | `references/bilibili.md`, `scripts/bilibili_workflow.py` |
+| JD | `references/jd.md`, `scripts/jd_workflow.py` |
+| Taobao | `references/taobao.md`, `scripts/taobao_workflow.py` |
 | BOSS Zhipin | `references/zhipin.md`, `scripts/zhipin_workflow.py` |
 | Feishu / Lark Drive | `references/feishu.md`, `scripts/feishu_workflow.py` |
 

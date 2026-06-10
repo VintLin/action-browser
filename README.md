@@ -143,6 +143,8 @@ python3 scripts/webpage_markdown.py capture \
 | `scripts/youtube_workflow.py` | View YouTube search, video metadata, transcripts, comments, channels, playlists, feeds, history, watch later, and subscriptions. |
 | `scripts/douyin_workflow.py` | View Douyin creator pages, videos, collections, activities, hashtags, locations, stats, and public user videos. |
 | `scripts/bilibili_workflow.py` | View Bilibili hot lists, rankings, search, videos, comments, dynamics, history, following, subtitles, and summaries. |
+| `scripts/jd_workflow.py` | View JD product search, item details, reviews, cart, and current account state. |
+| `scripts/taobao_workflow.py` | View Taobao product search, item details, reviews, cart, and current account state. |
 
 ## Output Structure
 
