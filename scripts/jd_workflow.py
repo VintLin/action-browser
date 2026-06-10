@@ -1,11 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Read-only JD workflow skeleton for the action-browser skill.
-
-This file defines the parser and helper contract used by tests. Real
-ActionBook browser extraction is intentionally left for a later task.
-"""
+"""JD.com read-only ActionBook workflow helper for the action-browser skill."""
 
 from __future__ import annotations
 
@@ -13,6 +8,7 @@ import argparse
 import json
 import re
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -26,6 +22,10 @@ JD_HOME_URL = "https://www.jd.com"
 JD_SEARCH_URL = "https://search.jd.com/Search"
 DEFAULT_SESSION = "jd-task"
 DEFAULT_TAB = ""
+SEARCH_SETTLE_SECONDS = 5.0
+ITEM_SETTLE_SECONDS = 5.0
+CART_SETTLE_SECONDS = 5.0
+WHOAMI_SETTLE_SECONDS = 3.0
 SKILL_DIR = Path(__file__).resolve().parent.parent
 ASSETS_DIR = SKILL_DIR / "assets" / "jd"
 
@@ -157,9 +157,11 @@ def ensure_ready(book: ActionBook) -> None:
         )
 
 
-def start_book(args: argparse.Namespace, url: str) -> ActionBook:
+def start_book(args: argparse.Namespace, url: str, settle_seconds: float = 0.0) -> ActionBook:
     book = ActionBook(args.session, args.tab)
     book.start(url)
+    if settle_seconds > 0:
+        time.sleep(settle_seconds)
     return book
 
 
@@ -260,7 +262,7 @@ SEARCH_SCRIPT = """
   }
   for (let i = 0; i < 2; i++) {
     window.scrollBy(0, Math.max(600, window.innerHeight * 0.9));
-    await sleep(900);
+    await sleep(1500);
   }
   const results = [];
   for (const el of document.querySelectorAll('div[data-sku]')) {
@@ -360,7 +362,7 @@ ITEM_SCRIPT = """
   const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
   for (let i = 0; i < 2; i++) {
     window.scrollBy(0, Math.max(800, window.innerHeight));
-    await sleep(800);
+    await sleep(1500);
   }
   const text = document.body?.innerText || '';
   const titleNode = document.querySelector('.sku-name, #name h1, h1, [class*="sku-name"]');
@@ -409,7 +411,7 @@ REVIEWS_SCRIPT = """
   const reviewAnchor = document.querySelector('#comment, #comment-0, .comment, [clstag*="comment"]');
   if (reviewAnchor) reviewAnchor.scrollIntoView({ block: 'center' });
   else window.scrollBy(0, Math.max(1200, window.innerHeight * 2));
-  await sleep(1200);
+  await sleep(1500);
   const records = [];
   for (const item of document.querySelectorAll('.comment-item, .comment-con, [class*="comment-item"]')) {
     const user = normalize(item.querySelector('.user-info, .user-column, [class*="user"]')?.innerText || '');
@@ -557,7 +559,7 @@ WHOAMI_SCRIPT = """
 def run_search(args: argparse.Namespace) -> int:
     count = read_count(args.count, default=10, max_value=30)
     url = f"{JD_SEARCH_URL}?keyword={quote(normalize_text(args.query))}&enc=utf-8"
-    book = start_book(args, url)
+    book = start_book(args, url, SEARCH_SETTLE_SECONDS)
     ensure_ready(book)
     records = require_list_payload(
         api_eval(book, SEARCH_SCRIPT.replace("LIMIT_PLACEHOLDER", str(count)), "读取京东搜索结果失败"),
@@ -570,7 +572,7 @@ def run_item(args: argparse.Namespace) -> int:
     sku = normalize_numeric_id(args.sku, "--sku", "100291143898")
     image_limit = read_count(args.images, default=200, max_value=200)
     url = f"https://item.jd.com/{sku}.html"
-    book = start_book(args, url)
+    book = start_book(args, url, ITEM_SETTLE_SECONDS)
     ensure_ready(book)
     record = require_dict_payload(
         api_eval(
@@ -588,7 +590,7 @@ def run_item(args: argparse.Namespace) -> int:
 def run_detail(args: argparse.Namespace) -> int:
     sku = normalize_numeric_id(args.sku, "--sku", "100291143898")
     url = f"https://item.jd.com/{sku}.html"
-    book = start_book(args, url)
+    book = start_book(args, url, ITEM_SETTLE_SECONDS)
     ensure_ready(book)
     records = require_list_payload(
         api_eval(book, DETAIL_SCRIPT.replace("SKU_PLACEHOLDER", json.dumps(sku)), "读取京东商品详情失败"),
@@ -601,7 +603,7 @@ def run_reviews(args: argparse.Namespace) -> int:
     sku = normalize_numeric_id(args.sku, "--sku", "100291143898")
     count = read_count(args.count, default=10, max_value=20)
     url = f"https://item.jd.com/{sku}.html"
-    book = start_book(args, url)
+    book = start_book(args, url, ITEM_SETTLE_SECONDS)
     ensure_ready(book)
     records = require_list_payload(
         api_eval(book, REVIEWS_SCRIPT.replace("LIMIT_PLACEHOLDER", str(count)), "读取京东商品评价失败"),
@@ -612,7 +614,7 @@ def run_reviews(args: argparse.Namespace) -> int:
 
 def run_cart(args: argparse.Namespace) -> int:
     count = read_count(args.count, default=20, max_value=50)
-    book = start_book(args, "https://cart.jd.com/cart_index")
+    book = start_book(args, "https://cart.jd.com/cart_index", CART_SETTLE_SECONDS)
     ensure_ready(book)
     data = api_eval(book, CART_SCRIPT.replace("LIMIT_PLACEHOLDER", str(count)), "读取京东购物车失败", timeout=60.0)
     if isinstance(data, dict) and data.get("auth_required"):
@@ -624,7 +626,7 @@ def run_cart(args: argparse.Namespace) -> int:
 
 
 def run_whoami(args: argparse.Namespace) -> int:
-    book = start_book(args, "https://home.jd.com/")
+    book = start_book(args, "https://home.jd.com/", WHOAMI_SETTLE_SECONDS)
     ensure_ready(book)
     record = api_eval(book, WHOAMI_SCRIPT, "读取京东当前账号失败")
     if isinstance(record, dict) and record.get("auth_required"):

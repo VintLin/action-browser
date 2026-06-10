@@ -96,6 +96,14 @@ class JDWorkflowContractTests(unittest.TestCase):
         self.assertTrue(self.module.page_has_login_or_risk({"href": "", "title": "安全验证", "text": ""}))
         self.assertFalse(self.module.page_has_login_or_risk({"href": "https://item.jd.com/100291143898.html", "title": "商品详情", "text": "京东 商品"}))
 
+    def test_navigation_pacing_matches_opencli_baseline(self) -> None:
+        self.assertGreaterEqual(self.module.SEARCH_SETTLE_SECONDS, 5.0)
+        self.assertGreaterEqual(self.module.ITEM_SETTLE_SECONDS, 5.0)
+        self.assertGreaterEqual(self.module.CART_SETTLE_SECONDS, 5.0)
+        self.assertGreaterEqual(self.module.WHOAMI_SETTLE_SECONDS, 3.0)
+        self.assertIn("await sleep(1500);", self.module.SEARCH_SCRIPT)
+        self.assertIn("await sleep(1500);", self.module.REVIEWS_SCRIPT)
+
     def test_api_eval_unwraps_values_and_raises_labeled_errors(self) -> None:
         class Book:
             def __init__(self) -> None:
@@ -202,6 +210,14 @@ class TaobaoWorkflowContractTests(unittest.TestCase):
         self.assertTrue(self.module.page_has_login_or_risk({"href": "https://login.taobao.com/member/login.jhtml", "title": "", "text": ""}))
         self.assertTrue(self.module.page_has_login_or_risk({"href": "", "title": "", "text": "请登录后查看购物车"}))
         self.assertFalse(self.module.page_has_login_or_risk({"href": "https://item.taobao.com/item.htm?id=827563850178", "title": "商品详情", "text": "淘宝 商品"}))
+
+    def test_navigation_pacing_matches_opencli_baseline(self) -> None:
+        self.assertGreaterEqual(self.module.HOME_WARMUP_SECONDS, 2.0)
+        self.assertGreaterEqual(self.module.SEARCH_SETTLE_SECONDS, 8.0)
+        self.assertGreaterEqual(self.module.PAGE_SETTLE_SECONDS, 6.0)
+        self.assertGreaterEqual(self.module.WHOAMI_SETTLE_SECONDS, 2.0)
+        self.assertIn("await sleep(2000);", self.module.SEARCH_SCRIPT)
+        self.assertIn("await sleep(1500);", self.module.CART_SCRIPT)
 
     def test_api_eval_unwraps_values_and_raises_labeled_errors(self) -> None:
         class Book:

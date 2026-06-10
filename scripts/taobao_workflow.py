@@ -1,11 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Read-only Taobao workflow skeleton for the action-browser skill.
-
-This file defines the parser and helper contract used by tests. Real
-ActionBook browser extraction is intentionally left for a later task.
-"""
+"""Taobao read-only ActionBook workflow helper for the action-browser skill."""
 
 from __future__ import annotations
 
@@ -27,6 +22,10 @@ TAOBAO_HOME_URL = "https://www.taobao.com"
 TAOBAO_SEARCH_URL = "https://s.taobao.com/search"
 DEFAULT_SESSION = "taobao-task"
 DEFAULT_TAB = ""
+HOME_WARMUP_SECONDS = 2.0
+SEARCH_SETTLE_SECONDS = 8.0
+PAGE_SETTLE_SECONDS = 6.0
+WHOAMI_SETTLE_SECONDS = 2.0
 SKILL_DIR = Path(__file__).resolve().parent.parent
 ASSETS_DIR = SKILL_DIR / "assets" / "taobao"
 
@@ -282,7 +281,7 @@ SEARCH_SCRIPT = """
   }
   for (let i = 0; i < 3; i++) {
     window.scrollBy(0, Math.max(700, window.innerHeight * 0.9));
-    await sleep(900);
+    await sleep(2000);
   }
   const text = document.body?.innerText || '';
   if (/login\\.taobao\\.com|安全验证|验证码|扫码登录|请登录后/.test(location.href + ' ' + text)) {
@@ -495,7 +494,7 @@ CART_SCRIPT = """
   }
   for (let i = 0; i < 3; i++) {
     window.scrollBy(0, Math.max(700, window.innerHeight * 0.85));
-    await sleep(700);
+    await sleep(1500);
   }
   const text = document.body?.innerText || '';
   if (/login\\.taobao\\.com|安全验证|验证码|扫码登录|请登录后/.test(location.href + ' ' + text)) {
@@ -575,10 +574,11 @@ WHOAMI_SCRIPT = """
 """
 
 
-def navigate_from_home(args: argparse.Namespace, target_url: str) -> ActionBook:
+def navigate_from_home(args: argparse.Namespace, target_url: str, settle_seconds: float) -> ActionBook:
     book = start_book(args, TAOBAO_HOME_URL)
-    api_eval(book, f"setTimeout(() => {{ location.href = {json.dumps(target_url)}; }}, 0); true", "打开淘宝页面失败")
-    time.sleep(2.0)
+    time.sleep(HOME_WARMUP_SECONDS)
+    api_eval(book, f"location.href = {json.dumps(target_url)}; true", "打开淘宝页面失败")
+    time.sleep(settle_seconds)
     return book
 
 
@@ -590,7 +590,7 @@ def run_search(args: argparse.Namespace) -> int:
     sort_map = {"default": "", "sale": "&sort=sale-desc", "price": "&sort=price-asc"}
     sort_param = sort_map.get(str(args.sort or "default"), "")
     url = f"{TAOBAO_SEARCH_URL}?q={quote(query)}{sort_param}"
-    book = navigate_from_home(args, url)
+    book = navigate_from_home(args, url, SEARCH_SETTLE_SECONDS)
     ensure_ready(book)
     records = require_list_payload(
         api_eval(book, SEARCH_SCRIPT.replace("LIMIT_PLACEHOLDER", str(count)), "读取淘宝搜索结果失败", timeout=60.0),
@@ -602,7 +602,7 @@ def run_search(args: argparse.Namespace) -> int:
 def run_detail(args: argparse.Namespace) -> int:
     item_id = normalize_numeric_id(args.id, "--id", "827563850178")
     url = f"https://item.taobao.com/item.htm?id={item_id}"
-    book = navigate_from_home(args, url)
+    book = navigate_from_home(args, url, PAGE_SETTLE_SECONDS)
     ensure_ready(book)
     records = require_list_payload(
         api_eval(book, DETAIL_SCRIPT.replace("ITEM_ID_PLACEHOLDER", json.dumps(item_id)), "读取淘宝商品详情失败"),
@@ -615,7 +615,7 @@ def run_reviews(args: argparse.Namespace) -> int:
     item_id = normalize_numeric_id(args.id, "--id", "827563850178")
     count = read_count(args.count, default=10, max_value=20)
     url = f"https://item.taobao.com/item.htm?id={item_id}"
-    book = navigate_from_home(args, url)
+    book = navigate_from_home(args, url, PAGE_SETTLE_SECONDS)
     ensure_ready(book)
     records = require_list_payload(
         api_eval(
@@ -631,7 +631,7 @@ def run_reviews(args: argparse.Namespace) -> int:
 
 def run_cart(args: argparse.Namespace) -> int:
     count = read_count(args.count, default=20, max_value=50)
-    book = navigate_from_home(args, "https://cart.taobao.com/cart.htm")
+    book = navigate_from_home(args, "https://cart.taobao.com/cart.htm", PAGE_SETTLE_SECONDS)
     ensure_ready(book)
     data = api_eval(book, CART_SCRIPT.replace("LIMIT_PLACEHOLDER", str(count)), "读取淘宝购物车失败", timeout=60.0)
     if isinstance(data, dict) and data.get("auth_required"):
@@ -643,7 +643,7 @@ def run_cart(args: argparse.Namespace) -> int:
 
 
 def run_whoami(args: argparse.Namespace) -> int:
-    book = navigate_from_home(args, "https://i.taobao.com/my_itaobao")
+    book = navigate_from_home(args, "https://i.taobao.com/my_itaobao", WHOAMI_SETTLE_SECONDS)
     ensure_ready(book)
     record = require_dict_payload(api_eval(book, WHOAMI_SCRIPT, "读取淘宝当前账号失败"), "taobao whoami")
     if record.get("auth_required"):
