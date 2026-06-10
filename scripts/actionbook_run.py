@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Run and stop long ActionBook skill workflows by run id.
 
-This wrapper exists because interrupting the agent turn does not always stop
-the local process that was launched by a skill. It starts the child command in
+This wrapper exists because interrupting an agent turn does not always stop
+the local process launched by a skill. It starts the child command in
 its own process group, writes a durable run state file, and provides a stop
 command that can terminate the whole process group later.
 """
@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Any
 
 
-RUNS_DIR = Path.home() / ".codex" / "action-browser" / "runs"
+RUNS_DIR = Path.home() / ".action-browser" / "runs"
 TERMINAL_STATUSES = {"exited", "failed", "stopped", "stale"}
 
 

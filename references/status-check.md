@@ -5,7 +5,7 @@
 如果任务使用 Chrome 插件模式，优先直接跑通用 bootstrap：
 
 ```bash
-python3 /Users/Vint/.codex/skills/action-browser/scripts/actionbook_session.py \
+python3 scripts/actionbook_session.py \
   --session task-check \
   --url "https://example.com" \
   --json

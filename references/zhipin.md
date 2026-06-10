@@ -63,17 +63,17 @@ Search caveat:
 Use the read-only workflow script for repeated BOSS Zhipin operations:
 
 ```bash
-python3 /Users/Vint/.codex/skills/action-browser/scripts/zhipin_workflow.py --help
+python3 scripts/zhipin_workflow.py --help
 ```
 
 For long runs, wrap it with `actionbook_run.py`:
 
 ```bash
-python3 /Users/Vint/.codex/skills/action-browser/scripts/actionbook_run.py run \
+python3 scripts/actionbook_run.py run \
   --id zhipin-search-shanghai-ai-agent \
   --cwd "$PWD" \
   -- \
-  python3 /Users/Vint/.codex/skills/action-browser/scripts/zhipin_workflow.py search \
+  python3 scripts/zhipin_workflow.py search \
     --session zhipin-task \
     --city-code 101020100 \
     --query "AI Agent" \
@@ -96,13 +96,13 @@ Examples:
 
 ```bash
 # Read filter codes and expectation ids.
-python3 /Users/Vint/.codex/skills/action-browser/scripts/zhipin_workflow.py filters \
+python3 scripts/zhipin_workflow.py filters \
   --session zhipin-task \
   --city-code 101020100 \
   --output-dir "$PWD/assets/zhipin/views/filters/$(date +%Y%m%d-%H%M%S)"
 
 # Shanghai recommendation list, full-time, 3-5 years, bachelor, 20-50K, refill filtered jobs to 100.
-python3 /Users/Vint/.codex/skills/action-browser/scripts/zhipin_workflow.py recommend \
+python3 scripts/zhipin_workflow.py recommend \
   --session zhipin-task \
   --city-code 101020100 \
   --job-type 1901 \
@@ -115,7 +115,7 @@ python3 /Users/Vint/.codex/skills/action-browser/scripts/zhipin_workflow.py reco
   --match-scope title-tags
 
 # Keyword search page crawl when API parameters are uncertain.
-python3 /Users/Vint/.codex/skills/action-browser/scripts/zhipin_workflow.py search \
+python3 scripts/zhipin_workflow.py search \
   --session zhipin-task \
   --city-code 101020100 \
   --query "AI Agent" \
@@ -123,18 +123,18 @@ python3 /Users/Vint/.codex/skills/action-browser/scripts/zhipin_workflow.py sear
   --max-scroll-rounds 20
 
 # Read a job detail from a search/recommend `security_id`.
-python3 /Users/Vint/.codex/skills/action-browser/scripts/zhipin_workflow.py detail \
+python3 scripts/zhipin_workflow.py detail \
   --session zhipin-task \
   --security-id "<security_id>"
 
 # Read chat list metadata without sending messages.
-python3 /Users/Vint/.codex/skills/action-browser/scripts/zhipin_workflow.py chatlist \
+python3 scripts/zhipin_workflow.py chatlist \
   --session zhipin-task \
   --side auto \
   --limit 20
 
 # Read message history for one chat uid returned by chatlist.
-python3 /Users/Vint/.codex/skills/action-browser/scripts/zhipin_workflow.py chatmsg \
+python3 scripts/zhipin_workflow.py chatmsg \
   --session zhipin-task \
   --side auto \
   --uid "<uid>"
@@ -348,7 +348,7 @@ Use stable, filesystem-safe path components:
 
 When the user gives an output location, treat it as the output root and preserve the same internal file layout under that root. Do not scatter result files in the workspace root unless the user explicitly asks for that.
 
-For exploratory one-off work in a projectless Codex workspace, an acceptable fallback is:
+For exploratory one-off work in a projectless agent workspace, an acceptable fallback is:
 
 ```text
 <cwd>/zhipin_<task>/

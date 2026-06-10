@@ -7,7 +7,7 @@
 建议先跑一次通用 bootstrap，拿到当前可用的 `session_id` / `tab_id`，再决定是否手工带上 `--tab`：
 
 ```bash
-python3 /Users/Vint/.codex/skills/action-browser/scripts/actionbook_session.py \
+python3 scripts/actionbook_session.py \
   --session xhs-task \
   --url "https://www.xiaohongshu.com" \
   --json
@@ -16,11 +16,11 @@ python3 /Users/Vint/.codex/skills/action-browser/scripts/actionbook_session.py \
 长时间下载、博主主页全量抓取、批量导出必须通过通用运行器启动，方便用户说“中断/停止”时按 run id 停掉实际脚本：
 
 ```bash
-python3 /Users/Vint/.codex/skills/action-browser/scripts/actionbook_run.py run \
+python3 scripts/actionbook_run.py run \
   --id xhs-profile-download \
   --cwd "$PWD" \
   -- \
-  python3 /Users/Vint/.codex/skills/action-browser/scripts/xiaohongshu_workflow.py profile download \
+  python3 scripts/xiaohongshu_workflow.py profile download \
     --session xhs-profile-download \
     --tab "<real-tab-id>" \
     --profile-url "https://www.xiaohongshu.com/user/profile/..." \
@@ -33,69 +33,69 @@ python3 /Users/Vint/.codex/skills/action-browser/scripts/actionbook_run.py run \
 停止当前下载：
 
 ```bash
-python3 /Users/Vint/.codex/skills/action-browser/scripts/actionbook_run.py stop --id xhs-profile-download
-python3 /Users/Vint/.codex/skills/action-browser/scripts/actionbook_run.py list --active
+python3 scripts/actionbook_run.py stop --id xhs-profile-download
+python3 scripts/actionbook_run.py list --active
 ```
 
 普通短任务或小样本验证可以直接调用 `xiaohongshu_workflow.py`：
 
 ```bash
-python3 /Users/Vint/.codex/skills/action-browser/scripts/xiaohongshu_workflow.py note view \
+python3 scripts/xiaohongshu_workflow.py note view \
   --url "https://www.xiaohongshu.com/explore/..."
 
-python3 /Users/Vint/.codex/skills/action-browser/scripts/xiaohongshu_workflow.py note download \
+python3 scripts/xiaohongshu_workflow.py note download \
   --url "https://www.xiaohongshu.com/explore/..."
 
-python3 /Users/Vint/.codex/skills/action-browser/scripts/xiaohongshu_workflow.py search view \
+python3 scripts/xiaohongshu_workflow.py search view \
   --keyword "关键词" \
   --count 20
 
-python3 /Users/Vint/.codex/skills/action-browser/scripts/xiaohongshu_workflow.py search view \
+python3 scripts/xiaohongshu_workflow.py search view \
   --keyword "关键词" \
   --entry ai \
   --include-ai-answer \
   --count 20
 
-python3 /Users/Vint/.codex/skills/action-browser/scripts/xiaohongshu_workflow.py search download \
+python3 scripts/xiaohongshu_workflow.py search download \
   --keyword "关键词" \
   --count 20
 
-python3 /Users/Vint/.codex/skills/action-browser/scripts/xiaohongshu_workflow.py feed view \
+python3 scripts/xiaohongshu_workflow.py feed view \
   --count 30
 
-python3 /Users/Vint/.codex/skills/action-browser/scripts/xiaohongshu_workflow.py feed download \
+python3 scripts/xiaohongshu_workflow.py feed download \
   --count 30
 
-python3 /Users/Vint/.codex/skills/action-browser/scripts/xiaohongshu_workflow.py profile view \
+python3 scripts/xiaohongshu_workflow.py profile view \
   --profile-url "https://www.xiaohongshu.com/user/profile/..." \
   --count all
 
-python3 /Users/Vint/.codex/skills/action-browser/scripts/xiaohongshu_workflow.py profile download \
+python3 scripts/xiaohongshu_workflow.py profile download \
   --profile-url "https://www.xiaohongshu.com/user/profile/..." \
   --count 30 \
   --output-dir "$PWD" \
   --folder-template "{author}/{index:03d}_{title}" \
   --media-layout media
 
-python3 /Users/Vint/.codex/skills/action-browser/scripts/xiaohongshu_workflow.py me view \
+python3 scripts/xiaohongshu_workflow.py me view \
   --count 30
 
-python3 /Users/Vint/.codex/skills/action-browser/scripts/xiaohongshu_workflow.py me download \
+python3 scripts/xiaohongshu_workflow.py me download \
   --count 30
 
-python3 /Users/Vint/.codex/skills/action-browser/scripts/xiaohongshu_workflow.py favorites view \
+python3 scripts/xiaohongshu_workflow.py favorites view \
   --profile-url "https://www.xiaohongshu.com/user/profile/..." \
   --count 30
 
-python3 /Users/Vint/.codex/skills/action-browser/scripts/xiaohongshu_workflow.py favorites download \
+python3 scripts/xiaohongshu_workflow.py favorites download \
   --profile-url "https://www.xiaohongshu.com/user/profile/..." \
   --count 30
 
-python3 /Users/Vint/.codex/skills/action-browser/scripts/xiaohongshu_workflow.py likes view \
+python3 scripts/xiaohongshu_workflow.py likes view \
   --profile-url "https://www.xiaohongshu.com/user/profile/..." \
   --count 30
 
-python3 /Users/Vint/.codex/skills/action-browser/scripts/xiaohongshu_workflow.py likes download \
+python3 scripts/xiaohongshu_workflow.py likes download \
   --profile-url "https://www.xiaohongshu.com/user/profile/..." \
   --count 30
 ```
@@ -438,12 +438,12 @@ https://www.xiaohongshu.com/explore
 修改小红书脚本或流程说明后，优先做小样本验证：
 
 ```bash
-python3 /Users/Vint/.codex/skills/action-browser/scripts/xiaohongshu_workflow.py search view \
+python3 scripts/xiaohongshu_workflow.py search view \
   --keyword "汉服" \
   --count 5 \
   --output-dir /tmp/xhs-search-check
 
-python3 /Users/Vint/.codex/skills/action-browser/scripts/xiaohongshu_workflow.py profile view \
+python3 scripts/xiaohongshu_workflow.py profile view \
   --profile-url "https://www.xiaohongshu.com/user/profile/..." \
   --count 5 \
   --output-dir /tmp/xhs-profile-check
@@ -452,7 +452,7 @@ python3 /Users/Vint/.codex/skills/action-browser/scripts/xiaohongshu_workflow.py
 需要验证下载链路时，用最小下载样本：
 
 ```bash
-python3 /Users/Vint/.codex/skills/action-browser/scripts/xiaohongshu_workflow.py search download \
+python3 scripts/xiaohongshu_workflow.py search download \
   --keyword "汉服" \
   --count 1 \
   --output-dir /tmp/xhs-download-check

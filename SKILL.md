@@ -1,6 +1,6 @@
 ---
 name: 浏览器操作
-description: "Use when Codex needs ActionBook or Chrome extension mode for real browser tasks: opening pages, clicking, filling forms, searching, scrolling, popup handling, page-state reading, structured extraction, downloads, authenticated Chrome sessions, site workflow recovery, or stopping tracked browser workflows."
+description: "Use when an agent needs ActionBook or Chrome extension mode for real browser tasks: opening pages, clicking, filling forms, searching, scrolling, popup handling, page-state reading, structured extraction, downloads, authenticated Chrome sessions, site workflow recovery, or stopping tracked browser workflows."
 ---
 
 # 浏览器操作
@@ -44,7 +44,7 @@ Keep this file site-neutral. Put site command catalogs, payload schemas, DOM det
 ## Startup
 
 ```bash
-python3 /Users/Vint/.codex/skills/action-browser/scripts/actionbook_session.py \
+python3 scripts/actionbook_session.py \
   --session s1 \
   --url "https://example.com" \
   --json
@@ -88,11 +88,11 @@ For lists and detail popups, confirm detail opened, close it, then confirm the l
 Start long workflows through the wrapper:
 
 ```bash
-python3 /Users/Vint/.codex/skills/action-browser/scripts/actionbook_run.py run \
+python3 scripts/actionbook_run.py run \
   --id <run-id> \
   --cwd "$PWD" \
   -- \
-  python3 /Users/Vint/.codex/skills/action-browser/scripts/<site>_workflow.py ...
+  python3 scripts/<site>_workflow.py ...
 ```
 
 When the user asks to stop:
@@ -101,13 +101,13 @@ When the user asks to stop:
 2. Stop the tracked run:
 
 ```bash
-python3 /Users/Vint/.codex/skills/action-browser/scripts/actionbook_run.py stop --id <run-id>
+python3 scripts/actionbook_run.py stop --id <run-id>
 ```
 
 3. If the id is unknown, list active runs and stop the relevant one:
 
 ```bash
-python3 /Users/Vint/.codex/skills/action-browser/scripts/actionbook_run.py list --active
+python3 scripts/actionbook_run.py list --active
 ```
 
 4. Verify no workflow script remains:

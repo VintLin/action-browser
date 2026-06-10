@@ -7,7 +7,7 @@ This reference is for Feishu/Lark Drive and Feishu Docs tasks that need the user
 Use the generic session bootstrap first:
 
 ```bash
-python3 /Users/Vint/.codex/skills/action-browser/scripts/actionbook_session.py \
+python3 scripts/actionbook_session.py \
   --session feishu-drive \
   --url "https://<tenant>.feishu.cn/drive/" \
   --json
@@ -26,7 +26,7 @@ Stop and ask the user to log in in the same Chrome window if the page shows logi
 Use the unified workflow script:
 
 ```bash
-python3 /Users/Vint/.codex/skills/action-browser/scripts/feishu_workflow.py \
+python3 scripts/feishu_workflow.py \
   --session feishu-drive \
   inventory \
   --root "资料=https://<tenant>.feishu.cn/drive/folder/<folder_token>" \
@@ -87,7 +87,7 @@ Deduplicate tabs when repeated double-clicks open the same document more than on
 Use the same script for direct downloads and supported cloud exports:
 
 ```bash
-python3 /Users/Vint/.codex/skills/action-browser/scripts/feishu_workflow.py \
+python3 scripts/feishu_workflow.py \
   --session feishu-drive \
   download \
   --manifest records/feishu_manifest.json \
@@ -209,7 +209,7 @@ Make downloads resumable:
 For long-running runs, wrap the script with `scripts/actionbook_run.py` so the task can be stopped later:
 
 ```bash
-python3 /Users/Vint/.codex/skills/action-browser/scripts/actionbook_run.py run \
+python3 scripts/actionbook_run.py run \
   --id feishu-drive-download \
   --cwd "$PWD" \
   -- \
@@ -221,7 +221,7 @@ python3 /Users/Vint/.codex/skills/action-browser/scripts/actionbook_run.py run \
 Verify local output with:
 
 ```bash
-python3 /Users/Vint/.codex/skills/action-browser/scripts/feishu_workflow.py \
+python3 scripts/feishu_workflow.py \
   verify \
   --manifest records/feishu_manifest.json \
   --output-dir downloads \

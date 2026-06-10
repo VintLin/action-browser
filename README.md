@@ -1,6 +1,6 @@
 # Action Browser
 
-Action Browser is a Codex skill for controlling a real browser through ActionBook. It gives an agent a repeatable workflow for opening pages, clicking, filling forms, reading page state, handling login-dependent sites, and exporting structured web data.
+Action Browser is a portable agent skill for controlling a real browser through ActionBook. It gives an agent a repeatable workflow for opening pages, clicking, filling forms, reading page state, handling login-dependent sites, and exporting structured web data.
 
 It is designed for tasks that need a real browser context instead of plain HTTP fetching, especially when the user's Chrome cookies, login state, extensions, or existing tabs matter.
 
@@ -29,28 +29,28 @@ The skill favors observable browser state over fixed sleeps. After each operatio
 
 ## Installation
 
-### For Codex Users
+### For Agent Skill Users
 
-Clone or copy this repository into your Codex skills directory:
+Clone or copy this repository into your agent's skills directory:
 
 ```bash
-git clone https://github.com/VintLin/action-browser.git ~/.codex/skills/action-browser
+git clone https://github.com/VintLin/action-browser.git <skills-dir>/action-browser
 ```
 
-Then invoke the skill by asking Codex to use `浏览器操作` or `action-browser` for browser tasks.
+Then invoke the skill by asking your agent to use `浏览器操作` or `action-browser` for browser tasks.
 
 ### Manual Copy
 
 If you already have a local copy:
 
 ```bash
-mkdir -p ~/.codex/skills/action-browser
-rsync -a ./ ~/.codex/skills/action-browser/
+mkdir -p <skills-dir>/action-browser
+rsync -a ./ <skills-dir>/action-browser/
 ```
 
 ## Requirements
 
-- Codex with local skill support
+- An agent runtime with local skill support
 - Python 3.10+
 - Node.js 18+
 - Google Chrome for extension-mode workflows
@@ -78,7 +78,7 @@ The initialization guide is in `references/initialization.md`.
 
 ### Open And Inspect A Page
 
-Ask Codex to use the skill:
+Ask your agent to use the skill:
 
 ```text
 使用浏览器操作打开 https://example.com，并读取页面主要内容。
@@ -160,7 +160,7 @@ Typical workflow outputs are written to the directory passed with `--output-dir`
 Long-running run state is stored outside the project at:
 
 ```text
-~/.codex/action-browser/runs/
+~/.action-browser/runs/
 ```
 
 ## Architecture
@@ -174,7 +174,7 @@ This skill uses progressive disclosure:
 | `references/status-check.md` | Minimal checks before starting browser work. | When daemon, extension, session, or tab state is uncertain. |
 | `references/*.md` | Site-specific workflows and payload expectations. | Only for the matching site task. |
 | `scripts/*.py` | Reusable workflow helpers and extraction scripts. | When the task needs automation beyond one-off browser operations. |
-| `agents/openai.yaml` | Skill metadata for agent interfaces. | When a tool reads skill display metadata. |
+| `agents/openai.yaml` | Skill metadata for compatible agent interfaces. | When a tool reads skill display metadata. |
 
 ## Operating Principles
 
@@ -194,4 +194,4 @@ Some target sites may change their DOM, API responses, login flow, or anti-autom
 
 ## Credits
 
-Built around ActionBook and packaged as a Codex skill.
+Built around ActionBook and packaged as a portable agent skill.

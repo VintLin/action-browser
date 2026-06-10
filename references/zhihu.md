@@ -33,7 +33,7 @@ python3 scripts/zhihu_workflow.py hot view --count 10
 python3 scripts/zhihu_workflow.py recommend view --count 10
 
 python3 scripts/zhihu_workflow.py search view \
-  --query "Codex" \
+  --query "agent" \
   --type all \
   --count 10
 
@@ -109,6 +109,6 @@ python3 scripts/zhihu_workflow.py download \
 python3 -m py_compile scripts/zhihu_workflow.py
 python3 scripts/zhihu_workflow.py --help
 python3 scripts/zhihu_workflow.py hot view --count 3
-python3 scripts/zhihu_workflow.py search view --query "Codex" --type all --count 3
+python3 scripts/zhihu_workflow.py search view --query "agent" --type all --count 3
 python3 scripts/zhihu_workflow.py collections view --count 1
 ```
