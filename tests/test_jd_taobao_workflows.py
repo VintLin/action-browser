@@ -121,6 +121,34 @@ class JDWorkflowContractTests(unittest.TestCase):
             {"href": "https://item.jd.com/1.html", "title": "商品", "text": "A B"},
         )
 
+    def test_require_list_payload_rejects_malformed_payloads(self) -> None:
+        records = [{"rank": 1}]
+        self.assertIs(self.module.require_list_payload(records, "jd search"), records)
+
+        with self.assertRaisesRegex(RuntimeError, "jd search: x"):
+            self.module.require_list_payload({"error": "x"}, "jd search")
+
+        for value in ({}, None, "bad"):
+            with self.assertRaisesRegex(RuntimeError, "jd search: malformed payload"):
+                self.module.require_list_payload(value, "jd search")
+
+    def test_require_cart_payload_handles_explicit_empty_and_api_failures(self) -> None:
+        self.assertEqual(self.module.require_cart_payload({"items": []}, "jd cart"), [])
+        self.assertEqual(
+            self.module.require_cart_payload(
+                {"items": [{"sku": "1"}], "api_error": "api failed", "dom_fallback_used": True},
+                "jd cart",
+            ),
+            [{"sku": "1"}],
+        )
+
+        for value in ({}, None, "bad", {"items": "bad"}):
+            with self.assertRaisesRegex(RuntimeError, "jd cart: malformed payload"):
+                self.module.require_cart_payload(value, "jd cart")
+
+        with self.assertRaisesRegex(RuntimeError, "jd cart: api failed"):
+            self.module.require_cart_payload({"items": [], "api_error": "api failed", "dom_fallback_used": True}, "jd cart")
+
     def test_write_records_outputs_standard_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp)
