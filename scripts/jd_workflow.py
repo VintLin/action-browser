@@ -37,7 +37,7 @@ def log(message: str) -> None:
     print(f"[{datetime.now().strftime('%H:%M:%S')}] {message}", flush=True)
 
 
-def read_count(value: Any, default: int = 20, max_value: int = 100) -> int:
+def read_count(value: Any, default: int = 10, max_value: int = 30) -> int:
     try:
         count = int(value)
     except (TypeError, ValueError):
@@ -49,7 +49,7 @@ def normalize_text(value: Any) -> str:
     return re.sub(r"\s+", " ", str(value or "")).strip()
 
 
-def normalize_numeric_id(value: Any) -> str:
+def normalize_numeric_id(value: Any, label: str, example: str) -> str:
     raw = normalize_text(value)
     match = re.search(r"item\.jd\.com/(\d+)\.html", raw)
     if match:
@@ -59,7 +59,7 @@ def normalize_numeric_id(value: Any) -> str:
         return match.group(1)
     if re.fullmatch(r"\d+", raw):
         return raw
-    raise ValueError(f"Invalid JD numeric ID: {value}")
+    raise argparse.ArgumentTypeError(f"{label} must include a numeric id, for example {example}")
 
 
 def unwrap_eval(value: Any) -> Any:
@@ -121,11 +121,11 @@ def finish(records: list[dict[str, Any]], args: argparse.Namespace, area: str, t
     return 0
 
 
-def add_common_view_args(parser: argparse.ArgumentParser) -> None:
+def add_common_view_args(parser: argparse.ArgumentParser, count_default: int) -> None:
     parser.add_argument("--session", default=DEFAULT_SESSION)
     parser.add_argument("--tab", default=DEFAULT_TAB)
     parser.add_argument("--output", default="")
-    parser.add_argument("--count", default="20")
+    parser.add_argument("--count", default=str(count_default))
 
 
 def add_view_parser(
@@ -133,10 +133,11 @@ def add_view_parser(
     *,
     help_text: str,
     handler: Any,
+    count_default: int,
 ) -> argparse.ArgumentParser:
     modes = area.add_subparsers(dest="mode", metavar="{view}", required=True)
     view = modes.add_parser("view", help=help_text)
-    add_common_view_args(view)
+    add_common_view_args(view, count_default)
     view.set_defaults(func=handler)
     return view
 
@@ -146,27 +147,27 @@ def build_parser() -> argparse.ArgumentParser:
     areas = parser.add_subparsers(dest="area", required=True)
 
     search = areas.add_parser("search", help="JD search workflows")
-    search_view = add_view_parser(search, help_text="View JD search results", handler=run_search)
+    search_view = add_view_parser(search, help_text="View JD search results", handler=run_search, count_default=10)
     search_view.add_argument("--query", required=True)
 
     item = areas.add_parser("item", help="JD item workflows")
-    item_view = add_view_parser(item, help_text="View JD item summary", handler=run_item)
+    item_view = add_view_parser(item, help_text="View JD item summary", handler=run_item, count_default=1)
     item_view.add_argument("--sku", required=True)
-    item_view.add_argument("--images", action="store_true")
+    item_view.add_argument("--images", type=int, default=200)
 
     detail = areas.add_parser("detail", help="JD detail workflows")
-    detail_view = add_view_parser(detail, help_text="View JD item details", handler=run_detail)
+    detail_view = add_view_parser(detail, help_text="View JD item details", handler=run_detail, count_default=1)
     detail_view.add_argument("--sku", required=True)
 
     reviews = areas.add_parser("reviews", help="JD reviews workflows")
-    reviews_view = add_view_parser(reviews, help_text="View JD item reviews", handler=run_reviews)
+    reviews_view = add_view_parser(reviews, help_text="View JD item reviews", handler=run_reviews, count_default=10)
     reviews_view.add_argument("--sku", required=True)
 
     cart = areas.add_parser("cart", help="JD cart workflows")
-    add_view_parser(cart, help_text="View JD cart", handler=run_cart)
+    add_view_parser(cart, help_text="View JD cart", handler=run_cart, count_default=20)
 
     whoami = areas.add_parser("whoami", help="Current JD account workflows")
-    add_view_parser(whoami, help_text="View current JD account", handler=run_whoami)
+    add_view_parser(whoami, help_text="View current JD account", handler=run_whoami, count_default=1)
 
     return parser
 
@@ -176,17 +177,17 @@ def run_search(args: argparse.Namespace) -> int:
 
 
 def run_item(args: argparse.Namespace) -> int:
-    sku = normalize_numeric_id(args.sku)
+    sku = normalize_numeric_id(args.sku, "--sku", "100291143898")
     return finish([{"sku": sku, "source_url": f"https://item.jd.com/{sku}.html"}], args, "item", f"京东商品: {sku}")
 
 
 def run_detail(args: argparse.Namespace) -> int:
-    sku = normalize_numeric_id(args.sku)
+    sku = normalize_numeric_id(args.sku, "--sku", "100291143898")
     return finish([{"field": "SKU", "value": sku}], args, "detail", f"京东商品详情: {sku}")
 
 
 def run_reviews(args: argparse.Namespace) -> int:
-    sku = normalize_numeric_id(args.sku)
+    sku = normalize_numeric_id(args.sku, "--sku", "100291143898")
     return finish([], args, "reviews", f"京东商品评价: {sku}")
 
 
