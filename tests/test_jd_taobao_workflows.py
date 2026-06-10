@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -55,8 +56,11 @@ def run_help(script_name: str, *args: str) -> str:
 
 def assert_area_has_only_view(script_name: str, area: str) -> None:
     help_text = run_help(script_name, area)
-    if "view" not in help_text:
+    if "{view}" not in help_text:
         raise AssertionError(f"{script_name} {area} help does not expose view mode")
+    multiple_choices = re.search(r"\{[^}]*,[^}]*\}", help_text)
+    if multiple_choices is not None:
+        raise AssertionError(f"{script_name} {area} help exposes multiple mode choices: {multiple_choices.group(0)}")
     for command in FORBIDDEN_WRITE_COMMANDS:
         if command in help_text:
             raise AssertionError(f"{script_name} {area} help exposes write command: {command}")
