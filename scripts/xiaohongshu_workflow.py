@@ -20,6 +20,7 @@ import shutil
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import asdict, dataclass
 from datetime import datetime
@@ -36,11 +37,15 @@ DEFAULT_SESSION = "xhs-task"
 DEFAULT_TAB = ""
 SKILL_DIR = Path(__file__).resolve().parent.parent
 ASSETS_DIR = SKILL_DIR / "assets" / "xiaohongshu"
+AI_SEARCH_SOURCE = "web_explore_feed"
 SECURITY_TERMS = (
     "website-login/error",
     "error_code=300012",
     "IP存在风险",
     "安全限制",
+    "Security Verification",
+    "Requests too frequent",
+    "Try again later",
 )
 UNAVAILABLE_TERMS = (
     "error_code=300031",
@@ -89,6 +94,16 @@ class WorkflowFailure:
     reason: str
     message: str
     context: dict[str, Any]
+
+
+@dataclass
+class AiAnswerPayload:
+    keyword: str
+    source_url: str
+    status: str
+    source_count: int | None
+    answer: str
+    answer_length: int
 
 
 @dataclass
@@ -154,6 +169,24 @@ def extract_note_id(value: str) -> str:
     return match.group(1) if match else ""
 
 
+def can_direct_open_note_url(value: str) -> bool:
+    parsed = urllib.parse.urlparse(value or "")
+    if not parsed.netloc.endswith("xiaohongshu.com") or not re.search(r"/explore/[0-9a-z]{16,}", parsed.path, re.I):
+        return True
+    params = urllib.parse.parse_qs(parsed.query)
+    return bool(params.get("xsec_token", [""])[0])
+
+
+def search_result_url(keyword: str) -> str:
+    encoded = urllib.parse.quote(keyword)
+    return f"https://www.xiaohongshu.com/search_result/?keyword={encoded}&source=web_search_result_notes"
+
+
+def ai_search_result_url(keyword: str) -> str:
+    encoded = urllib.parse.quote(keyword)
+    return f"https://www.xiaohongshu.com/search_result_ai?keyword={encoded}&source={AI_SEARCH_SOURCE}"
+
+
 def extract_profile_id(value: str) -> str:
     match = re.search(r"/user/profile/([^/?#]+)", value or "", re.I)
     return match.group(1) if match else ""
@@ -189,7 +222,7 @@ def get_page_state(book: ActionBook) -> dict[str, Any]:
             return {
                 href,
                 title,
-                bodyPreview: body.slice(0, 600),
+                bodyPreview: body.slice(0, 2000),
                 noteItems: document.querySelectorAll('.note-item').length,
                 searchText,
                 filterText,
@@ -205,18 +238,13 @@ def get_page_state(book: ActionBook) -> dict[str, Any]:
 def is_search_results_state(state: dict[str, Any]) -> bool:
     href = str(state.get("href") or "")
     title = str(state.get("title") or "")
+    search_text = str(state.get("searchText") or "").strip()
     note_items = int(state.get("noteItems") or 0)
     if note_items <= 0:
         return False
-    if "/search_result" in href or "source=tourist_search" in href:
+    if "/search_result" in href:
         return True
-    if "/explore/" in href and (
-        int(state.get("pcSearchLinks") or 0) > 0
-        or bool(state.get("filterText"))
-        or int(state.get("searchTabs") or 0) >= 4
-    ):
-        return True
-    return "搜索" in title and bool(str(state.get("searchText") or "").strip())
+    return title.endswith(" - 小红书搜索") and bool(search_text)
 
 
 def is_security_or_unavailable(state: dict[str, Any]) -> bool:
@@ -272,7 +300,7 @@ def submit_search(book: ActionBook, keyword: str) -> None:
     sleep_between(2.0, 3.5)
 
 
-def wait_for_search_results(book: ActionBook, keyword: str, timeout_secs: float = 25.0) -> None:
+def wait_for_search_results(book: ActionBook, keyword: str, timeout_secs: float = 25.0, retry_url: str = "") -> None:
     deadline = time.time() + timeout_secs
     attempts = 0
     last_submit_at = 0.0
@@ -284,8 +312,9 @@ def wait_for_search_results(book: ActionBook, keyword: str, timeout_secs: float 
         if is_search_results_state(last_state):
             wait_for_result_stability(book)
             return
-        if attempts < 2 and (attempts == 0 or time.time() - last_submit_at >= 8.0):
-            submit_search(book, keyword)
+        if attempts < 2 and time.time() - last_submit_at >= 8.0:
+            log(f"重新打开搜索结果页: {keyword}")
+            book.goto(retry_url or search_result_url(keyword))
             last_submit_at = time.time()
             attempts += 1
             continue
@@ -307,6 +336,72 @@ def wait_for_result_stability(book: ActionBook, checks: int = 2) -> None:
             last_count = count
             stable_hits = 0
         sleep_between(1.0, 1.6)
+
+
+def parse_ai_answer_state(keyword: str, state: dict[str, Any]) -> AiAnswerPayload:
+    raw_text = str(state.get("rawText") or "").strip()
+    raw_blocks = state.get("markdownBlocks")
+    markdown_blocks = (
+        [str(block).strip() for block in raw_blocks if str(block).strip()]
+        if isinstance(raw_blocks, list)
+        else []
+    )
+    source_match = re.search(r"ai总结(\d+)篇笔记生成", raw_text)
+    message_class = str(state.get("messageClass") or "")
+    if markdown_blocks:
+        answer = "\n\n".join(markdown_blocks).strip()
+    else:
+        answer = re.sub(r"^ai总结\d+篇笔记生成\s*", "", raw_text).strip()
+
+    if "finished" in message_class and answer:
+        status = "finished"
+    elif raw_text or markdown_blocks:
+        status = "generating"
+    else:
+        status = "missing"
+
+    return AiAnswerPayload(
+        keyword=keyword,
+        source_url=str(state.get("sourceUrl") or ""),
+        status=status,
+        source_count=int(source_match.group(1)) if source_match else None,
+        answer=answer,
+        answer_length=len(answer),
+    )
+
+
+def get_ai_answer_state(book: ActionBook) -> dict[str, Any]:
+    state = book.eval(
+        """(() => {
+            const textOf = el => ((el && (el.innerText || el.textContent)) || '').trim();
+            const classOf = el => (typeof el?.className === 'string' ? el.className : '');
+            const section = document.querySelector('.ai-chat-section');
+            const message = section?.querySelector('.ai-message.ai-message-finished')
+                || section?.querySelector('.ai-message');
+            const markdownBlocks = [...(section?.querySelectorAll('.markdown-block') || [])]
+                .map(textOf)
+                .filter(Boolean);
+            return {
+                sourceUrl: location.href,
+                hasAiSection: !!section,
+                messageClass: classOf(message),
+                rawText: textOf(message),
+                markdownBlocks,
+            };
+        })()"""
+    )
+    return state if isinstance(state, dict) else {}
+
+
+def wait_for_ai_answer(book: ActionBook, keyword: str, timeout_secs: float = 35.0) -> AiAnswerPayload:
+    deadline = time.time() + timeout_secs
+    last_payload = parse_ai_answer_state(keyword, {})
+    while time.time() < deadline:
+        last_payload = parse_ai_answer_state(keyword, get_ai_answer_state(book))
+        if last_payload.status == "finished":
+            return last_payload
+        sleep_between(1.0, 1.6)
+    return last_payload
 
 
 def collect_visible_notes(book: ActionBook, source: str) -> list[NoteRef]:
@@ -796,6 +891,21 @@ def click_note(book: ActionBook, note: NoteRef) -> bool:
     )
     sleep_between(1.0, 1.8)
     return bool(result)
+
+
+def click_note_id_on_current_page(book: ActionBook, note_id: str, source: str = "current") -> bool:
+    if not note_id:
+        return False
+    note = NoteRef(
+        note_id=note_id,
+        href=f"https://www.xiaohongshu.com/explore/{note_id}",
+        profile_href="",
+        title="",
+        top=0,
+        left=0,
+        source=source,
+    )
+    return click_note(book, note)
 
 
 def is_target_profile_page(book: ActionBook, profile_url: str) -> bool:
@@ -1748,6 +1858,28 @@ def write_summary(
     )
 
 
+def write_ai_answer(payload: AiAnswerPayload, output_dir: Path) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    record = asdict(payload)
+    (output_dir / "ai_answer.json").write_text(
+        json.dumps(record, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    source_count = "" if payload.source_count is None else str(payload.source_count)
+    lines = [
+        f"# 点点 AI 回答: {payload.keyword}",
+        "",
+        f"- 状态: {payload.status}",
+        f"- 来源: {payload.source_url}",
+        f"- 总结笔记数: {source_count}",
+        f"- 回答字数: {payload.answer_length}",
+        "",
+        payload.answer or "(无回答)",
+        "",
+    ]
+    (output_dir / "ai_answer.md").write_text("\n".join(lines), encoding="utf-8")
+
+
 def load_existing_profile_note_ids(output_dir: Path) -> set[str]:
     note_ids: set[str] = set()
     if not output_dir.exists():
@@ -1900,6 +2032,29 @@ def process_notes(
         if not opened:
             opened = click_note(book, note)
         if not opened:
+            note_url = note.href or note.profile_href
+            if note_url and can_direct_open_note_url(note_url):
+                log(f"卡片点击失败，改用 URL 打开: note_id={note.note_id}")
+                try:
+                    book.goto(note_url)
+                    sleep_between(0.8, 1.4)
+                    opened = True
+                except Exception as exc:  # noqa: BLE001
+                    failures.append(
+                        WorkflowFailure(
+                            index=index,
+                            source_page=note.source,
+                            candidate_url=note_url,
+                            reason="not_clickable",
+                            message=f"candidate note could not be opened by click or URL fallback: {exc}",
+                            context=asdict(note),
+                        )
+                    )
+                    log(f"跳过帖子: reason=not_clickable note_id={note.note_id}")
+                    continue
+            elif note_url:
+                log(f"跳过 URL 兜底: reason=missing_xsec_token note_id={note.note_id}")
+        if not opened:
             log(f"跳过帖子: reason=not_clickable note_id={note.note_id}")
             failures.append(
                 WorkflowFailure(
@@ -1984,6 +2139,19 @@ def process_note_urls(
                 )
             )
             continue
+        if not can_direct_open_note_url(note_url):
+            failures.append(
+                WorkflowFailure(
+                    index=index,
+                    source_page=note.source,
+                    candidate_url=note_url,
+                    reason="missing_xsec_token",
+                    message="bare Xiaohongshu note URL cannot be opened directly; click the visible card or provide a full URL with xsec_token",
+                    context=asdict(note),
+                )
+            )
+            log(f"跳过 URL 打开: reason=missing_xsec_token note_id={note.note_id}")
+            continue
         try:
             book.goto(note_url)
             wait_for_detail(book)
@@ -2061,8 +2229,20 @@ def run_note(args: argparse.Namespace) -> int:
     note_id = extract_note_id(note_url) or "note"
     output_dir = Path(args.output_dir).expanduser() if args.output_dir else default_action_output_dir("note", args.action, note_id)
     book = ActionBook(args.session, args.tab)
-    book.start(note_url)
-    book.goto(note_url)
+    if can_direct_open_note_url(note_url):
+        book.start(note_url)
+        book.goto(note_url)
+    else:
+        if args.tab:
+            log(f"裸笔记 URL 不直接访问，尝试点击当前页可见卡片: note_id={note_id}")
+        else:
+            log(f"裸笔记 URL 不直接访问，先打开推荐页尝试查找可见卡片: note_id={note_id}")
+            book.start(XHS_EXPLORE)
+        if not click_note_id_on_current_page(book, note_id, "note"):
+            raise RuntimeError(
+                "bare Xiaohongshu note URL cannot be opened directly and no matching visible card was found; "
+                "open a search/feed/profile page containing the note, pass --tab for that page, or provide a full URL with xsec_token"
+            )
     wait_for_detail(book)
     state = get_page_state(book)
     if is_security_or_unavailable(state):
@@ -2095,8 +2275,16 @@ def run_search(args: argparse.Namespace) -> int:
     assert count is not None
     output_dir = Path(args.output_dir).expanduser() if args.output_dir else default_action_output_dir("search", args.action, args.keyword)
     book = ActionBook(args.session, args.tab)
-    book.start(XHS_HOME)
-    wait_for_search_results(book, args.keyword)
+    if args.include_ai_answer and args.entry != "ai":
+        raise RuntimeError("--include-ai-answer requires --entry ai")
+    search_url = ai_search_result_url(args.keyword) if args.entry == "ai" else search_result_url(args.keyword)
+    book.start(search_url)
+    book.goto(search_url)
+    wait_for_search_results(book, args.keyword, retry_url=search_url)
+    ai_answer = wait_for_ai_answer(book, args.keyword) if args.include_ai_answer else None
+    if ai_answer:
+        write_ai_answer(ai_answer, output_dir)
+        log(f"点点 AI 回答抽取完成: status={ai_answer.status} chars={ai_answer.answer_length}")
     notes = collect_search_notes(book, count, args.max_scrolls)
     log(f"搜索候选收集完成: requested={count} collected={len(notes)}")
     process_notes(
@@ -2292,6 +2480,17 @@ def build_parser() -> argparse.ArgumentParser:
         target.add_argument("--keyword", required=True, help="Search keyword")
         target.add_argument("--count", default="10", help="Number of posts to process")
         target.add_argument("--max-scrolls", type=int, default=12, help="Maximum result-page scroll rounds")
+        target.add_argument(
+            "--entry",
+            choices=("normal", "ai"),
+            default="normal",
+            help="Search entry: normal opens search_result; ai opens the Diandian AI search result page.",
+        )
+        target.add_argument(
+            "--include-ai-answer",
+            action="store_true",
+            help="When used with --entry ai, save Diandian AI answer to ai_answer.json and ai_answer.md.",
+        )
 
     feed = subparsers.add_parser("feed", help="Xiaohongshu explore feed workflows")
     feed_sub = feed.add_subparsers(dest="mode", required=True)

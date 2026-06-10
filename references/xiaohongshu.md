@@ -50,6 +50,12 @@ python3 /Users/Vint/.codex/skills/action-browser/scripts/xiaohongshu_workflow.py
   --keyword "关键词" \
   --count 20
 
+python3 /Users/Vint/.codex/skills/action-browser/scripts/xiaohongshu_workflow.py search view \
+  --keyword "关键词" \
+  --entry ai \
+  --include-ai-answer \
+  --count 20
+
 python3 /Users/Vint/.codex/skills/action-browser/scripts/xiaohongshu_workflow.py search download \
   --keyword "关键词" \
   --count 20
@@ -98,6 +104,7 @@ python3 /Users/Vint/.codex/skills/action-browser/scripts/xiaohongshu_workflow.py
 
 - `summary.md`：每条帖子的标题、作者、日期、来源、标签、图片数、评论数、正文摘录。
 - `summary.json`：结构化帖子数据。
+- `ai_answer.json` / `ai_answer.md`：仅在 `search --entry ai --include-ai-answer` 时写入，记录点点 AI 回答、总结笔记数、状态和来源 URL。
 - `failures.json`：失败记录。当前无失败时写入空数组。
 - `profile.json`：主页元数据，`profile` 与 `me` 模式产生。
 - `view` 默认写入 `assets/xiaohongshu/views/<channel>/...`。
@@ -111,6 +118,8 @@ python3 /Users/Vint/.codex/skills/action-browser/scripts/xiaohongshu_workflow.py
 `view` 指结构化汇总和正文摘录，不下载图片，不调用模型做语义归纳。如果用户需要模型归纳，先用脚本生成 `summary.json`，再基于该文件单独总结。
 
 `note` 入口用于已知单篇笔记 URL，适合用户给出 `https://www.xiaohongshu.com/explore/...` 时直接读取或下载，不需要先走搜索或博主主页。
+
+小红书现在会对裸 `https://www.xiaohongshu.com/explore/<note_id>` 直接访问返回 `error_code=300031`。`note` 入口遇到裸 URL 时不会直接 `goto`，会优先在当前 tab 中按 `note_id` 点击可见卡片来触发站内跳转；因此仅有裸 `note_id` 时，应先打开搜索、推荐流或博主主页并确保目标卡片可见，再带同一个 `--session/--tab` 调用 `note view/download`。若当前页没有可见卡片，则需要提供从搜索页、推荐页或详情页复制出的完整 URL，保留 `xsec_token`、`xsec_source`、`source` 等查询参数。
 
 `me` 入口会从当前登录态识别个人主页，然后复用博主主页处理逻辑读取自己的帖子。若自动识别失败，应先打开小红书首页并确认左侧“我”入口可用。
 
@@ -223,22 +232,42 @@ actionbook browser snapshot --session xhs-task --tab t1
 
 完整搜索流程：
 
-1. 打开 `https://www.xiaohongshu.com`。
-2. 通过页面搜索框输入关键词，不手工拼接搜索 URL。
-3. 如果普通 `fill + Enter` 不稳定，用页面侧 eval 派发 `input/change/keydown/keypress/keyup`。
-4. 等待搜索结果页稳定。
-5. 按 `.note-item` 收集候选，数量不够时滚动加载。
-6. 逐条打开详情，抽取正文和图片链接。
-7. 按用户要求执行 `view` 或 `download`。
+1. 打开搜索结果 URL：`https://www.xiaohongshu.com/search_result/?keyword=<urlencoded_keyword>&source=web_search_result_notes`。
+2. 等待搜索结果页稳定。
+3. 验证页面仍处于搜索上下文。
+4. 按 `.note-item` 收集候选，数量不够时滚动加载。
+5. 逐条打开详情，抽取正文和图片链接。
+6. 按用户要求执行 `view` 或 `download`。
 
-搜索提交后至少等待约 8 秒再重试。小红书搜索页跳转和结果加载可能慢于普通输入事件；过早重复提交会造成无意义的二次搜索。脚本已内置一次延迟重试。
+小红书新版首页的可见输入框可能是“点点 ai”入口，placeholder 为“搜索或输入任何问题”，处于推荐流布局。不要把首页 `/explore` 内已有 `.note-item` 视为搜索结果；否则会混入推荐流数据。
 
-搜索结果页不能只靠 URL 判定。以下状态都可以视为搜索结果已就绪：
+搜索结果页必须满足以下可验证状态：
 
 - URL 包含 `/search_result`。
-- URL 包含 `source=tourist_search`。
-- URL 处于 `/explore/`，但页面中有 `pc_search` 链接、`筛选`、或 `全部/图文/视频/用户` tab。
-- 标题或搜索框显示搜索状态，并且 `.note-item` 数量大于 0。
+- 页面标题为 `<关键词> - 小红书搜索`。
+- `#search-input` 或 `input.search-input` 的值等于关键词。
+- 页面出现搜索 tab：`全部 / 图文 / 视频 / 用户 / 筛选 / 综合`。
+- 详情页来源 URL 包含 `xsec_source=pc_search` 和 `source=web_search_result_notes`。
+
+如果搜索结果页加载不稳定，重新打开上述搜索结果 URL；不要回到新版首页 textarea 里派发 Enter 事件。
+
+点点 AI 搜索入口：
+
+```bash
+python3 scripts/xiaohongshu_workflow.py search view \
+  --keyword "北京周末去哪玩" \
+  --entry ai \
+  --include-ai-answer \
+  --count 5
+```
+
+AI 入口打开 `https://www.xiaohongshu.com/search_result_ai?keyword=<urlencoded_keyword>&source=web_explore_feed`。页面会展示普通 `.note-item` 搜索结果，同时在右侧展示点点 AI 回答。AI 回答抽取边界：
+
+- AI 面板：`.ai-chat-section`。
+- 完成态消息：`.ai-message.ai-message-finished`。
+- 回答正文：多个 `.markdown-block` 拼接。
+- 总结笔记数：从 `ai总结<数量>篇笔记生成` 解析。
+- 输出文件：`ai_answer.json` 与 `ai_answer.md`。
 
 搜索输入推荐用真实事件：
 
