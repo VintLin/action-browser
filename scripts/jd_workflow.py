@@ -461,15 +461,51 @@ CART_SCRIPT = """
 WHOAMI_SCRIPT = """
 (() => {
   const normalize = value => (value || '').replace(/\\s+/g, ' ').trim();
+  const firstText = selectors => {
+    for (const selector of selectors) {
+      const text = normalize(document.querySelector(selector)?.innerText || document.querySelector(selector)?.textContent || '');
+      if (text) return text;
+    }
+    return '';
+  };
+  const readState = () => {
+    const result = { nickname: '', user_id: '' };
+    const roots = [
+      globalThis.__INITIAL_STATE__,
+      globalThis.__INITIAL_DATA__,
+      globalThis.__PAGE_DATA__,
+      globalThis.pageData,
+    ].filter(Boolean);
+    const keyMap = {
+      nickname: 'nickname',
+      nickName: 'nickname',
+      userName: 'nickname',
+      displayName: 'nickname',
+      userId: 'user_id',
+      uid: 'user_id',
+      accountId: 'user_id',
+    };
+    const walk = (value, depth, seen) => {
+      if (!value || typeof value !== 'object' || depth > 3 || seen.has(value)) return;
+      seen.add(value);
+      for (const [key, item] of Object.entries(value)) {
+        const target = keyMap[key];
+        if (target && typeof item === 'string' && !result[target]) result[target] = normalize(item).slice(0, 80);
+        if ((!result.nickname || !result.user_id) && item && typeof item === 'object') walk(item, depth + 1, seen);
+      }
+    };
+    for (const root of roots) walk(root, 0, new Set());
+    return result;
+  };
   const text = document.body?.innerText || '';
   if (/请登录|登录京东|passport\\.jd\\.com|安全验证/.test(text) || location.href.includes('passport.jd.com')) {
     return { auth_required: true };
   }
-  const pinCookie = (document.cookie.split('; ').find(item => item.startsWith('pin=')) || '').split('=')[1] || '';
-  const decodedPin = pinCookie ? decodeURIComponent(pinCookie) : '';
-  const nickname = normalize(document.querySelector('.user-info, #aliveUserName, .name, .user-name, [class*="nickname"]')?.innerText || '');
-  if (!decodedPin && !nickname) return { auth_required: true };
-  return { logged_in: true, nickname, user_id: decodedPin, source_url: location.href };
+  const state = readState();
+  const nickname = firstText(['.user-info', '#aliveUserName', '.name', '.user-name', '[class*="nickname"]']) || state.nickname;
+  const visibleId = firstText(['[data-user-id]', '[data-uid]', '[class*="user-id"]']);
+  if (!nickname && !visibleId && !state.user_id) return { auth_required: true };
+  return { logged_in: true, nickname, user_id: visibleId || state.user_id || '', source_url: location.href };
 })()
 """
 

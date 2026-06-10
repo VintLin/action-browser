@@ -24,6 +24,13 @@ FORBIDDEN_WRITE_COMMANDS = (
     "加入购物车",
     "删除",
 )
+FORBIDDEN_SENSITIVE_BROWSER_READS = (
+    "document.cookie",
+    "localStorage",
+    "sessionStorage",
+    "token",
+    "password",
+)
 
 
 def load_script(name: str):
@@ -64,6 +71,14 @@ def assert_area_has_only_view(script_name: str, area: str) -> None:
     for command in FORBIDDEN_WRITE_COMMANDS:
         if command in help_text:
             raise AssertionError(f"{script_name} {area} help exposes write command: {command}")
+
+
+def assert_script_avoids_sensitive_browser_reads(script_name: str) -> None:
+    source = (SCRIPTS / f"{script_name}_workflow.py").read_text(encoding="utf-8")
+    lowered_source = source.lower()
+    for term in FORBIDDEN_SENSITIVE_BROWSER_READS:
+        if term.lower() in lowered_source:
+            raise AssertionError(f"{script_name}_workflow.py reads sensitive browser storage: {term}")
 
 
 class JDWorkflowContractTests(unittest.TestCase):
@@ -124,6 +139,9 @@ class JDWorkflowContractTests(unittest.TestCase):
         for area in ("search", "item", "detail", "reviews", "cart", "whoami"):
             assert_area_has_only_view("jd", area)
 
+    def test_script_avoids_sensitive_browser_reads(self) -> None:
+        assert_script_avoids_sensitive_browser_reads("jd")
+
 
 class TaobaoWorkflowContractTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -157,6 +175,9 @@ class TaobaoWorkflowContractTests(unittest.TestCase):
 
         for area in ("search", "detail", "reviews", "cart", "whoami"):
             assert_area_has_only_view("taobao", area)
+
+    def test_script_avoids_sensitive_browser_reads(self) -> None:
+        assert_script_avoids_sensitive_browser_reads("taobao")
 
 
 if __name__ == "__main__":
