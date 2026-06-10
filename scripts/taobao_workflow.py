@@ -537,6 +537,54 @@ CART_SCRIPT = """
     if (items.length >= limit) break;
   }
   if (items.length > 0) return { items, loaded: true };
+  const sections = text.split(/移入收藏/);
+  for (const section of sections) {
+    const lines = section.split('\\n').map(normalize).filter(Boolean);
+    if (lines.length < 3) continue;
+    let title = '';
+    let titleIndex = -1;
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (line.length > title.length && line.length >= 8 && line.length < 180 && !/[￥¥]/.test(line) && !blockedTitle.test(line)) {
+        title = line;
+        titleIndex = i;
+      }
+    }
+    if (!title || seen.has(title)) continue;
+    let price = '';
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i] !== '￥' && lines[i] !== '¥') continue;
+      let rawPrice = '';
+      for (let j = i + 1; j < Math.min(i + 5, lines.length); j++) {
+        if (/^[\\d,.]+$/.test(lines[j])) rawPrice += lines[j];
+        else if (lines[j] === '.') rawPrice += '.';
+        else break;
+      }
+      if (rawPrice) {
+        price = '¥' + rawPrice;
+        break;
+      }
+    }
+    if (!price) continue;
+    let shop = '';
+    if (titleIndex > 0) {
+      const previous = lines[titleIndex - 1];
+      if (previous && previous.length >= 2 && previous.length <= 40 && !blockedTitle.test(previous) && !/[￥¥]/.test(previous)) {
+        shop = previous;
+      }
+    }
+    const spec = lines.find(line => /^(颜色分类|尺码|规格|套餐|型号|版本|配置|适用)[：:]/.test(line)) || '';
+    seen.add(title);
+    items.push({
+      index: items.length + 1,
+      title: title.slice(0, 120),
+      price,
+      spec: spec.slice(0, 120),
+      shop: shop.slice(0, 80),
+    });
+    if (items.length >= limit) break;
+  }
+  if (items.length > 0) return { items, loaded: true };
   return { items: [], loaded: emptyCart };
 })()
 """

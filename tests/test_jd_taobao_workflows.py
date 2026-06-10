@@ -104,6 +104,10 @@ class JDWorkflowContractTests(unittest.TestCase):
         self.assertIn("await sleep(1500);", self.module.SEARCH_SCRIPT)
         self.assertIn("await sleep(1500);", self.module.REVIEWS_SCRIPT)
 
+    def test_search_script_keeps_opencli_text_fallback(self) -> None:
+        self.assertIn("beforePrice = text.slice(0, text.indexOf('¥'))", self.module.SEARCH_SCRIPT)
+        self.assertIn("海外无货", self.module.SEARCH_SCRIPT)
+
     def test_api_eval_unwraps_values_and_raises_labeled_errors(self) -> None:
         class Book:
             def __init__(self) -> None:
@@ -218,6 +222,10 @@ class TaobaoWorkflowContractTests(unittest.TestCase):
         self.assertGreaterEqual(self.module.WHOAMI_SETTLE_SECONDS, 2.0)
         self.assertIn("await sleep(2000);", self.module.SEARCH_SCRIPT)
         self.assertIn("await sleep(1500);", self.module.CART_SCRIPT)
+
+    def test_cart_script_keeps_opencli_text_fallback(self) -> None:
+        self.assertIn("text.split(/移入收藏/)", self.module.CART_SCRIPT)
+        self.assertIn("rawPrice += lines[j]", self.module.CART_SCRIPT)
 
     def test_api_eval_unwraps_values_and_raises_labeled_errors(self) -> None:
         class Book:

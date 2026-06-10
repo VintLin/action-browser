@@ -273,7 +273,14 @@ SEARCH_SCRIPT = """
     const shopEl = el.querySelector('.p-shop a, .p-shop span, [class*="shop"] a');
     const text = normalize(el.innerText || el.textContent);
     const priceMatch = text.match(/¥\\s*([\\d,.]+)/);
-    const title = normalize(titleEl?.innerText || titleEl?.textContent || '').replace(/^京东价\\s*/, '');
+    let title = normalize(titleEl?.innerText || titleEl?.textContent || '').replace(/^京东价\\s*/, '');
+    if (!title && priceMatch) {
+      const beforePrice = text.slice(0, text.indexOf('¥'));
+      title = normalize(beforePrice.replace(/^(广告|海外无货|京东超市|自营|秒杀|新品|预售|PLUS)\\s*/, ''));
+    }
+    if (!title) {
+      title = text.split(/¥|券满|正品行货|包邮|已售/).map(normalize).find(line => line.length >= 4 && line.length <= 180) || '';
+    }
     let shop = normalize(shopEl?.innerText || shopEl?.textContent || '');
     if (!shop) {
       const shopMatch = text.match(/(\\S{2,24}(?:旗舰店|专卖店|自营店|官方旗舰店|京东自营))/);
