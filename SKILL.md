@@ -1,6 +1,6 @@
 ---
-name: 浏览器操作
-description: "Use when an agent needs ActionBook or Chrome extension mode for real browser tasks: opening pages, clicking, filling forms, searching, scrolling, popup handling, page-state reading, structured extraction, downloads, authenticated Chrome sessions, site workflow recovery, or stopping tracked browser workflows."
+name: action-browser
+description: "Use when an agent needs ActionBook or Chrome extension mode for real browser tasks, also known as 浏览器操作: opening pages, clicking, filling forms, searching, scrolling, popup handling, page-state reading, structured extraction, downloads, authenticated Chrome sessions, site workflow recovery, or stopping tracked browser workflows."
 ---
 
 # 浏览器操作
