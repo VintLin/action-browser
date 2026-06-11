@@ -80,3 +80,14 @@ This folder tracks updates copied from the configured source skill.
 - Changed entries: 1
 - `.d..t.... ./`
 - `>f.st.... SKILL.md`
+
+## 2026-06-11T12:51:30+08:00 - applied
+
+- Source: `/Users/Vint/.skillflow/source/git/vintlin-action-browser`
+- Destination: `/Users/Vint/Repos/04_Skills/01_通用 Skills/02_action-browser`
+- Changed entries: 4
+- `>f....... README.md`
+- `>f....... references/zhipin.md`
+- `>f....... scripts/zhipin_workflow.py`
+- `>f....... .skill-updates/source.json`
+- Updated `.skill-updates/last-sync-files.txt` hashes for the three synced content files.

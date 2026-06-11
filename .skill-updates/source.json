@@ -1,6 +1,6 @@
 {
   "name": "01_action-browser",
-  "source": "/Users/Vint/.codex/skills/action-browser",
+  "source": "/Users/Vint/.skillflow/source/git/vintlin-action-browser",
   "destination": ".",
   "status": "active",
   "delete_removed": false,
@@ -9,5 +9,5 @@
     ".DS_Store",
     ".skill-updates"
   ],
-  "notes": "Latest local source is the installed Codex skill."
+  "notes": "Latest local source is the Skillflow git checkout for vintlin-action-browser."
 }

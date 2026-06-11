@@ -86,9 +86,10 @@ python3 scripts/actionbook_run.py run \
 Supported subcommands:
 
 - `filters`: read filter code lists and the logged-in user's recommendation expectation list.
-- `recommend`: read recommendation jobs through the same-origin list API with explicit city/filter parameters.
-- `search`: open a keyword search page and slowly scroll/extract visible list cards.
-- `detail`: read one job detail by `securityId` from a search/recommend result.
+- `recommend`: keep the old recommendation-list入口; prefer API when available, and fall back to rendered DOM extraction when BOSS blocks the API path.
+- `search`: open one keyword page, click visible cards, and extract the rendered detail pane JD text.
+- `crawl`: run a multi-city, multi-query DOM crawl with jittered timing and description-length/title-noise filtering.
+- `detail`: keep the old detail入口; prefer API when `securityId` works, and fall back to a direct detail page URL / job id when needed.
 - `chatlist`: read recruiter-side or job-seeker-side chat list metadata.
 - `chatmsg`: read message history for one chat by `uid` from `chatlist`.
 
@@ -101,31 +102,35 @@ python3 scripts/zhipin_workflow.py filters \
   --city-code 101020100 \
   --output-dir "$PWD/assets/zhipin/views/filters/$(date +%Y%m%d-%H%M%S)"
 
-# Shanghai recommendation list, full-time, 3-5 years, bachelor, 20-50K, refill filtered jobs to 100.
+# Recommendation list, with API first and DOM fallback on risk-control.
 python3 scripts/zhipin_workflow.py recommend \
   --session zhipin-task \
   --city-code 101020100 \
-  --job-type 1901 \
-  --experience 105 \
-  --degree 203 \
-  --salary 406 \
   --count 100 \
-  --include-title-any "AI,Agent,智能体" \
-  --exclude-title-any "兼职" \
-  --match-scope title-tags
+  --fallback-dom-on-risk
 
-# Keyword search page crawl when API parameters are uncertain.
+# Single keyword JD crawl with visible detail extraction.
 python3 scripts/zhipin_workflow.py search \
   --session zhipin-task \
   --city-code 101020100 \
   --query "AI Agent" \
-  --count 50 \
-  --max-scroll-rounds 20
+  --count 50
 
-# Read a job detail from a search/recommend `security_id`.
+# Multi-city crawl with floating delays and title/content exclusion.
+python3 scripts/zhipin_workflow.py crawl \
+  --session zhipin-task \
+  --city-codes "101020100,101210100,101280600" \
+  --queries "AI 工程师,AI 应用工程师,智能体开发,RAG 开发,FDE 工程师" \
+  --count 200 \
+  --exclude-content-any "兼职,实习,应届,校招" \
+  --exclude-title-noise-any "销售,产品经理,运营,市场,客服,讲师,培训,导演" \
+  --min-description-length 50
+
+# Detail API first; if blocked, pass a URL or job id for DOM fallback.
 python3 scripts/zhipin_workflow.py detail \
   --session zhipin-task \
-  --security-id "<security_id>"
+  --security-id "<security_id>" \
+  --job-id "<encrypt_job_id>"
 
 # Read chat list metadata without sending messages.
 python3 scripts/zhipin_workflow.py chatlist \
@@ -150,12 +155,13 @@ progress.json
 filter_config.json
 ```
 
-For `recommend`, `count` means target filtered count. The script continues pages until the target count is reached, `hasMore` becomes false, `--max-pages` is reached, or risk-control/errors appear. For `search`, the script scrolls slowly until the filtered target is reached or the page stops adding cards.
+For `recommend`, `search`, and `crawl`, `count` means target filtered count. The script continues until the target is reached, the page stops growing, or risk-control/errors appear.
 
 Workflow limitations:
 
-- `recommend` is best for reproducible crawls because it uses explicit API parameters.
-- `search` is DOM-based and may miss fields that are not rendered in cards.
+- BOSS job list/detail APIs have shown unstable risk-control behavior such as `code=37` in real runs. The current skill uses rendered DOM extraction for job crawls instead of those APIs.
+- `recommend` and `detail` still keep the previous command names. When the API path is blocked, they should switch to the DOM-based fallback instead of failing immediately.
+- `search` and `crawl` are DOM-based and depend on the visible split-view detail pane. If BOSS changes the page structure, selectors may need maintenance.
 - `chatlist` and `chatmsg` are read-only inspection commands. They do not type into editors, send messages, greet candidates, exchange contact details, invite, mark, upload resumes, or change chat state.
 - The workflow is read-only. It does not click `收藏`, `立即沟通`, upload resume, report, or send chat messages.
 - Project-specific scoring, resume matching, and salary analytics should be done in downstream scripts using `summary.json`, not inside the workflow script.

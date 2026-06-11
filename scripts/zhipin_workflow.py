@@ -40,6 +40,7 @@ CITY_NAMES = {
     "101210100": "杭州",
     "101230100": "福州",
 }
+CITY_CODES = {name: code for code, name in CITY_NAMES.items()}
 IDENTITY_MISMATCH_CODE = 24
 TYPE_MAP = {
     1: "文本",
@@ -65,6 +66,11 @@ SALARY_FONT_MAP = str.maketrans({
     "\ue039": "8",
     "\ue03a": "9",
 })
+JOB_ID_RE = re.compile(r"/job_detail/([^/?#]+)\.html")
+TARGET_TERMS = ["ai", "人工智能", "大模型", "llm", "agent", "智能体", "rag", "fde", "知识库", "向量", "aigc"]
+DEFAULT_EXCLUDE_TERMS = ["兼职", "实习", "实习生", "实习可转正", "应届", "应届生", "校招", "校园招聘", "在校", "在校生", "26届", "27届"]
+DEFAULT_TITLE_NOISE_TERMS = ["销售", "产品经理", "运营", "商务", "市场", "客服", "课程", "顾问", "招生", "主播", "讲师", "培训", "导演"]
+DEFAULT_MIN_DESCRIPTION_LENGTH = 50
 
 
 def log(message: str) -> None:
@@ -83,6 +89,10 @@ def slugify(value: str, fallback: str = "zhipin") -> str:
 
 def split_words(value: str) -> list[str]:
     return [item.strip() for item in re.split(r"[,，|/]+", value or "") if item.strip()]
+
+
+def lower_words(value: str) -> list[str]:
+    return [item.lower() for item in split_words(value)]
 
 
 def default_output_dir(kind: str, task: str) -> Path:
@@ -172,14 +182,6 @@ def start_book(args: argparse.Namespace, url: str) -> ActionBook:
     return book
 
 
-def sleep_jitter(args: argparse.Namespace) -> None:
-    time.sleep(random.uniform(float(args.delay_min), float(args.delay_max)))
-
-
-def build_job_url(job_id: str) -> str:
-    return f"{ZHIPIN_HOME_URL}/job_detail/{job_id}.html" if job_id else ""
-
-
 def format_timestamp(value: Any) -> str:
     try:
         timestamp = int(value)
@@ -190,6 +192,10 @@ def format_timestamp(value: Any) -> str:
     if timestamp > 10_000_000_000:
         timestamp = timestamp // 1000
     return datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def build_job_url(job_id: str) -> str:
+    return f"{ZHIPIN_HOME_URL}/job_detail/{job_id}.html" if job_id else ""
 
 
 def normalize_api_job(raw: dict[str, Any]) -> dict[str, Any]:
@@ -228,22 +234,6 @@ def normalize_api_job(raw: dict[str, Any]) -> dict[str, Any]:
         "lid": raw.get("lid") or "",
         "url": build_job_url(str(raw.get("encryptJobId") or "")),
         "gps": raw.get("gps") or {},
-        "raw": raw,
-    }
-
-
-def normalize_dom_job(raw: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "source": "dom_list",
-        "title": normalize_text(raw.get("title")),
-        "salary": normalize_text(raw.get("salary")),
-        "region": normalize_text(raw.get("region")),
-        "experience": normalize_text(raw.get("experience")),
-        "degree": normalize_text(raw.get("degree")),
-        "company": normalize_text(raw.get("company")),
-        "labels": [normalize_text(item) for item in raw.get("labels") or [] if normalize_text(item)],
-        "url": raw.get("url") or "",
-        "raw_text": normalize_text(raw.get("raw_text")),
         "raw": raw,
     }
 
@@ -370,6 +360,50 @@ def map_geek_chat_messages(messages: list[dict[str, Any]], friend: dict[str, Any
             "raw": raw,
         })
     return rows
+
+
+def job_id_from_url(url: str) -> str:
+    match = JOB_ID_RE.search(url or "")
+    return match.group(1) if match else ""
+
+
+def parse_card_text(text: str) -> dict[str, str]:
+    parts = [item for item in normalize_text(text).split(" ") if item]
+    return {
+        "salary": parts[1] if len(parts) > 1 else "",
+        "experience": parts[2] if len(parts) > 2 else "",
+        "degree": parts[3] if len(parts) > 3 else "",
+        "company": parts[-2] if len(parts) > 4 else "",
+        "region": parts[-1] if len(parts) > 4 else "",
+    }
+
+
+def relevant_job(
+    record: dict[str, Any],
+    *,
+    include_terms: list[str],
+    exclude_terms: list[str],
+    title_noise_terms: list[str],
+    min_description_length: int,
+) -> bool:
+    title = normalize_text(record.get("title"))
+    title_lower = title.lower()
+    if title_noise_terms and any(term.lower() in title_lower for term in title_noise_terms):
+        return False
+    description = normalize_text(record.get("description"))
+    if len(description) < min_description_length:
+        return False
+    haystack = " ".join(
+        [
+            title,
+            normalize_text(record.get("raw_text")),
+            normalize_text(record.get("detail_text")),
+            description,
+        ]
+    ).lower()
+    if exclude_terms and any(term.lower() in haystack for term in exclude_terms):
+        return False
+    return any(term.lower() in haystack for term in include_terms)
 
 
 def filter_job(job: dict[str, Any], args: argparse.Namespace) -> bool:
@@ -564,6 +598,196 @@ def command_filters(args: argparse.Namespace) -> int:
     return 0
 
 
+def collect_cards(book: ActionBook) -> list[dict[str, Any]]:
+    script = r"""
+    (() => {
+      const norm = value => String(value || '').replace(/\s+/g, ' ').trim();
+      return [...document.querySelectorAll('.job-card-wrap')].map((wrap, index) => {
+        const area = wrap.querySelector('.card-area') || wrap;
+        const link = area.querySelector('a.job-name, a[href*="/job_detail/"]');
+        const salary = area.querySelector('.salary, .job-salary, [class*=salary]');
+        return {
+          index,
+          title: norm(link?.innerText || area.querySelector('.job-name')?.innerText || ''),
+          url: link?.href || '',
+          salary: norm(salary?.innerText || ''),
+          raw_text: norm(area.innerText || area.textContent || '')
+        };
+      });
+    })()
+    """
+    value = api_eval(book, script, "collect visible DOM cards", timeout=15.0)
+    return value if isinstance(value, list) else []
+
+
+def scroll_more(book: ActionBook) -> dict[str, Any]:
+    script = r"""
+    (async () => {
+      const before = document.querySelectorAll('.job-card-wrap').length;
+      window.scrollTo(0, document.body.scrollHeight);
+      await new Promise(resolve => setTimeout(resolve, 1800 + Math.random() * 2200));
+      const after = document.querySelectorAll('.job-card-wrap').length;
+      return {before, after, y: window.scrollY, height: document.body.scrollHeight};
+    })()
+    """
+    value = api_eval(book, script, "scroll DOM list", timeout=10.0)
+    return value if isinstance(value, dict) else {}
+
+
+def click_and_extract(book: ActionBook, url: str, fallback_index: int) -> dict[str, Any]:
+    script = r"""
+    (async ({targetUrl, fallbackIndex}) => {
+      const norm = value => String(value || '').replace(/\s+/g, ' ').trim();
+      const cards = [...document.querySelectorAll('.job-card-wrap')];
+      let wrap = cards.find(card => {
+        const link = card.querySelector('a.job-name, a[href*="/job_detail/"]');
+        return link && link.href === targetUrl;
+      });
+      if (!wrap && Number.isInteger(fallbackIndex)) wrap = cards[fallbackIndex];
+      if (!wrap) return {ok: false, error: 'card_not_found'};
+      const area = wrap.querySelector('.card-area') || wrap;
+      const link = area.querySelector('a.job-name, a[href*="/job_detail/"]');
+      wrap.scrollIntoView({block: 'center'});
+      await new Promise(resolve => setTimeout(resolve, 500 + Math.random() * 1000));
+      (link || area).click();
+      await new Promise(resolve => setTimeout(resolve, 1800 + Math.random() * 2200));
+      const detail = document.querySelector('.job-detail-container, .job-detail-box');
+      const desc = document.querySelector('.job-detail-container p.desc, .job-detail-box p.desc, .job-sec-text, .job-detail-section p');
+      const title = norm(document.querySelector('.job-detail-container .job-name, .job-detail-box .job-name')?.innerText);
+      const salary = norm(document.querySelector('.job-detail-container .job-salary, .job-detail-box .job-salary')?.innerText);
+      const tagNodes = [...document.querySelectorAll('.job-detail-container .tag-list li, .job-detail-container .job-label-list li, .job-detail-box .tag-list li, .job-detail-box .job-label-list li')];
+      const boss = norm(document.querySelector('.job-boss-info')?.innerText);
+      const address = norm(document.querySelector('.location-address, .job-location, .job-address')?.innerText);
+      return {
+        ok: true,
+        title,
+        salary,
+        description: norm(desc?.innerText),
+        detail_text: norm(detail?.innerText),
+        detail_tags: tagNodes.map(node => norm(node.innerText || node.textContent)).filter(Boolean),
+        boss_text: boss,
+        address
+      };
+    })({targetUrl: %s, fallbackIndex: %d})
+    """ % (json.dumps(url), fallback_index)
+    value = api_eval(book, script, "click and extract DOM detail", timeout=20.0)
+    return value if isinstance(value, dict) else {"ok": False, "error": "unexpected_result"}
+
+
+def extract_detail_from_current_page(book: ActionBook) -> dict[str, Any]:
+    value = api_eval(book, r"""
+    (() => {
+      const norm = value => String(value || '').replace(/\s+/g, ' ').trim();
+      const detail = document.querySelector('.job-detail-container, .job-detail-box, .job-banner, .job-primary');
+      const desc = document.querySelector('.job-detail-container p.desc, .job-detail-box p.desc, .job-sec-text, .job-detail-section p');
+      const title = norm(document.querySelector('.job-detail-container .job-name, .job-detail-box .job-name, .job-banner .name, .job-primary .name')?.innerText);
+      const salary = norm(document.querySelector('.job-detail-container .job-salary, .job-detail-box .job-salary, .job-banner .salary, .job-primary .salary')?.innerText);
+      const tagNodes = [...document.querySelectorAll('.job-detail-container .tag-list li, .job-detail-container .job-label-list li, .job-detail-box .tag-list li, .job-detail-box .job-label-list li, .job-primary .tag-list li')];
+      return {
+        title,
+        salary,
+        description: norm(desc?.innerText),
+        detail_text: norm(detail?.innerText || document.body?.innerText || ''),
+        detail_tags: tagNodes.map(node => norm(node.innerText || node.textContent)).filter(Boolean),
+        boss_text: norm(document.querySelector('.job-boss-info')?.innerText),
+        address: norm(document.querySelector('.location-address, .job-location, .job-address')?.innerText),
+        url: location.href
+      };
+    })()
+    """, "extract detail from current page", timeout=20.0)
+    return value if isinstance(value, dict) else {}
+
+
+def collect_query_jobs(
+    book: ActionBook,
+    args: argparse.Namespace,
+    *,
+    city_code: str,
+    city_name: str,
+    query: str,
+    target_count: int,
+    page_url: str = "",
+    existing_jobs: list[dict[str, Any]] | None = None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], int, str]:
+    source_url = page_url or f"{ZHIPIN_HOME_URL}/web/geek/jobs?city={city_code}&query={urllib.parse.quote(query)}"
+    book.start(source_url)
+    time.sleep(random.uniform(args.query_delay_min, args.query_delay_max))
+    jobs: list[dict[str, Any]] = list(existing_jobs or [])
+    failures: list[dict[str, Any]] = []
+    seen = {str(job.get("job_id") or job.get("url") or "") for job in jobs if job.get("job_id") or job.get("url")}
+    last_visible_count = 0
+    stable_rounds = 0
+
+    for round_index in range(1, args.max_scroll_rounds + 1):
+        state = page_state(book)
+        if has_login_or_risk(state):
+            failures.append({"city_code": city_code, "query": query, "round": round_index, "stage": "page_state", "error": "login_or_risk", "url": state.get("href")})
+            break
+        cards = collect_cards(book)
+        for card in cards:
+            url = normalize_text(card.get("url"))
+            if not url:
+                continue
+            key = job_id_from_url(url) or url
+            if key in seen:
+                continue
+            base = {
+                "source": "dom_list+dom_detail",
+                "city_code": city_code,
+                "city_name": city_name,
+                "query": query,
+                "query_round": round_index,
+                "title": normalize_text(card.get("title")),
+                "url": url,
+                "job_id": job_id_from_url(url),
+                "raw_text": normalize_text(card.get("raw_text")),
+            }
+            base.update(parse_card_text(base["raw_text"]))
+            if not filter_job(base, args):
+                continue
+            try:
+                detail = click_and_extract(book, url, int(card.get("index") or 0))
+                if not detail.get("ok"):
+                    failures.append({"city_code": city_code, "query": query, "stage": "detail", "url": url, "error": detail.get("error")})
+                    continue
+                record = {
+                    **base,
+                    "title": normalize_text(detail.get("title")) or base["title"],
+                    "salary": normalize_text(detail.get("salary")) or base.get("salary", ""),
+                    "description": normalize_text(detail.get("description")),
+                    "detail_text": normalize_text(detail.get("detail_text")),
+                    "detail_tags": detail.get("detail_tags") or [],
+                    "boss_text": normalize_text(detail.get("boss_text")),
+                    "address": normalize_text(detail.get("address")),
+                }
+                if relevant_job(
+                    record,
+                    include_terms=lower_words(args.require_any) or TARGET_TERMS,
+                    exclude_terms=lower_words(args.exclude_content_any) or DEFAULT_EXCLUDE_TERMS,
+                    title_noise_terms=lower_words(args.exclude_title_noise_any),
+                    min_description_length=args.min_description_length,
+                ):
+                    jobs.append(record)
+                    seen.add(key)
+                    if len(jobs) >= target_count:
+                        return jobs, failures, len(cards), source_url
+                time.sleep(random.uniform(args.detail_delay_min, args.detail_delay_max))
+            except Exception as exc:  # noqa: BLE001
+                failures.append({"city_code": city_code, "query": query, "stage": "detail", "url": url, "error": str(exc)})
+                time.sleep(random.uniform(args.error_delay_min, args.error_delay_max))
+        scroll_state = scroll_more(book)
+        visible_count = int(scroll_state.get("after") or len(cards))
+        if visible_count <= last_visible_count:
+            stable_rounds += 1
+        else:
+            stable_rounds = 0
+        last_visible_count = visible_count
+        if stable_rounds >= args.max_stable_rounds:
+            break
+        time.sleep(random.uniform(args.scroll_delay_min, args.scroll_delay_max))
+    return jobs, failures, last_visible_count, source_url
+
+
 def command_recommend(args: argparse.Namespace) -> int:
     book = start_book(args, f"{ZHIPIN_HOME_URL}/web/geek/jobs?city={args.city_code}")
     output_dir = Path(args.output_dir) if args.output_dir else default_output_dir("views", f"recommend-{args.city_code}")
@@ -576,6 +800,7 @@ def command_recommend(args: argparse.Namespace) -> int:
     raw_seen = 0
     page = 1
     has_more = True
+    api_failed = False
     while has_more and page <= args.max_pages and len(jobs) < args.count:
         params = {
             "page": page,
@@ -601,9 +826,9 @@ def command_recommend(args: argparse.Namespace) -> int:
                 job = normalize_api_job(raw)
                 if filter_job(job, args):
                     dedupe_append(jobs, seen, job)
-                    if len(jobs) >= args.count:
-                        break
-            progress = {
+                if len(jobs) >= args.count:
+                    break
+            write_json(output_dir / "progress.json", {
                 "status": "running",
                 "mode": "recommend",
                 "page": page,
@@ -611,17 +836,33 @@ def command_recommend(args: argparse.Namespace) -> int:
                 "filtered_count": len(jobs),
                 "has_more": has_more,
                 "output_dir": str(output_dir),
-            }
-            write_json(output_dir / "progress.json", progress)
-            log(f"page={page} raw_seen={raw_seen} filtered={len(jobs)} has_more={has_more}")
+            })
             page += 1
             if len(jobs) < args.count and has_more:
-                sleep_jitter(args)
+                time.sleep(random.uniform(args.delay_min, args.delay_max))
         except KeyboardInterrupt:
             raise
         except Exception as exc:  # noqa: BLE001
-            failures.append({"page": page, "error": str(exc)})
+            failures.append({"page": page, "error": str(exc), "stage": "recommend_api"})
+            api_failed = True
             break
+    if api_failed and args.fallback_dom_on_risk:
+        dom_jobs, dom_failures, visible_count, source_url = collect_query_jobs(
+            book,
+            args,
+            city_code=args.city_code,
+            city_name=CITY_NAMES.get(args.city_code, args.city_code),
+            query="recommend",
+            target_count=args.count,
+            page_url=f"{ZHIPIN_HOME_URL}/web/geek/jobs?city={args.city_code}",
+        )
+        jobs = dom_jobs
+        failures.extend(dom_failures)
+        raw_seen = max(raw_seen, visible_count)
+        stop_reason = "api_fallback_to_dom"
+    else:
+        source_url = f"{ZHIPIN_HOME_URL}/web/geek/jobs?city={args.city_code}"
+        stop_reason = "target_reached" if len(jobs) >= args.count else ("no_more" if not has_more else "error_or_max_pages")
     meta = {
         "mode": "recommend",
         "city_code": args.city_code,
@@ -629,150 +870,180 @@ def command_recommend(args: argparse.Namespace) -> int:
         "raw_seen_count": raw_seen,
         "filtered_count": len(jobs),
         "target_count": args.count,
-        "status": "done" if len(jobs) >= args.count or not has_more else "partial",
-        "stop_reason": "target_reached" if len(jobs) >= args.count else ("no_more" if not has_more else "error_or_max_pages"),
+        "status": "done" if len(jobs) >= args.count or not has_more or api_failed else "partial",
+        "stop_reason": stop_reason,
         "filter_config": filter_config,
+        "source_url": source_url,
     }
     write_outputs(output_dir, "BOSS Zhipin Recommend Jobs", jobs, meta, failures)
     log(f"wrote {len(jobs)} jobs to {output_dir}")
-    return 0 if not failures else 1
+    return 0 if len(jobs) >= args.count else (0 if jobs and not api_failed else 2)
 
 
-def extract_dom_jobs(book: ActionBook) -> list[dict[str, Any]]:
-    script = """
-    (() => {
-      const norm = value => String(value || '').replace(/\\s+/g, ' ').trim();
-      return [...document.querySelectorAll('.job-card-wrap')].map((wrap, index) => {
-        const area = wrap.querySelector('.card-area') || wrap;
-        const titleEl = area.querySelector('a.job-name, .job-name');
-        const salaryEl = area.querySelector('.salary, .job-salary, [class*=salary]');
-        const tagNodes = [...area.querySelectorAll('.tag-list li, .job-card-tag, .job-info-tag, .info-desc')].map(el => norm(el.innerText || el.textContent)).filter(Boolean);
-        const lines = norm(area.innerText || area.textContent).split(' ').filter(Boolean);
-        return {
-          index,
-          title: norm(titleEl?.innerText || titleEl?.textContent || lines[0] || ''),
-          url: titleEl?.href || '',
-          salary: norm(salaryEl?.innerText || salaryEl?.textContent || ''),
-          labels: tagNodes,
-          raw_text: norm(area.innerText || area.textContent)
-        };
-      });
-    })()
-    """
-    raw_jobs = api_eval(book, script, "extract dom jobs", timeout=15.0)
-    if not isinstance(raw_jobs, list):
-        return []
-    jobs: list[dict[str, Any]] = []
-    for raw in raw_jobs:
-        job = normalize_dom_job(raw)
-        infer_dom_fields(job)
-        jobs.append(job)
-    return jobs
-
-
-def infer_dom_fields(job: dict[str, Any]) -> None:
-    if job.get("salary"):
-        return
-    parts = normalize_text(job.get("raw_text")).split(" ")
-    if len(parts) >= 2:
-        job["salary"] = parts[1]
-    if len(parts) >= 4:
-        job["experience"] = parts[2]
-        job["degree"] = parts[3]
-    if len(parts) >= 2:
-        job["region"] = parts[-1]
-        job["company"] = parts[-2]
+def command_detail(args: argparse.Namespace) -> int:
+    output_dir = Path(args.output_dir) if args.output_dir else default_output_dir("views", f"detail-{slugify(args.security_id or args.job_id or args.url or 'job')}")
+    failures: list[dict[str, Any]] = []
+    records: list[dict[str, Any]] = []
+    api_failed = False
+    if args.security_id:
+        try:
+            book = start_book(args, f"{ZHIPIN_HOME_URL}/web/geek/job")
+            data = fetch_json(book, "/wapi/zpgeek/job/detail.json", {"securityId": args.security_id}, "zhipin detail")
+            records.append(normalize_detail_payload(data, security_id=args.security_id))
+        except Exception as exc:  # noqa: BLE001
+            failures.append({"security_id": args.security_id, "error": str(exc), "stage": "detail_api"})
+            api_failed = True
+    if (not records) and (args.url or args.job_id):
+        target_url = args.url or build_job_url(args.job_id)
+        book = start_book(args, target_url)
+        detail = extract_detail_from_current_page(book)
+        if normalize_text(detail.get("description")):
+            records.append({
+                "source": "detail_dom",
+                "title": normalize_text(detail.get("title")),
+                "salary": normalize_text(detail.get("salary")),
+                "description": normalize_text(detail.get("description")),
+                "detail_text": normalize_text(detail.get("detail_text")),
+                "detail_tags": detail.get("detail_tags") or [],
+                "boss_text": normalize_text(detail.get("boss_text")),
+                "address": normalize_text(detail.get("address")),
+                "url": normalize_text(detail.get("url")) or target_url,
+                "job_id": job_id_from_url(target_url),
+                "security_id": normalize_text(args.security_id),
+            })
+        else:
+            failures.append({"url": target_url, "error": "empty_description", "stage": "detail_dom"})
+    meta = {
+        "mode": "detail",
+        "security_id": args.security_id,
+        "job_id": args.job_id,
+        "url": args.url,
+        "record_count": len(records),
+        "status": "done" if records else "failed",
+        "api_failed": api_failed,
+    }
+    write_records_outputs(output_dir, "BOSS Zhipin Job Detail", records, meta, failures, record_key="records")
+    log(f"wrote {len(records)} detail records to {output_dir}")
+    return 0 if records else 2
 
 
 def command_search(args: argparse.Namespace) -> int:
-    query = urllib.parse.quote(args.query)
-    url = f"{ZHIPIN_HOME_URL}/web/geek/jobs?city={args.city_code}&query={query}"
-    book = start_book(args, url)
+    city_name = CITY_NAMES.get(args.city_code, args.city_code)
+    book = start_book(args, f"{ZHIPIN_HOME_URL}/web/geek/jobs?city={args.city_code}&query={urllib.parse.quote(args.query)}")
     output_dir = Path(args.output_dir) if args.output_dir else default_output_dir("views", f"search-{slugify(args.query)}-{args.city_code}")
     output_dir.mkdir(parents=True, exist_ok=True)
     filter_config = filter_config_from_args(args)
     write_json(output_dir / "filter_config.json", filter_config)
-    jobs: list[dict[str, Any]] = []
-    failures: list[dict[str, Any]] = []
-    seen: set[str] = set()
-    raw_seen = 0
-    stable_rounds = 0
-    last_raw_seen = 0
-    for round_index in range(1, args.max_scroll_rounds + 1):
-        state = page_state(book)
-        if has_login_or_risk(state):
-            failures.append({"round": round_index, "error": "login_or_risk_control", "url": state.get("href")})
-            break
-        dom_jobs = extract_dom_jobs(book)
-        raw_seen = max(raw_seen, len(dom_jobs))
-        for job in dom_jobs:
-            if filter_job(job, args):
-                dedupe_append(jobs, seen, job)
-                if len(jobs) >= args.count:
-                    break
-        write_json(output_dir / "progress.json", {
-            "status": "running",
-            "mode": "search",
-            "round": round_index,
-            "raw_seen_count": raw_seen,
-            "filtered_count": len(jobs),
-            "output_dir": str(output_dir),
-            "url": state.get("href"),
-        })
-        log(f"round={round_index} raw_seen={raw_seen} filtered={len(jobs)}")
-        if len(jobs) >= args.count:
-            break
-        if raw_seen <= last_raw_seen:
-            stable_rounds += 1
-        else:
-            stable_rounds = 0
-        if stable_rounds >= args.max_stable_rounds:
-            break
-        last_raw_seen = raw_seen
-        book.browser("scroll", "down", "800", timeout=10.0)
-        sleep_jitter(args)
+    jobs, failures, visible_count, source_url = collect_query_jobs(
+        book,
+        args,
+        city_code=args.city_code,
+        city_name=city_name,
+        query=args.query,
+        target_count=args.count,
+    )
     meta = {
         "mode": "search",
         "query": args.query,
         "city_code": args.city_code,
-        "city_name": CITY_NAMES.get(args.city_code, ""),
-        "raw_seen_count": raw_seen,
+        "city_name": city_name,
+        "raw_seen_count": visible_count,
         "filtered_count": len(jobs),
         "target_count": args.count,
         "status": "done" if len(jobs) >= args.count else "partial",
         "stop_reason": "target_reached" if len(jobs) >= args.count else ("risk_or_error" if failures else "page_stopped_adding"),
         "filter_config": filter_config,
-        "source_url": url,
+        "source_url": source_url,
     }
     write_outputs(output_dir, "BOSS Zhipin Search Jobs", jobs, meta, failures)
     log(f"wrote {len(jobs)} jobs to {output_dir}")
-    return 0 if not failures else 1
+    return 0 if len(jobs) >= args.count and not failures else (0 if len(jobs) >= args.count else 2)
 
 
-def command_detail(args: argparse.Namespace) -> int:
-    book = start_book(args, f"{ZHIPIN_HOME_URL}/web/geek/job")
-    output_dir = Path(args.output_dir) if args.output_dir else default_output_dir("views", f"detail-{slugify(args.security_id)}")
-    failures: list[dict[str, Any]] = []
-    records: list[dict[str, Any]] = []
-    try:
-        data = fetch_json(
-            book,
-            "/wapi/zpgeek/job/detail.json",
-            {"securityId": args.security_id},
-            "zhipin detail",
-        )
-        records.append(normalize_detail_payload(data, security_id=args.security_id))
-    except Exception as exc:  # noqa: BLE001
-        failures.append({"security_id": args.security_id, "error": str(exc)})
-    meta = {
-        "mode": "detail",
-        "security_id": args.security_id,
-        "record_count": len(records),
-        "status": "done" if records else "failed",
+def command_crawl(args: argparse.Namespace) -> int:
+    city_codes = [item.strip() for item in re.split(r"[,，]", args.city_codes) if item.strip()]
+    queries = split_words(args.queries)
+    if not city_codes:
+        raise RuntimeError("crawl: missing --city-codes")
+    if not queries:
+        raise RuntimeError("crawl: missing --queries")
+    first_url = f"{ZHIPIN_HOME_URL}/web/geek/jobs?city={city_codes[0]}&query={urllib.parse.quote(queries[0])}"
+    book = start_book(args, first_url)
+    output_dir = Path(args.output_dir) if args.output_dir else default_output_dir("filtered", f"crawl-{slugify('-'.join(queries[:3]))}")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    filter_config = filter_config_from_args(args)
+    write_json(output_dir / "filter_config.json", filter_config)
+    summary: dict[str, Any] = {
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "source": "BOSS Zhipin rendered DOM via ActionBook extension mode",
+        "target_per_city": args.count,
+        "queries": queries,
+        "city_codes": city_codes,
+        "cities": {},
     }
-    write_records_outputs(output_dir, "BOSS Zhipin Job Detail", records, meta, failures, record_key="records")
-    log(f"wrote {len(records)} detail records to {output_dir}")
-    return 0 if records and not failures else 1
+    all_jobs: list[dict[str, Any]] = []
+    all_failures: list[dict[str, Any]] = []
+    for city_code in city_codes:
+        city_name = CITY_NAMES.get(city_code, city_code)
+        jobs: list[dict[str, Any]] = []
+        failures: list[dict[str, Any]] = []
+        for query in queries:
+            jobs, query_failures, visible_count, source_url = collect_query_jobs(
+                book,
+                args,
+                city_code=city_code,
+                city_name=city_name,
+                query=query,
+                target_count=args.count,
+                existing_jobs=jobs,
+            )
+            failures.extend(query_failures)
+            write_json(
+                output_dir / "progress.json",
+                {
+                    "status": "running",
+                    "mode": "crawl",
+                    "city_code": city_code,
+                    "city_name": city_name,
+                    "query": query,
+                    "visible_count": visible_count,
+                    "job_count": len(jobs),
+                    "output_dir": str(output_dir),
+                    "source_url": source_url,
+                },
+            )
+            if len(jobs) >= args.count:
+                break
+        city_payload = {
+            "generated_at": datetime.now().isoformat(timespec="seconds"),
+            "meta": {
+                "mode": "crawl_city",
+                "city_code": city_code,
+                "city_name": city_name,
+                "queries": queries,
+                "filtered_count": len(jobs),
+                "target_count": args.count,
+                "status": "done" if len(jobs) >= args.count else "partial",
+                "filter_config": filter_config,
+            },
+            "jobs": jobs,
+        }
+        write_json(output_dir / f"{slugify(city_name)}_jobs.json", city_payload)
+        write_json(output_dir / f"{slugify(city_name)}_failures.json", failures)
+        summary["cities"][city_name] = {
+            "city_code": city_code,
+            "job_count": len(jobs),
+            "failure_count": len(failures),
+            "status": "done" if len(jobs) >= args.count else "partial",
+        }
+        all_jobs.extend(jobs)
+        all_failures.extend(failures)
+    write_json(output_dir / "summary.json", {"generated_at": datetime.now().isoformat(timespec="seconds"), "meta": summary, "jobs": all_jobs})
+    write_json(output_dir / "failures.json", all_failures)
+    write_summary_md(output_dir / "summary.md", "BOSS Zhipin DOM Crawl Jobs", all_jobs, summary)
+    write_json(output_dir / "progress.json", {**summary, "output_dir": str(output_dir)})
+    log(f"wrote {len(all_jobs)} jobs to {output_dir}")
+    return 0 if all(item["job_count"] >= args.count for item in summary["cities"].values()) else 2
 
 
 def merge_geek_chat_rows(labels: list[dict[str, Any]], enriched: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
@@ -946,6 +1217,10 @@ def filter_config_from_args(args: argparse.Namespace) -> dict[str, Any]:
         "include_title_any": split_words(getattr(args, "include_title_any", "")),
         "exclude_title_any": split_words(getattr(args, "exclude_title_any", "")),
         "match_scope": getattr(args, "match_scope", "title"),
+        "require_any": split_words(getattr(args, "require_any", "")),
+        "exclude_content_any": split_words(getattr(args, "exclude_content_any", "")),
+        "exclude_title_noise_any": split_words(getattr(args, "exclude_title_noise_any", "")),
+        "min_description_length": getattr(args, "min_description_length", DEFAULT_MIN_DESCRIPTION_LENGTH),
         "city_code": getattr(args, "city_code", ""),
         "job_type": getattr(args, "job_type", ""),
         "salary": getattr(args, "salary", ""),
@@ -953,6 +1228,8 @@ def filter_config_from_args(args: argparse.Namespace) -> dict[str, Any]:
         "degree": getattr(args, "degree", ""),
         "industry": getattr(args, "industry", ""),
         "scale": getattr(args, "scale", ""),
+        "city_codes": split_words(getattr(args, "city_codes", "")),
+        "queries": split_words(getattr(args, "queries", "")),
     }
 
 
@@ -1044,6 +1321,23 @@ def add_condition_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--scale", default="", help="company scale code")
 
 
+def add_dom_crawl_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--require-any", default=",".join(TARGET_TERMS), help="Comma-separated content/title inclusion terms")
+    parser.add_argument("--exclude-content-any", default=",".join(DEFAULT_EXCLUDE_TERMS), help="Comma-separated content exclusion terms")
+    parser.add_argument("--exclude-title-noise-any", default=",".join(DEFAULT_TITLE_NOISE_TERMS), help="Comma-separated title noise terms")
+    parser.add_argument("--min-description-length", type=int, default=DEFAULT_MIN_DESCRIPTION_LENGTH, help="Minimum description length")
+    parser.add_argument("--query-delay-min", type=float, default=8.0, help="Minimum delay after query navigation")
+    parser.add_argument("--query-delay-max", type=float, default=14.0, help="Maximum delay after query navigation")
+    parser.add_argument("--detail-delay-min", type=float, default=2.8, help="Minimum delay between detail clicks")
+    parser.add_argument("--detail-delay-max", type=float, default=6.8, help="Maximum delay between detail clicks")
+    parser.add_argument("--scroll-delay-min", type=float, default=3.0, help="Minimum delay between scroll rounds")
+    parser.add_argument("--scroll-delay-max", type=float, default=7.0, help="Maximum delay between scroll rounds")
+    parser.add_argument("--error-delay-min", type=float, default=8.0, help="Minimum backoff delay after detail errors")
+    parser.add_argument("--error-delay-max", type=float, default=18.0, help="Maximum backoff delay after detail errors")
+    parser.add_argument("--max-scroll-rounds", type=int, default=22, help="Maximum scroll rounds per query page")
+    parser.add_argument("--max-stable-rounds", type=int, default=3, help="Stop after this many non-growing scroll rounds")
+
+
 def add_chat_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--side", choices=["auto", "boss", "geek"], default="auto", help="Identity side")
     parser.add_argument("--page", type=int, default=1, help="Page number")
@@ -1058,29 +1352,40 @@ def build_parser() -> argparse.ArgumentParser:
     filters.add_argument("--city-code", default="101020100")
     filters.set_defaults(func=command_filters)
 
-    recommend = subparsers.add_parser("recommend", help="Read recommendation list via same-origin API")
+    recommend = subparsers.add_parser("recommend", help="Read recommendation jobs; fallback to DOM when API risk-control blocks")
     add_common_browser_args(recommend)
     add_condition_args(recommend)
     add_filter_args(recommend)
+    add_dom_crawl_args(recommend)
     recommend.add_argument("--page-size", type=int, default=15)
     recommend.add_argument("--max-pages", type=int, default=30)
     recommend.add_argument("--encrypt-expect-id", default="", help="Optional recommended expectation encryptId")
     recommend.add_argument("--mix-expect-type", default="")
     recommend.add_argument("--expect-info", default="")
+    recommend.add_argument("--fallback-dom-on-risk", action="store_true", default=True, help="Fallback to rendered DOM when recommendation API is blocked")
     recommend.set_defaults(func=command_recommend)
 
-    search = subparsers.add_parser("search", help="Open keyword search page and crawl visible list slowly")
+    search = subparsers.add_parser("search", help="Open one keyword page, click cards, and extract visible detail JD text")
     add_common_browser_args(search)
     add_condition_args(search)
     add_filter_args(search)
+    add_dom_crawl_args(search)
     search.add_argument("--query", required=True)
-    search.add_argument("--max-scroll-rounds", type=int, default=30)
-    search.add_argument("--max-stable-rounds", type=int, default=4)
     search.set_defaults(func=command_search)
 
-    detail = subparsers.add_parser("detail", help="Read one job detail via same-origin API")
+    crawl = subparsers.add_parser("crawl", help="Run multi-city, multi-query DOM crawl with jittered pacing")
+    add_common_browser_args(crawl)
+    add_filter_args(crawl)
+    add_dom_crawl_args(crawl)
+    crawl.add_argument("--city-codes", required=True, help="Comma-separated BOSS city codes")
+    crawl.add_argument("--queries", required=True, help="Comma-separated query keywords")
+    crawl.set_defaults(func=command_crawl)
+
+    detail = subparsers.add_parser("detail", help="Read one job detail; fallback to DOM when API detail is blocked")
     add_common_browser_args(detail)
-    detail.add_argument("--security-id", required=True, dest="security_id", help="securityId from search or recommend output")
+    detail.add_argument("--security-id", default="", dest="security_id", help="securityId from search or recommend output")
+    detail.add_argument("--job-id", default="", help="encryptJobId or job detail id for DOM fallback")
+    detail.add_argument("--url", default="", help="Direct job detail URL for DOM fallback")
     detail.set_defaults(func=command_detail)
 
     chatlist = subparsers.add_parser("chatlist", help="Read chat list without writing messages")
@@ -1106,6 +1411,14 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.delay_min > args.delay_max:
         parser.error("--delay-min must be <= --delay-max")
+    for low_name, high_name in [
+        ("query_delay_min", "query_delay_max"),
+        ("detail_delay_min", "detail_delay_max"),
+        ("scroll_delay_min", "scroll_delay_max"),
+        ("error_delay_min", "error_delay_max"),
+    ]:
+        if hasattr(args, low_name) and getattr(args, low_name) > getattr(args, high_name):
+            parser.error(f"--{low_name.replace('_', '-')} must be <= --{high_name.replace('_', '-')}")
     try:
         return int(args.func(args))
     except KeyboardInterrupt:

@@ -145,6 +145,7 @@ python3 scripts/webpage_markdown.py capture \
 | `scripts/bilibili_workflow.py` | View Bilibili hot lists, rankings, search, videos, comments, dynamics, history, following, subtitles, and summaries. |
 | `scripts/jd_workflow.py` | View JD product search, item details, reviews, cart, and current account state. |
 | `scripts/taobao_workflow.py` | View Taobao product search, item details, reviews, cart, and current account state. |
+| `scripts/zhipin_workflow.py` | View BOSS 直聘 filters, recommendation lists, keyword search/detail crawls, and chat metadata with DOM fallback for blocked APIs. |
 
 ## Output Structure
 
