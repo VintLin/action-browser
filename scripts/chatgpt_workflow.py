@@ -18,6 +18,7 @@ import re
 import subprocess
 import sys
 import time
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -33,6 +34,13 @@ DEFAULT_PREFIXES = ""
 DEFAULT_TITLE_PATTERN = r"^Q\d+[：:]"
 SKILL_DIR = Path(__file__).resolve().parent.parent
 ASSETS_DIR = SKILL_DIR / "assets" / "chatgpt"
+
+
+@dataclass(frozen=True)
+class ChatGptTask:
+    title: str
+    question: str
+    output_name: str = ""
 
 
 def log(message: str) -> None:
@@ -77,6 +85,58 @@ def default_output_dir() -> Path:
 
 def parse_prefixes(value: str) -> list[str]:
     return [item.strip() for item in str(value or "").split(",") if item.strip()]
+
+
+def parse_task_record(record: Any, label: str) -> ChatGptTask:
+    if not isinstance(record, dict):
+        raise ValueError(f"{label}: task record must be an object")
+    title = str(record.get("title") or "").strip()
+    question = str(record.get("question") or "").strip()
+    if not title:
+        raise ValueError(f"{label}: title is required")
+    if not question:
+        raise ValueError(f"{label}: question is required")
+    output_name_value = record.get("output_name", "")
+    if output_name_value is None:
+        output_name = ""
+    elif isinstance(output_name_value, str):
+        output_name = output_name_value.strip()
+    else:
+        raise ValueError(f"{label}: output_name must be a string when present")
+    return ChatGptTask(title=title, question=question, output_name=output_name)
+
+
+def load_tasks_file(path: Path) -> list[ChatGptTask]:
+    raw = path.expanduser().read_text(encoding="utf-8")
+    if not raw.strip():
+        raise ValueError(f"{path}: task file is empty")
+    stripped = raw.lstrip()
+    if stripped.startswith("["):
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"{path}: invalid JSON: {exc.msg}") from exc
+        if not isinstance(payload, list):
+            raise ValueError(f"{path}: JSON task file must contain an array")
+        if not payload:
+            raise ValueError(f"{path}: task file is empty")
+        return [parse_task_record(record, f"record {index}") for index, record in enumerate(payload, start=1)]
+    tasks: list[ChatGptTask] = []
+    for line_number, line in enumerate(raw.splitlines(), start=1):
+        if not line.strip():
+            continue
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"{path}: invalid JSON on line {line_number}: {exc.msg}") from exc
+        tasks.append(parse_task_record(record, f"line {line_number}"))
+    if not tasks:
+        raise ValueError(f"{path}: task file is empty")
+    return tasks
+
+
+def task_output_stem(task: ChatGptTask) -> str:
+    return sanitize_name(task.output_name or task.title, fallback="chatgpt-answer")
 
 
 def frontmatter_string(data: dict[str, Any]) -> str:
