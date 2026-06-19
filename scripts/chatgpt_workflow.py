@@ -83,6 +83,11 @@ def default_output_dir() -> Path:
     return ASSETS_DIR / "exports" / "qx" / stamp
 
 
+def default_run_output_dir() -> Path:
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    return ASSETS_DIR / "runs" / stamp
+
+
 def parse_prefixes(value: str) -> list[str]:
     return [item.strip() for item in str(value or "").split(",") if item.strip()]
 
@@ -540,6 +545,35 @@ def write_markdown(output_dir: Path, index: int, item: dict[str, str], result: d
     return path
 
 
+def write_task_markdown(
+    output_dir: Path,
+    index: int,
+    task: ChatGptTask,
+    result: dict[str, Any],
+    source_url: str,
+    started_at: str,
+    completed_at: str,
+) -> Path:
+    filename = f"{index:03d}-{task_output_stem(task)}.md"
+    path = output_dir / filename
+    metadata = {
+        "title": task.title,
+        "question": task.question,
+        "source_url": source_url,
+        "created_at": started_at,
+        "copied_at": completed_at,
+        "method": "system-clipboard",
+        "web_search": "true",
+        "mode": "intelligent",
+        "extension": "pro",
+        "clicked_copy": bool(result.get("clicked_copy")),
+    }
+    content = normalize_text(result.get("text") or "")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(frontmatter_string(metadata) + "\n\n" + content.rstrip() + "\n", encoding="utf-8")
+    return path
+
+
 def run_list(args: argparse.Namespace) -> int:
     book = start_book(args)
     ensure_chatgpt_ready(book)
@@ -610,6 +644,17 @@ def run_export(args: argparse.Namespace) -> int:
     return 0 if not failures else 1
 
 
+def run_ask(args: argparse.Namespace) -> int:
+    task = ChatGptTask(title=str(args.title or "").strip(), question=str(args.question or "").strip())
+    parse_task_record({"title": task.title, "question": task.question}, "ask")
+    raise RuntimeError("ask command is not implemented yet")
+
+
+def run_batch_ask(args: argparse.Namespace) -> int:
+    load_tasks_file(Path(args.tasks_file))
+    raise RuntimeError("batch-ask command is not implemented yet")
+
+
 def positive_int(value: str) -> int:
     try:
         parsed = int(value)
@@ -629,6 +674,20 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--limit", type=positive_int, default=20, help="Maximum conversations to export")
     parser.add_argument("--max-scrolls", type=positive_int, default=30, help="Sidebar scroll attempts")
     sub = parser.add_subparsers(dest="command", required=True)
+
+    ask_parser = sub.add_parser("ask", help="Ask one ChatGPT question and export the latest answer")
+    ask_parser.add_argument("--title", required=True, help="Task title for metadata and filename")
+    ask_parser.add_argument("--question", required=True, help="Question text to send to ChatGPT")
+    ask_parser.add_argument("--output-dir", default="", help="Output directory")
+    ask_parser.add_argument("--answer-timeout", type=positive_int, default=900, help="Seconds to wait for answer completion")
+    ask_parser.set_defaults(func=run_ask)
+
+    batch_parser = sub.add_parser("batch-ask", help="Ask multiple ChatGPT questions from a JSON or JSONL task file")
+    batch_parser.add_argument("--tasks-file", required=True, help="JSON or JSONL task file")
+    batch_parser.add_argument("--output-dir", default="", help="Output directory")
+    batch_parser.add_argument("--delay", type=float, default=1.0, help="Delay between tasks")
+    batch_parser.add_argument("--answer-timeout", type=positive_int, default=900, help="Seconds to wait for answer completion")
+    batch_parser.set_defaults(func=run_batch_ask)
 
     list_parser = sub.add_parser("list", help="List matching ChatGPT conversations")
     list_parser.add_argument("--prefix", dest="prefix_override", default="", help="Comma-separated title prefixes")

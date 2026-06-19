@@ -98,5 +98,45 @@ class ChatGptTaskParsingTests(unittest.TestCase):
                 chatgpt.load_tasks_file(bad)
 
 
+class ChatGptCliAndOutputTests(unittest.TestCase):
+    def test_default_run_output_dir_uses_runs_tree(self) -> None:
+        path = chatgpt.default_run_output_dir()
+
+        self.assertIn("assets/chatgpt/runs", str(path))
+
+    def test_write_task_markdown_uses_output_name_and_frontmatter(self) -> None:
+        task = chatgpt.ChatGptTask(title="Q13：标题", question="问题正文", output_name="custom-output")
+        result = {"text": "## 回答\n\n内容", "clicked_copy": True, "used_system_clipboard": True}
+        with tempfile.TemporaryDirectory() as tmp:
+            path = chatgpt.write_task_markdown(
+                Path(tmp),
+                1,
+                task,
+                result,
+                "https://chatgpt.com/c/example",
+                "2026-06-19T10:00:00",
+                "2026-06-19T10:01:00",
+            )
+            text = path.read_text(encoding="utf-8")
+
+        self.assertEqual(path.name, "001-custom-output.md")
+        self.assertIn('title: "Q13：标题"', text)
+        self.assertIn('question: "问题正文"', text)
+        self.assertIn('method: "system-clipboard"', text)
+        self.assertIn("## 回答", text)
+
+    def test_help_exposes_ask_batch_ask_list_and_export(self) -> None:
+        result = subprocess.run(
+            ["python3", str(SCRIPTS / "chatgpt_workflow.py"), "--help"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+
+        for command in ("ask", "batch-ask", "list", "export"):
+            self.assertIn(command, result.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()
