@@ -1,0 +1,613 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+ChatGPT workflow helper for the action-browser skill.
+
+The workflow uses ActionBook extension mode and the user's Chrome session to
+export recent conversations whose sidebar title matches a regex or chosen
+prefix. For each conversation, it scrolls to the bottom, clicks the latest
+assistant message copy button when available, reads the copied Markdown, and
+writes local Markdown files.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import subprocess
+import sys
+import time
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+
+from actionbook_interrupts import install_interrupt_handlers
+from actionbook_session import ActionBookSession as ActionBook
+
+
+CHATGPT_URL = "https://chatgpt.com/"
+DEFAULT_SESSION = "chatgpt-qx"
+DEFAULT_TAB = ""
+DEFAULT_PREFIXES = ""
+DEFAULT_TITLE_PATTERN = r"^Q\d+[：:]"
+SKILL_DIR = Path(__file__).resolve().parent.parent
+ASSETS_DIR = SKILL_DIR / "assets" / "chatgpt"
+
+
+def log(message: str) -> None:
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] {message}", flush=True)
+
+
+def sanitize_name(value: str, fallback: str = "conversation", max_length: int = 90) -> str:
+    cleaned = re.sub(r"[^\w\u4e00-\u9fff.-]+", "-", value or "").strip("._-")
+    cleaned = re.sub(r"-{2,}", "-", cleaned)
+    return (cleaned or fallback)[:max_length]
+
+
+def normalize_text(value: Any) -> str:
+    text = str(value or "").replace("\u00a0", " ")
+    text = re.sub(r"[ \t]+\n", "\n", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
+def unwrap_eval(value: Any) -> Any:
+    if isinstance(value, dict) and "value" in value:
+        return value["value"]
+    return value
+
+
+def api_eval(book: ActionBook, script: str, label: str, timeout: float = 45.0) -> Any:
+    value = unwrap_eval(book.eval(script, timeout=timeout))
+    if isinstance(value, dict) and value.get("error"):
+        raise RuntimeError(f"{label}: {value.get('error')}")
+    return value
+
+
+def write_json(path: Path, data: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def default_output_dir() -> Path:
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    return ASSETS_DIR / "exports" / "qx" / stamp
+
+
+def parse_prefixes(value: str) -> list[str]:
+    return [item.strip() for item in str(value or "").split(",") if item.strip()]
+
+
+def frontmatter_string(data: dict[str, Any]) -> str:
+    lines = ["---"]
+    for key, value in data.items():
+        if isinstance(value, list):
+            lines.append(f"{key}:")
+            for item in value:
+                lines.append(f"  - {json.dumps(str(item), ensure_ascii=False)}")
+        else:
+            lines.append(f"{key}: {json.dumps(str(value), ensure_ascii=False)}")
+    lines.append("---")
+    return "\n".join(lines)
+
+
+def start_book(args: argparse.Namespace, url: str = CHATGPT_URL) -> ActionBook:
+    book = ActionBook(args.session, args.tab)
+    book.start(url)
+    return book
+
+
+def get_page_state(book: ActionBook) -> dict[str, str]:
+    value = api_eval(
+        book,
+        """
+        (() => ({
+          href: location.href,
+          title: document.title || '',
+          text: (document.body?.innerText || '').slice(0, 1600)
+        }))()
+        """,
+        "chatgpt page state",
+        timeout=10.0,
+    )
+    return value if isinstance(value, dict) else {}
+
+
+def page_has_login_or_risk(state: dict[str, str]) -> bool:
+    haystack = "\n".join(str(state.get(key) or "") for key in ("href", "title", "text"))
+    return bool(
+        re.search(
+            r"login|sign in|log in|captcha|cloudflare|verify|verification|unusual activity|"
+            r"登录|登入|验证码|验证|异常活动",
+            haystack,
+            re.I,
+        )
+    )
+
+
+def ensure_chatgpt_ready(book: ActionBook) -> None:
+    state = get_page_state(book)
+    if page_has_login_or_risk(state):
+        raise RuntimeError(
+            f"ChatGPT requires login or verification: {state.get('href')} title={state.get('title')}"
+        )
+
+
+def collect_conversations(
+    book: ActionBook,
+    prefixes: list[str],
+    title_pattern: str,
+    limit: int,
+    max_scrolls: int,
+) -> list[dict[str, str]]:
+    prefixes_json = json.dumps(prefixes, ensure_ascii=False)
+    pattern_json = json.dumps(title_pattern, ensure_ascii=False)
+    script = f"""
+    (async () => {{
+      const prefixes = {prefixes_json};
+      const titlePattern = {pattern_json};
+      const titleRegex = titlePattern ? new RegExp(titlePattern) : null;
+      const limit = {int(limit)};
+      const maxScrolls = {int(max_scrolls)};
+      const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+      const normalize = value => String(value || '')
+        .replace(/\\u00a0/g, ' ')
+        .replace(/\\s+/g, ' ')
+        .trim();
+      const absUrl = value => {{
+        try {{ return new URL(value, location.origin).toString(); }}
+        catch (error) {{ return String(value || ''); }}
+      }};
+      const isMatch = title => (
+        (titleRegex && titleRegex.test(title))
+        || prefixes.some(prefix => title.startsWith(prefix))
+      );
+      const readLinks = () => {{
+        const out = [];
+        for (const anchor of document.querySelectorAll('a[href*="/c/"]')) {{
+          const title = normalize(anchor.innerText || anchor.textContent || anchor.getAttribute('aria-label') || '');
+          const href = absUrl(anchor.getAttribute('href'));
+          if (!title || !href || !isMatch(title)) continue;
+          out.push({{ title, url: href }});
+        }}
+        return out;
+      }};
+      const findScrollRoot = () => {{
+        const candidates = [
+          ...document.querySelectorAll('nav, aside, [data-testid*="sidebar"], div')
+        ].filter(node => {{
+          const style = getComputedStyle(node);
+          return node.scrollHeight > node.clientHeight + 40
+            && style.overflowY !== 'hidden'
+            && node.querySelector('a[href*="/c/"]');
+        }});
+        return candidates.sort((a, b) => b.scrollHeight - a.scrollHeight)[0]
+          || document.scrollingElement
+          || document.documentElement;
+      }};
+      const seen = new Map();
+      const root = findScrollRoot();
+      for (let index = 0; index <= maxScrolls; index += 1) {{
+        for (const item of readLinks()) {{
+          if (!seen.has(item.url)) seen.set(item.url, item);
+          if (seen.size >= limit) break;
+        }}
+        if (seen.size >= limit) break;
+        const before = root.scrollTop;
+        root.scrollTop = root.scrollTop + Math.max(420, Math.floor(root.clientHeight * 0.85));
+        await sleep(450);
+        if (root.scrollTop === before && index > 1) break;
+      }}
+      return Array.from(seen.values()).slice(0, limit).map((item, index) => ({{
+        ...item,
+        rank: index + 1
+      }}));
+    }})()
+    """
+    value = api_eval(book, script, "collect ChatGPT conversations", timeout=60.0)
+    return value if isinstance(value, list) else []
+
+
+def goto_conversation(book: ActionBook, url: str) -> None:
+    book.goto(url)
+    api_eval(
+        book,
+        """
+        (async () => {
+          const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+          for (let i = 0; i < 80; i += 1) {
+            if (document.querySelector('[data-message-author-role="assistant"], article, .markdown')) {
+              return true;
+            }
+            await sleep(250);
+          }
+          return false;
+        })()
+        """,
+        "wait ChatGPT conversation",
+        timeout=25.0,
+    )
+
+
+def read_system_clipboard() -> str:
+    result = subprocess.run(["pbpaste"], capture_output=True, text=True, timeout=10.0)
+    if result.returncode != 0:
+        return ""
+    return normalize_text(result.stdout)
+
+
+def write_system_clipboard(value: str) -> None:
+    subprocess.run(["pbcopy"], input=value, text=True, timeout=10.0, check=True)
+
+
+def scroll_conversation_to_bottom(book: ActionBook) -> dict[str, Any]:
+    script = r"""
+    (async () => {
+      const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+      const getRoots = () => {
+        const roots = new Set([document.scrollingElement, document.documentElement, document.body]);
+        for (const node of document.querySelectorAll('main, [role="main"], div')) {
+          if (!node) continue;
+          const style = getComputedStyle(node);
+          if (
+            node.scrollHeight > node.clientHeight + 80
+            && style.overflowY !== 'hidden'
+            && style.display !== 'none'
+            && style.visibility !== 'hidden'
+          ) {
+            roots.add(node);
+          }
+        }
+        return [...roots].filter(Boolean);
+      };
+      let stableRounds = 0;
+      let previousSignature = '';
+      for (let round = 0; round < 80; round += 1) {
+        const roots = getRoots();
+        for (const root of roots) {
+          root.scrollTop = root.scrollHeight;
+        }
+        window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'instant' });
+        await sleep(220);
+        const signature = roots
+          .map(root => `${Math.round(root.scrollTop)}:${Math.round(root.scrollHeight)}:${Math.round(root.clientHeight)}`)
+          .join('|');
+        stableRounds = signature === previousSignature ? stableRounds + 1 : 0;
+        previousSignature = signature;
+        if (stableRounds >= 4) {
+          return { ok: true, rounds: round + 1, roots: roots.length, signature };
+        }
+      }
+      return { ok: false, rounds: 80, roots: getRoots().length, signature: previousSignature };
+    })()
+    """
+    value = api_eval(book, script, "scroll ChatGPT conversation to bottom", timeout=35.0)
+    return value if isinstance(value, dict) else {"ok": False, "error": "Malformed scroll result"}
+
+
+def locate_scroll_to_bottom_button(book: ActionBook) -> dict[str, Any]:
+    script = r"""
+    (() => {
+      const visible = node => {
+        if (!node) return false;
+        const rect = node.getBoundingClientRect();
+        const style = getComputedStyle(node);
+        return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
+      };
+      const buttonScore = node => {
+        const label = [
+          node.getAttribute('aria-label'),
+          node.getAttribute('title'),
+          node.getAttribute('data-testid'),
+          node.innerText,
+          node.textContent
+        ].map(value => String(value || '').trim()).join('\n');
+        const lower = label.toLowerCase();
+        if (/scroll.*bottom|jump.*bottom|go.*bottom|向下|到底|底部/.test(lower)) return 100;
+        const svgText = [...node.querySelectorAll('svg, path')]
+          .map(child => [
+            child.getAttribute('class'),
+            child.getAttribute('data-testid'),
+            child.getAttribute('d')
+          ].join(' '))
+          .join(' ');
+        const rect = node.getBoundingClientRect();
+        const nearBottomCenter = rect.top > window.innerHeight * 0.45
+          && rect.left > window.innerWidth * 0.35
+          && rect.left < window.innerWidth * 0.75;
+        if (!label.trim() && nearBottomCenter && /down|chevron|arrow|m19|v|l/i.test(svgText)) return 50;
+        return 0;
+      };
+      const candidates = [...document.querySelectorAll('button, [role="button"]')]
+        .filter(visible)
+        .map(node => ({ node, score: buttonScore(node) }))
+        .filter(item => item.score > 0)
+        .sort((a, b) => b.score - a.score);
+      const item = candidates[0];
+      if (!item) return { ok: false, error: 'scroll-to-bottom button not found' };
+      const rect = item.node.getBoundingClientRect();
+      return {
+        ok: true,
+        x: Math.round(rect.left + rect.width / 2),
+        y: Math.round(rect.top + rect.height / 2),
+        score: item.score,
+        label: [
+          item.node.getAttribute('aria-label'),
+          item.node.getAttribute('title'),
+          item.node.innerText,
+          item.node.textContent
+        ].filter(Boolean).join(' | ')
+      };
+    })()
+    """
+    value = api_eval(book, script, "locate ChatGPT scroll-to-bottom button", timeout=10.0)
+    return value if isinstance(value, dict) else {"ok": False, "error": "Malformed bottom button result"}
+
+
+def go_to_conversation_bottom(book: ActionBook) -> dict[str, Any]:
+    button = locate_scroll_to_bottom_button(book)
+    if button.get("ok"):
+        book.browser("click", f"{int(button['x'])},{int(button['y'])}", timeout=10.0)
+        time.sleep(1.0)
+        scroll_state = scroll_conversation_to_bottom(book)
+        scroll_state["used_bottom_button"] = True
+        scroll_state["bottom_button"] = button
+        return scroll_state
+    scroll_state = scroll_conversation_to_bottom(book)
+    scroll_state["used_bottom_button"] = False
+    scroll_state["bottom_button"] = button
+    return scroll_state
+
+
+def locate_latest_assistant_copy_button(book: ActionBook) -> dict[str, Any]:
+    script = r"""
+    (async () => {
+      const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+      const normalize = value => String(value || '')
+        .replace(/\u00a0/g, ' ')
+        .replace(/[ \t]+\n/g, '\n')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+      const visible = node => {
+        if (!node) return false;
+        const rect = node.getBoundingClientRect();
+        const style = getComputedStyle(node);
+        return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
+      };
+      const isCopyButton = node => {
+        if (!node || !visible(node)) return false;
+        const text = [
+          node.getAttribute('aria-label'),
+          node.getAttribute('title'),
+          node.getAttribute('data-testid'),
+          node.innerText,
+          node.textContent
+        ].map(value => String(value || '').toLowerCase()).join('\n');
+        return /copy-turn-action-button|copy response|copy reply|复制回复/.test(text);
+      };
+      const messageCandidates = [
+        ...document.querySelectorAll('[data-message-author-role="assistant"]')
+      ].filter(visible);
+      const fallbackCandidates = messageCandidates.length ? [] : [
+        ...document.querySelectorAll('article, [class*="markdown"], .markdown')
+      ].filter(node => visible(node) && normalize(node.innerText || node.textContent).length > 20);
+      const messages = messageCandidates.length ? messageCandidates : fallbackCandidates;
+      const latest = messages[messages.length - 1];
+      if (!latest) return { ok: false, error: 'No assistant message found' };
+
+      window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'instant' });
+      latest.scrollIntoView({ block: 'end', inline: 'nearest' });
+      latest.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+      latest.dispatchEvent(new MouseEvent('mousemove', { bubbles: true }));
+      await sleep(650);
+
+      const containers = [];
+      let current = latest;
+      for (let depth = 0; current && depth < 8; depth += 1) {
+        containers.push(current);
+        current = current.parentElement;
+      }
+      const allButtons = [...document.querySelectorAll('button, [role="button"]')];
+      let copyButton = null;
+      for (const container of containers) {
+        copyButton = [...container.querySelectorAll('button, [role="button"]')].find(isCopyButton);
+        if (copyButton) break;
+      }
+      if (!copyButton) {
+        const rect = latest.getBoundingClientRect();
+        copyButton = allButtons
+          .filter(isCopyButton)
+          .map(button => {
+            const r = button.getBoundingClientRect();
+            return { button, distance: Math.abs(r.top - rect.bottom) + Math.abs(r.left - rect.left) };
+          })
+          .sort((a, b) => a.distance - b.distance)[0]?.button || null;
+      }
+
+      const domText = normalize(latest.innerText || latest.textContent || '');
+      const markdownRoot = latest.querySelector('.markdown, [class*="markdown"]') || latest;
+      const fallbackText = normalize(markdownRoot.innerText || markdownRoot.textContent || domText);
+      if (!copyButton) {
+        return {
+          ok: false,
+          error: 'No copy button found for latest assistant message',
+          fallback_length: fallbackText.length,
+          message_text_length: domText.length
+        };
+      }
+
+      copyButton.scrollIntoView({ block: 'center', inline: 'nearest' });
+      await sleep(250);
+      const rect = copyButton.getBoundingClientRect();
+      const latestRect = latest.getBoundingClientRect();
+      return {
+        ok: true,
+        x: Math.round(rect.left + rect.width / 2),
+        y: Math.round(rect.top + rect.height / 2),
+        button_text: normalize(copyButton.innerText || copyButton.textContent || copyButton.getAttribute('aria-label') || ''),
+        latest_top: Math.round(latestRect.top),
+        latest_bottom: Math.round(latestRect.bottom),
+        fallback_length: fallbackText.length,
+        message_text_length: domText.length
+      };
+    })()
+    """
+    value = api_eval(book, script, "locate latest assistant copy button", timeout=45.0)
+    if not isinstance(value, dict):
+        return {"ok": False, "error": "Malformed copy button result"}
+    return value
+
+
+def write_markdown(output_dir: Path, index: int, item: dict[str, str], result: dict[str, Any]) -> Path:
+    title = normalize_text(item.get("title") or f"conversation-{index}")
+    filename = f"{index:03d}-{sanitize_name(title)}.md"
+    path = output_dir / filename
+    warnings: list[str] = []
+    if not result.get("clicked_copy"):
+        warnings.append("copy button not found or not clicked")
+    metadata = {
+        "title": title,
+        "source_url": item.get("url") or "",
+        "exported_at": datetime.now().isoformat(timespec="seconds"),
+        "method": "system-clipboard",
+        "clicked_copy": bool(result.get("clicked_copy")),
+        "warnings": warnings,
+    }
+    content = normalize_text(result.get("text") or "")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(frontmatter_string(metadata) + "\n\n" + content.rstrip() + "\n", encoding="utf-8")
+    return path
+
+
+def run_list(args: argparse.Namespace) -> int:
+    book = start_book(args)
+    ensure_chatgpt_ready(book)
+    prefixes = parse_prefixes(args.prefix)
+    conversations = collect_conversations(book, prefixes, args.title_pattern, args.limit, args.max_scrolls)
+    print(json.dumps(conversations, ensure_ascii=False, indent=2))
+    return 0
+
+
+def run_export(args: argparse.Namespace) -> int:
+    install_interrupt_handlers()
+    output_dir = Path(args.output_dir).expanduser() if args.output_dir else default_output_dir()
+    book = start_book(args)
+    ensure_chatgpt_ready(book)
+    prefixes = parse_prefixes(args.prefix)
+    conversations = collect_conversations(book, prefixes, args.title_pattern, args.limit, args.max_scrolls)
+    if not conversations:
+        raise RuntimeError(
+            "No ChatGPT conversations found with "
+            f"title_pattern={args.title_pattern!r} prefixes={', '.join(prefixes)}"
+        )
+
+    summary: list[dict[str, Any]] = []
+    failures: list[dict[str, Any]] = []
+    for index, item in enumerate(conversations, start=1):
+        title = normalize_text(item.get("title") or "")
+        url = str(item.get("url") or "")
+        log(f"导出 {index}/{len(conversations)}: {title}")
+        try:
+            goto_conversation(book, url)
+            scroll_state = go_to_conversation_bottom(book)
+            if not scroll_state.get("ok"):
+                raise RuntimeError(f"failed to scroll conversation to bottom: {scroll_state}")
+            clipboard_sentinel = f"__chatgpt_qx_export_sentinel_{datetime.now().timestamp()}_{index}__"
+            write_system_clipboard(clipboard_sentinel)
+            result = locate_latest_assistant_copy_button(book)
+            if not result.get("ok"):
+                raise RuntimeError(str(result.get("error") or "copy button not found"))
+            book.browser("click", f"{int(result['x'])},{int(result['y'])}", timeout=10.0)
+            time.sleep(0.4)
+            system_clipboard = read_system_clipboard()
+            if system_clipboard and system_clipboard != clipboard_sentinel:
+                result["text"] = system_clipboard
+                result["used_system_clipboard"] = True
+                result["clicked_copy"] = True
+            elif not normalize_text(result.get("text") or ""):
+                raise RuntimeError("copy clicked but system clipboard did not change")
+            path = write_markdown(output_dir, index, item, result)
+            summary.append(
+                {
+                    "index": index,
+                    "title": title,
+                    "url": url,
+                    "file": str(path),
+                    "clicked_copy": bool(result.get("clicked_copy")),
+                    "used_system_clipboard": bool(result.get("used_system_clipboard")),
+                    "text_length": len(str(result.get("text") or "")),
+                }
+            )
+        except Exception as exc:  # noqa: BLE001
+            failures.append({"index": index, "title": title, "url": url, "error": str(exc)})
+            log(f"失败 {index}: {exc}")
+        time.sleep(max(0.2, float(args.delay)))
+
+    write_json(output_dir / "summary.json", summary)
+    write_json(output_dir / "failures.json", failures)
+    log(f"完成: 成功 {len(summary)}，失败 {len(failures)}，输出 {output_dir}")
+    return 0 if not failures else 1
+
+
+def positive_int(value: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be an integer") from exc
+    if parsed < 1:
+        raise argparse.ArgumentTypeError("must be >= 1")
+    return parsed
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Export latest ChatGPT QX conversations to Markdown.")
+    parser.add_argument("--session", default=DEFAULT_SESSION, help="ActionBook session id")
+    parser.add_argument("--tab", default=DEFAULT_TAB, help="ActionBook tab id; auto-detect when omitted")
+    parser.add_argument("--prefix", default=DEFAULT_PREFIXES, help="Comma-separated title prefixes")
+    parser.add_argument("--title-pattern", default=DEFAULT_TITLE_PATTERN, help="Regex for matching conversation titles")
+    parser.add_argument("--limit", type=positive_int, default=20, help="Maximum conversations to export")
+    parser.add_argument("--max-scrolls", type=positive_int, default=30, help="Sidebar scroll attempts")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    list_parser = sub.add_parser("list", help="List matching ChatGPT conversations")
+    list_parser.add_argument("--prefix", dest="prefix_override", default="", help="Comma-separated title prefixes")
+    list_parser.add_argument("--title-pattern", dest="title_pattern_override", default="", help="Regex for matching titles")
+    list_parser.add_argument("--limit", dest="limit_override", type=positive_int, default=0, help="Maximum conversations")
+    list_parser.add_argument("--max-scrolls", dest="max_scrolls_override", type=positive_int, default=0, help="Sidebar scroll attempts")
+    list_parser.set_defaults(func=run_list)
+
+    export_parser = sub.add_parser("export", help="Export matching ChatGPT conversations")
+    export_parser.add_argument("--prefix", dest="prefix_override", default="", help="Comma-separated title prefixes")
+    export_parser.add_argument("--title-pattern", dest="title_pattern_override", default="", help="Regex for matching titles")
+    export_parser.add_argument("--limit", dest="limit_override", type=positive_int, default=0, help="Maximum conversations")
+    export_parser.add_argument("--max-scrolls", dest="max_scrolls_override", type=positive_int, default=0, help="Sidebar scroll attempts")
+    export_parser.add_argument("--output-dir", default="", help="Output directory")
+    export_parser.add_argument("--delay", type=float, default=0.8, help="Delay between conversations")
+    export_parser.set_defaults(func=run_export)
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if getattr(args, "prefix_override", ""):
+        args.prefix = args.prefix_override
+    if getattr(args, "title_pattern_override", ""):
+        args.title_pattern = args.title_pattern_override
+    if getattr(args, "limit_override", 0):
+        args.limit = args.limit_override
+    if getattr(args, "max_scrolls_override", 0):
+        args.max_scrolls = args.max_scrolls_override
+    try:
+        return int(args.func(args))
+    except KeyboardInterrupt:
+        print("Interrupted", file=sys.stderr)
+        return 130
+    except Exception as exc:  # noqa: BLE001
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

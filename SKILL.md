@@ -38,6 +38,7 @@ Load only what applies:
 | Taobao | `references/taobao.md`, `scripts/taobao_workflow.py` |
 | BOSS Zhipin | `references/zhipin.md`, `scripts/zhipin_workflow.py` |
 | Feishu / Lark Drive | `references/feishu.md`, `scripts/feishu_workflow.py` |
+| ChatGPT | `references/chatgpt.md`, `scripts/chatgpt_workflow.py` |
 
 Keep this file site-neutral. Put site command catalogs, payload schemas, DOM details, output trees, login notes, and risk-control quirks in the matching reference.
 
