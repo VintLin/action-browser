@@ -123,6 +123,7 @@ class ChatGptCliAndOutputTests(unittest.TestCase):
         self.assertIn('title: "Q13：标题"', text)
         self.assertIn('question: "问题正文"', text)
         self.assertIn('method: "system-clipboard"', text)
+        self.assertIn('mode_fallback: "False"', text)
         self.assertIn("## 回答", text)
 
     def test_help_exposes_ask_batch_ask_list_and_export(self) -> None:

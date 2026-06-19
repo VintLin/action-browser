@@ -181,14 +181,11 @@ def get_page_state(book: ActionBook) -> dict[str, str]:
 
 def page_has_login_or_risk(state: dict[str, str]) -> bool:
     haystack = "\n".join(str(state.get(key) or "") for key in ("href", "title", "text"))
-    return bool(
-        re.search(
-            r"login|sign in|log in|captcha|cloudflare|verify|verification|unusual activity|"
-            r"登录|登入|验证码|验证|异常活动",
-            haystack,
-            re.I,
-        )
-    )
+    if re.search(r"captcha|cloudflare|verify|verification|unusual activity|验证码|验证|异常活动", haystack, re.I):
+        return True
+    if re.search(r"login|sign in|log in", haystack, re.I):
+        return True
+    return bool(re.search(r"登录|登入", haystack) and "退出登录" not in haystack)
 
 
 def ensure_chatgpt_ready(book: ActionBook) -> None:
@@ -465,25 +462,58 @@ NEW_CHAT_CONTROL_JS = r"""
 
 
 def create_new_chat(book: ActionBook) -> None:
-    before_url = str(book.browser("url", timeout=10.0) or "")
     click_visible_control(book, "new chat", NEW_CHAT_CONTROL_JS)
-    api_eval(
+    time.sleep(1.0)
+    state = api_eval(
         book,
-        f"""
-        (async () => {{
-          const before = {json.dumps(before_url)};
-          const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-          for (let i = 0; i < 40; i += 1) {{
-            const text = document.body?.innerText || '';
-            const composer = document.querySelector('[contenteditable="true"], textarea, [data-testid="composer"]');
-            if (composer && (location.href !== before || /有什么可以帮忙|message chatgpt|ask anything/i.test(text))) return true;
-            await sleep(250);
-          }}
-          return {{ error: 'new chat did not become ready' }};
-        }})()
+        """
+        (() => {
+          const visible = node => {
+            if (!node) return false;
+            const rect = node.getBoundingClientRect();
+            const style = getComputedStyle(node);
+            return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
+          };
+          const text = document.body?.innerText || '';
+          const composer = [...document.querySelectorAll('[contenteditable="true"], textarea, [data-testid="composer"]')]
+            .find(visible);
+          return {
+            ok: Boolean(composer),
+            href: location.href,
+            has_empty_chat_text: /有什么可以帮忙|message chatgpt|ask anything|准备好开始了吗/i.test(text)
+          };
+        })()
         """,
         "wait new ChatGPT chat",
-        timeout=15.0,
+        timeout=10.0,
+    )
+    if not isinstance(state, dict) or not state.get("ok"):
+        raise RuntimeError(f"new chat did not become ready: {state}")
+    api_eval(
+        book,
+        """
+        (() => {
+          const candidates = [...document.querySelectorAll('[contenteditable="true"], textarea')]
+            .filter(node => {
+              const rect = node.getBoundingClientRect();
+              const style = getComputedStyle(node);
+              return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
+            });
+          const composer = candidates[candidates.length - 1];
+          if (!composer) return { ok: false, error: 'composer not found' };
+          composer.focus();
+          if (composer.tagName === 'TEXTAREA') {
+            composer.value = '';
+            composer.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'deleteContentBackward' }));
+          } else {
+            document.execCommand('selectAll', false);
+            document.execCommand('delete', false);
+          }
+          return { ok: true };
+        })()
+        """,
+        "clear ChatGPT composer",
+        timeout=10.0,
     )
 
 
@@ -520,14 +550,14 @@ def menu_item_control_js(pattern: str, label: str) -> str:
         const style = getComputedStyle(node);
         return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
       }};
-      const candidates = [...document.querySelectorAll('[role="menuitem"], button, [role="button"]')]
+      const candidates = [...document.querySelectorAll('[role^="menuitem"], button, [role="button"]')]
         .filter(visible)
         .map(node => {{
           const text = [node.getAttribute('aria-label'), node.getAttribute('data-testid'), node.innerText, node.textContent]
             .map(value => String(value || '').trim()).join('\\n');
           const rect = node.getBoundingClientRect();
-          const insideComposerArea = rect.top > window.innerHeight * 0.35;
-          const score = regex.test(text) && insideComposerArea ? 100 : 0;
+          const inMainPane = rect.left > Math.min(260, window.innerWidth * 0.25);
+          const score = regex.test(text) && inMainPane ? 100 : 0;
           return {{ node, score, x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2), text }};
         }})
         .filter(item => item.score > 0)
@@ -539,12 +569,81 @@ def menu_item_control_js(pattern: str, label: str) -> str:
 
 
 def enable_web_search(book: ActionBook) -> None:
-    click_visible_control(book, "composer plus", COMPOSER_PLUS_CONTROL_JS)
-    click_visible_control(book, "web search", menu_item_control_js("网页搜索|web search|search", "web search"))
+    state = api_eval(book, search_mode_state_js(), "check search mode state", timeout=10.0)
+    if isinstance(state, dict) and state.get("search_enabled"):
+        return
+    last_result: Any = None
+    for _attempt in range(2):
+        click_visible_control(book, "composer plus", COMPOSER_PLUS_CONTROL_JS)
+        time.sleep(0.5)
+        result = api_eval(
+            book,
+            menu_item_control_js("网页搜索|web search|search", "web search"),
+            "find web search",
+            timeout=10.0,
+        )
+        last_result = result
+        if isinstance(result, dict) and result.get("ok"):
+            book.browser("click", f"{int(result['x'])},{int(result['y'])}", timeout=10.0)
+            time.sleep(0.5)
+            state = api_eval(book, search_mode_state_js(), "check search mode state", timeout=10.0)
+            if isinstance(state, dict) and state.get("search_enabled"):
+                return
+    raise RuntimeError(f"web search control not found or did not enable: {last_result}")
 
 
-def select_intelligent_mode(book: ActionBook) -> None:
-    click_visible_control(book, "intelligent mode", menu_item_control_js("智能|intelligent", "intelligent mode"))
+def search_mode_state_js() -> str:
+    return """
+    (() => {
+      const visible = node => {
+        const rect = node.getBoundingClientRect();
+        const style = getComputedStyle(node);
+        return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
+      };
+      const controls = [...document.querySelectorAll('button, [role="button"], [role^="menuitem"]')]
+        .filter(visible)
+        .map(node => {
+          const rect = node.getBoundingClientRect();
+          const text = [
+            node.getAttribute('aria-label'),
+            node.getAttribute('data-testid'),
+            node.innerText,
+            node.textContent
+          ].map(value => String(value || '').trim()).join('\\n');
+          return {
+            text,
+            pressed: node.getAttribute('aria-pressed'),
+            checked: node.getAttribute('aria-checked'),
+            insideComposerArea: rect.top > window.innerHeight * 0.35
+          };
+        });
+      const searchControl = controls.find(item => item.insideComposerArea && /网页搜索|搜索|web search|search/i.test(item.text));
+      const intelligentControl = controls.find(item => /智能|intelligent/i.test(item.text));
+      return {
+        search_enabled: Boolean(searchControl),
+        search_text: searchControl ? searchControl.text : '',
+        intelligent_visible: Boolean(intelligentControl),
+        intelligent_text: intelligentControl ? intelligentControl.text : ''
+      };
+    })()
+    """
+
+
+def select_intelligent_mode(book: ActionBook) -> dict[str, Any]:
+    result = api_eval(book, menu_item_control_js("智能|intelligent", "intelligent mode"), "find intelligent mode", timeout=10.0)
+    if isinstance(result, dict) and result.get("ok"):
+        book.browser("click", f"{int(result['x'])},{int(result['y'])}", timeout=10.0)
+        time.sleep(0.4)
+        return {"selected": True, "fallback": False, "text": str(result.get("text") or "")}
+    state = api_eval(book, search_mode_state_js(), "check search mode state", timeout=10.0)
+    if isinstance(state, dict) and state.get("search_enabled"):
+        return {
+            "selected": False,
+            "fallback": True,
+            "text": str(state.get("search_text") or ""),
+            "reason": "intelligent option not visible after web search was enabled",
+        }
+    raise RuntimeError(f"intelligent mode control not found: {result}")
 
 
 def select_pro_extension(book: ActionBook) -> None:
@@ -593,7 +692,7 @@ def submit_prompt(book: ActionBook, question: str) -> None:
             node.getAttribute('data-testid'),
             node.innerText,
             node.textContent
-          ].join('\n')));
+          ].join('\\n')));
           if (!send) return { ok: false };
           const rect = send.getBoundingClientRect();
           return { ok: true, x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) };
@@ -629,7 +728,7 @@ def wait_for_answer_complete(book: ActionBook, timeout_seconds: int) -> None:
               const text = String(latest?.innerText || latest?.textContent || '').trim();
               const stopVisible = [...document.querySelectorAll('button')]
                 .filter(visible)
-                .some(node => /stop|停止|中止/i.test([node.getAttribute('aria-label'), node.innerText, node.textContent].join('\n')));
+                .some(node => /stop|停止|中止/i.test([node.getAttribute('aria-label'), node.innerText, node.textContent].join('\\n')));
               const composer = [...document.querySelectorAll('[contenteditable="true"], textarea')].find(visible);
               return { assistant_count: assistants.length, text, stop_visible: stopVisible, composer_ready: Boolean(composer) };
             })()
@@ -789,7 +888,8 @@ def write_task_markdown(
         "copied_at": completed_at,
         "method": "system-clipboard",
         "web_search": "true",
-        "mode": "intelligent",
+        "mode": result.get("mode") or "intelligent",
+        "mode_fallback": bool(result.get("mode_fallback")),
         "extension": "pro",
         "clicked_copy": bool(result.get("clicked_copy")),
     }
@@ -943,7 +1043,7 @@ def ask_one_task(
     started_at = datetime.now().isoformat(timespec="seconds")
     create_new_chat(book)
     enable_web_search(book)
-    select_intelligent_mode(book)
+    mode_state = select_intelligent_mode(book)
     select_pro_extension(book)
     submit_prompt(book, task.question)
     wait_for_answer_complete(book, answer_timeout)
@@ -964,6 +1064,8 @@ def ask_one_task(
     result["text"] = system_clipboard
     result["used_system_clipboard"] = True
     result["clicked_copy"] = True
+    result["mode"] = "intelligent"
+    result["mode_fallback"] = bool(mode_state.get("fallback"))
     current_url = str(book.browser("url", timeout=10.0) or "")
     path = write_task_markdown(output_dir, index, task, result, current_url, started_at, completed_at)
     return {
@@ -975,6 +1077,8 @@ def ask_one_task(
         "clicked_copy": True,
         "used_system_clipboard": True,
         "text_length": len(system_clipboard),
+        "mode": "intelligent",
+        "mode_fallback": bool(mode_state.get("fallback")),
         "started_at": started_at,
         "completed_at": completed_at,
     }
@@ -1010,7 +1114,7 @@ def build_parser() -> argparse.ArgumentParser:
     batch_parser = sub.add_parser("batch-ask", help="Ask multiple ChatGPT questions from a JSON or JSONL task file")
     batch_parser.add_argument("--tasks-file", required=True, help="JSON or JSONL task file")
     batch_parser.add_argument("--output-dir", default="", help="Output directory")
-    batch_parser.add_argument("--delay", type=float, default=1.0, help="Delay between tasks")
+    batch_parser.add_argument("--delay", type=float, default=60.0, help="Delay between tasks")
     batch_parser.add_argument("--answer-timeout", type=positive_int, default=900, help="Seconds to wait for answer completion")
     batch_parser.set_defaults(func=run_batch_ask)
 
