@@ -138,5 +138,24 @@ class ChatGptCliAndOutputTests(unittest.TestCase):
             self.assertIn(command, result.stdout)
 
 
+class ChatGptBrowserHelperContractTests(unittest.TestCase):
+    def test_browser_helper_functions_exist(self) -> None:
+        for name in (
+            "click_visible_control",
+            "create_new_chat",
+            "enable_web_search",
+            "select_intelligent_mode",
+            "select_pro_extension",
+            "submit_prompt",
+            "wait_for_answer_complete",
+        ):
+            self.assertTrue(callable(getattr(chatgpt, name)))
+
+    def test_script_does_not_read_sensitive_browser_storage(self) -> None:
+        source = (SCRIPTS / "chatgpt_workflow.py").read_text(encoding="utf-8").lower()
+        for term in ("document.cookie", "localstorage", "sessionstorage", "password"):
+            self.assertNotIn(term, source)
+
+
 if __name__ == "__main__":
     unittest.main()

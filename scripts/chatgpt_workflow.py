@@ -425,6 +425,231 @@ def go_to_conversation_bottom(book: ActionBook) -> dict[str, Any]:
     return scroll_state
 
 
+def click_visible_control(
+    book: ActionBook,
+    label: str,
+    selector_script: str,
+    timeout: float = 10.0,
+) -> dict[str, Any]:
+    result = api_eval(book, selector_script, f"locate {label}", timeout=timeout)
+    if not isinstance(result, dict) or not result.get("ok"):
+        raise RuntimeError(f"{label} control not found: {result}")
+    book.browser("click", f"{int(result['x'])},{int(result['y'])}", timeout=timeout)
+    time.sleep(0.4)
+    return result
+
+
+NEW_CHAT_CONTROL_JS = r"""
+(() => {
+  const visible = node => {
+    const rect = node.getBoundingClientRect();
+    const style = getComputedStyle(node);
+    return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
+  };
+  const candidates = [...document.querySelectorAll('a, button, [role="button"]')]
+    .filter(visible)
+    .map(node => {
+      const text = [node.getAttribute('aria-label'), node.innerText, node.textContent]
+        .map(value => String(value || '').trim()).join('\n');
+      const href = node.getAttribute('href') || '';
+      const score = /新聊天|new chat/i.test(text) || href === '/' ? 100 : 0;
+      const rect = node.getBoundingClientRect();
+      return { node, score, x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2), text };
+    })
+    .filter(item => item.score > 0)
+    .sort((a, b) => b.score - a.score);
+  const item = candidates[0];
+  return item ? { ok: true, x: item.x, y: item.y, text: item.text } : { ok: false };
+})()
+"""
+
+
+def create_new_chat(book: ActionBook) -> None:
+    before_url = str(book.browser("url", timeout=10.0) or "")
+    click_visible_control(book, "new chat", NEW_CHAT_CONTROL_JS)
+    api_eval(
+        book,
+        f"""
+        (async () => {{
+          const before = {json.dumps(before_url)};
+          const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+          for (let i = 0; i < 40; i += 1) {{
+            const text = document.body?.innerText || '';
+            const composer = document.querySelector('[contenteditable="true"], textarea, [data-testid="composer"]');
+            if (composer && (location.href !== before || /有什么可以帮忙|message chatgpt|ask anything/i.test(text))) return true;
+            await sleep(250);
+          }}
+          return {{ error: 'new chat did not become ready' }};
+        }})()
+        """,
+        "wait new ChatGPT chat",
+        timeout=15.0,
+    )
+
+
+COMPOSER_PLUS_CONTROL_JS = r"""
+(() => {
+  const visible = node => {
+    const rect = node.getBoundingClientRect();
+    const style = getComputedStyle(node);
+    return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
+  };
+  const candidates = [...document.querySelectorAll('button, [role="button"]')]
+    .filter(visible)
+    .map(node => {
+      const text = [node.getAttribute('aria-label'), node.getAttribute('data-testid'), node.innerText, node.textContent]
+        .map(value => String(value || '').trim()).join('\n');
+      const score = /composer-plus-btn|添加文件|add/i.test(text) ? 100 : 0;
+      const rect = node.getBoundingClientRect();
+      return { node, score, x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2), text };
+    })
+    .filter(item => item.score > 0)
+    .sort((a, b) => b.score - a.score);
+  const item = candidates[0];
+  return item ? { ok: true, x: item.x, y: item.y, text: item.text } : { ok: false };
+})()
+"""
+
+
+def menu_item_control_js(pattern: str, label: str) -> str:
+    return f"""
+    (() => {{
+      const regex = new RegExp({json.dumps(pattern)}, 'i');
+      const visible = node => {{
+        const rect = node.getBoundingClientRect();
+        const style = getComputedStyle(node);
+        return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
+      }};
+      const candidates = [...document.querySelectorAll('[role="menuitem"], button, [role="button"]')]
+        .filter(visible)
+        .map(node => {{
+          const text = [node.getAttribute('aria-label'), node.getAttribute('data-testid'), node.innerText, node.textContent]
+            .map(value => String(value || '').trim()).join('\\n');
+          const rect = node.getBoundingClientRect();
+          const insideComposerArea = rect.top > window.innerHeight * 0.35;
+          const score = regex.test(text) && insideComposerArea ? 100 : 0;
+          return {{ node, score, x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2), text }};
+        }})
+        .filter(item => item.score > 0)
+        .sort((a, b) => b.score - a.score);
+      const item = candidates[0];
+      return item ? {{ ok: true, x: item.x, y: item.y, text: item.text, label: {json.dumps(label)} }} : {{ ok: false }};
+    }})()
+    """
+
+
+def enable_web_search(book: ActionBook) -> None:
+    click_visible_control(book, "composer plus", COMPOSER_PLUS_CONTROL_JS)
+    click_visible_control(book, "web search", menu_item_control_js("网页搜索|web search|search", "web search"))
+
+
+def select_intelligent_mode(book: ActionBook) -> None:
+    click_visible_control(book, "intelligent mode", menu_item_control_js("智能|intelligent", "intelligent mode"))
+
+
+def select_pro_extension(book: ActionBook) -> None:
+    click_visible_control(book, "Pro extension", menu_item_control_js("Pro 扩展|Pro", "Pro extension"))
+
+
+def submit_prompt(book: ActionBook, question: str) -> None:
+    script = f"""
+    (() => {{
+      const question = {json.dumps(question)};
+      const candidates = [
+        ...document.querySelectorAll('[contenteditable="true"], textarea')
+      ].filter(node => {{
+        const rect = node.getBoundingClientRect();
+        const style = getComputedStyle(node);
+        return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
+      }});
+      const composer = candidates[candidates.length - 1];
+      if (!composer) return {{ error: 'composer not found' }};
+      composer.focus();
+      if (composer.tagName === 'TEXTAREA') {{
+        composer.value = question;
+        composer.dispatchEvent(new InputEvent('input', {{ bubbles: true, inputType: 'insertText', data: question }}));
+      }} else {{
+        document.execCommand('selectAll', false);
+        document.execCommand('insertText', false, question);
+      }}
+      return {{ ok: true }};
+    }})()
+    """
+    result = api_eval(book, script, "fill ChatGPT composer", timeout=10.0)
+    if isinstance(result, dict) and result.get("error"):
+        raise RuntimeError(f"fill ChatGPT composer: {result.get('error')}")
+    send_result = api_eval(
+        book,
+        """
+        (() => {
+          const visible = node => {
+            const rect = node.getBoundingClientRect();
+            const style = getComputedStyle(node);
+            return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden' && !node.disabled;
+          };
+          const buttons = [...document.querySelectorAll('button')].filter(visible);
+          const send = buttons.find(node => /send|发送|submit/i.test([
+            node.getAttribute('aria-label'),
+            node.getAttribute('data-testid'),
+            node.innerText,
+            node.textContent
+          ].join('\n')));
+          if (!send) return { ok: false };
+          const rect = send.getBoundingClientRect();
+          return { ok: true, x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) };
+        })()
+        """,
+        "locate send button",
+        timeout=10.0,
+    )
+    if isinstance(send_result, dict) and send_result.get("ok"):
+        book.browser("click", f"{int(send_result['x'])},{int(send_result['y'])}", timeout=10.0)
+    else:
+        book.browser("press", "Enter", timeout=10.0)
+
+
+def wait_for_answer_complete(book: ActionBook, timeout_seconds: int) -> None:
+    deadline = time.time() + timeout_seconds
+    last_text = ""
+    stable_rounds = 0
+    saw_assistant = False
+    while time.time() < deadline:
+        state = api_eval(
+            book,
+            """
+            (() => {
+              const visible = node => {
+                if (!node) return false;
+                const rect = node.getBoundingClientRect();
+                const style = getComputedStyle(node);
+                return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
+              };
+              const assistants = [...document.querySelectorAll('[data-message-author-role="assistant"]')].filter(visible);
+              const latest = assistants[assistants.length - 1];
+              const text = String(latest?.innerText || latest?.textContent || '').trim();
+              const stopVisible = [...document.querySelectorAll('button')]
+                .filter(visible)
+                .some(node => /stop|停止|中止/i.test([node.getAttribute('aria-label'), node.innerText, node.textContent].join('\n')));
+              const composer = [...document.querySelectorAll('[contenteditable="true"], textarea')].find(visible);
+              return { assistant_count: assistants.length, text, stop_visible: stopVisible, composer_ready: Boolean(composer) };
+            })()
+            """,
+            "read ChatGPT answer state",
+            timeout=10.0,
+        )
+        if isinstance(state, dict) and int(state.get("assistant_count") or 0) > 0:
+            saw_assistant = True
+            text = normalize_text(state.get("text") or "")
+            stable_rounds = stable_rounds + 1 if text and text == last_text else 0
+            last_text = text
+            if stable_rounds >= 4 and not state.get("stop_visible") and state.get("composer_ready"):
+                return
+        time.sleep(1.0)
+    if saw_assistant:
+        raise RuntimeError(f"answer did not finish before timeout: {timeout_seconds}s")
+    raise RuntimeError(f"answer did not start before timeout: {timeout_seconds}s")
+
+
 def locate_latest_assistant_copy_button(book: ActionBook) -> dict[str, Any]:
     script = r"""
     (async () => {
