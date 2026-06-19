@@ -8,7 +8,9 @@ __pycache__/
 venv/
 output/
 outputs/
+docs/
 logs/
+tests/
 dist/
 build/
 *.log
