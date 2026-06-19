@@ -157,5 +157,18 @@ class ChatGptBrowserHelperContractTests(unittest.TestCase):
             self.assertNotIn(term, source)
 
 
+class ChatGptFailureRecordTests(unittest.TestCase):
+    def test_failure_record_contains_required_fields(self) -> None:
+        task = chatgpt.ChatGptTask(title="Q13：标题", question="问题正文")
+        record = chatgpt.failure_record(1, task, "https://chatgpt.com/", RuntimeError("boom"))
+
+        self.assertEqual(record["index"], 1)
+        self.assertEqual(record["title"], "Q13：标题")
+        self.assertEqual(record["question"], "问题正文")
+        self.assertEqual(record["url"], "https://chatgpt.com/")
+        self.assertEqual(record["error"], "boom")
+        self.assertIn("failed_at", record)
+
+
 if __name__ == "__main__":
     unittest.main()

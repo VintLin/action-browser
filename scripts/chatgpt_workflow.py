@@ -799,6 +799,17 @@ def write_task_markdown(
     return path
 
 
+def failure_record(index: int, task: ChatGptTask, url: str, exc: Exception) -> dict[str, Any]:
+    return {
+        "index": index,
+        "title": task.title,
+        "question": task.question,
+        "url": url,
+        "error": str(exc),
+        "failed_at": datetime.now().isoformat(timespec="seconds"),
+    }
+
+
 def run_list(args: argparse.Namespace) -> int:
     book = start_book(args)
     ensure_chatgpt_ready(book)
@@ -870,14 +881,103 @@ def run_export(args: argparse.Namespace) -> int:
 
 
 def run_ask(args: argparse.Namespace) -> int:
-    task = ChatGptTask(title=str(args.title or "").strip(), question=str(args.question or "").strip())
-    parse_task_record({"title": task.title, "question": task.question}, "ask")
-    raise RuntimeError("ask command is not implemented yet")
+    install_interrupt_handlers()
+    task = parse_task_record({"title": args.title, "question": args.question}, "ask")
+    output_dir = Path(args.output_dir).expanduser() if args.output_dir else default_run_output_dir()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    book = start_book(args)
+    ensure_chatgpt_ready(book)
+    summary: list[dict[str, Any]] = []
+    failures: list[dict[str, Any]] = []
+    try:
+        summary.append(ask_one_task(book, task, 1, output_dir, int(args.answer_timeout)))
+    except Exception as exc:  # noqa: BLE001
+        current_url = ""
+        try:
+            current_url = str(book.browser("url", timeout=10.0) or "")
+        except Exception:
+            current_url = ""
+        failures.append(failure_record(1, task, current_url, exc))
+        log(f"失败 1: {exc}")
+    write_json(output_dir / "summary.json", summary)
+    write_json(output_dir / "failures.json", failures)
+    log(f"完成: 成功 {len(summary)}，失败 {len(failures)}，输出 {output_dir}")
+    return 0 if not failures else 1
 
 
 def run_batch_ask(args: argparse.Namespace) -> int:
-    load_tasks_file(Path(args.tasks_file))
-    raise RuntimeError("batch-ask command is not implemented yet")
+    install_interrupt_handlers()
+    tasks = load_tasks_file(Path(args.tasks_file))
+    output_dir = Path(args.output_dir).expanduser() if args.output_dir else default_run_output_dir()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    book = start_book(args)
+    ensure_chatgpt_ready(book)
+    summary: list[dict[str, Any]] = []
+    failures: list[dict[str, Any]] = []
+    for index, task in enumerate(tasks, start=1):
+        log(f"提问 {index}/{len(tasks)}: {task.title}")
+        try:
+            summary.append(ask_one_task(book, task, index, output_dir, int(args.answer_timeout)))
+        except Exception as exc:  # noqa: BLE001
+            current_url = ""
+            try:
+                current_url = str(book.browser("url", timeout=10.0) or "")
+            except Exception:
+                current_url = ""
+            failures.append(failure_record(index, task, current_url, exc))
+            log(f"失败 {index}: {exc}")
+        time.sleep(max(0.2, float(args.delay)))
+    write_json(output_dir / "summary.json", summary)
+    write_json(output_dir / "failures.json", failures)
+    log(f"完成: 成功 {len(summary)}，失败 {len(failures)}，输出 {output_dir}")
+    return 0 if not failures else 1
+
+
+def ask_one_task(
+    book: ActionBook,
+    task: ChatGptTask,
+    index: int,
+    output_dir: Path,
+    answer_timeout: int,
+) -> dict[str, Any]:
+    started_at = datetime.now().isoformat(timespec="seconds")
+    create_new_chat(book)
+    enable_web_search(book)
+    select_intelligent_mode(book)
+    select_pro_extension(book)
+    submit_prompt(book, task.question)
+    wait_for_answer_complete(book, answer_timeout)
+    scroll_state = go_to_conversation_bottom(book)
+    if not scroll_state.get("ok"):
+        raise RuntimeError(f"failed to scroll conversation to bottom: {scroll_state}")
+    clipboard_sentinel = f"__chatgpt_ask_sentinel_{datetime.now().timestamp()}_{index}__"
+    write_system_clipboard(clipboard_sentinel)
+    result = locate_latest_assistant_copy_button(book)
+    if not result.get("ok"):
+        raise RuntimeError(str(result.get("error") or "copy response button not found"))
+    book.browser("click", f"{int(result['x'])},{int(result['y'])}", timeout=10.0)
+    time.sleep(0.5)
+    system_clipboard = read_system_clipboard()
+    if not system_clipboard or system_clipboard == clipboard_sentinel:
+        raise RuntimeError("copy clicked but system clipboard did not change")
+    completed_at = datetime.now().isoformat(timespec="seconds")
+    result["text"] = system_clipboard
+    result["used_system_clipboard"] = True
+    result["clicked_copy"] = True
+    current_url = str(book.browser("url", timeout=10.0) or "")
+    path = write_task_markdown(output_dir, index, task, result, current_url, started_at, completed_at)
+    return {
+        "index": index,
+        "title": task.title,
+        "question": task.question,
+        "url": current_url,
+        "file": str(path),
+        "clicked_copy": True,
+        "used_system_clipboard": True,
+        "text_length": len(system_clipboard),
+        "started_at": started_at,
+        "completed_at": completed_at,
+    }
 
 
 def positive_int(value: str) -> int:
