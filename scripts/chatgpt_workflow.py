@@ -826,7 +826,7 @@ def wait_for_submission_started(book: ActionBook, timeout_seconds: int = 30) -> 
               const stopVisible = [...document.querySelectorAll('button')]
                 .filter(visible)
                 .some(node => /stop|停止|中止/i.test([node.getAttribute('aria-label'), node.innerText, node.textContent].join('\\n')));
-              const assistantStarted = [...document.querySelectorAll('[data-message-author-role="assistant"], article, .markdown')]
+              const assistantStarted = [...document.querySelectorAll('[data-message-author-role="assistant"]')]
                 .some(visible);
               const thinking = /正在思考|thinking|搜索|searching/i.test(body);
               return { stopVisible, assistantStarted, thinking };
@@ -1071,14 +1071,17 @@ def submission_record(
 def is_nonfatal_submit_error(exc: Exception) -> bool:
     text = str(exc).lower()
     nonfatal_markers = [
-        "send button not found",
-        "web search control not found",
-        "new chat did not become ready",
-        "submission did not start before timeout",
-        "composer not found",
-        "pro extension control not found",
+        r"composer plus control not found(?: or did not click)?",
+        r"new chat control not found(?: or did not click)?",
+        r"web search control not found(?: or did not enable)?",
+        r"pro extension control not found(?: or did not click)?",
+        r"send button not found",
+        r"composer not found",
+        r"new chat did not become ready",
+        r"submission did not start before timeout",
+        r"answer did not start before timeout",
     ]
-    return any(marker in text for marker in nonfatal_markers)
+    return any(re.search(marker, text) for marker in nonfatal_markers)
 
 
 def is_fatal_submit_error(exc: Exception) -> bool:

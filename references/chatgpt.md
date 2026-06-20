@@ -84,8 +84,9 @@ JSON array:
 ]
 ```
 
-`title` and `question` are required. `output_name` is optional and changes only
-the Markdown filename.
+`title` and `question` are required. `output_name` is optional and is ignored
+by `ask` and `batch-ask`; those commands are submit-only and do not write
+Markdown files.
 
 ## Output
 
@@ -135,12 +136,12 @@ uses multiple selectors:
 - Composer controls: `data-testid="composer-plus-btn"` is used only to open the
   tool menu and choose `网页搜索`; it must not select upload-file items. The
   question is sent through the composer and the visible send button.
-- Mode controls: visible menu/button items for `智能` and `Pro 扩展`. Current
-  ChatGPT UI may not expose a separate `智能` menu item after web search is
-  enabled; in that case the workflow records `mode_fallback: true` and
-  continues after verifying search mode is active.
-- Assistant messages: `data-message-author-role="assistant"` first, then
-  broader article/markdown fallbacks for state detection only.
+- Mode controls: the deprecated answer-capture helper can still look for `智能`
+  and `Pro 扩展`, but `ask` and `batch-ask` are submit-only and do not select a
+  mode before sending.
+- Assistant messages: submission-start detection uses
+  `data-message-author-role="assistant"`; broader article/markdown fallbacks are
+  limited to the deprecated answer-capture helper.
 - Copy response controls: `data-testid="copy-turn-action-button"` or
   `aria-label` containing `复制回复`, `Copy response`, or `Copy reply`.
 
