@@ -933,14 +933,16 @@ def submission_record(
 
 
 def is_nonfatal_submit_error(exc: Exception) -> bool:
-    text = str(exc)
-    return bool(
-        re.search(
-            r"control not found|not found|menu|button|composer|new chat|url=|did not start|did not become ready|send button|web search control",
-            text,
-            re.I,
-        )
-    )
+    text = str(exc).lower()
+    nonfatal_markers = [
+        "send button not found",
+        "web search control not found",
+        "new chat did not become ready",
+        "submission did not start before timeout",
+        "composer not found",
+        "pro extension control not found",
+    ]
+    return any(marker in text for marker in nonfatal_markers)
 
 
 def is_fatal_submit_error(exc: Exception) -> bool:
