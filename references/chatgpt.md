@@ -137,8 +137,8 @@ uses multiple selectors:
   tool menu and choose `网页搜索`; it must not select upload-file items. The
   question is sent through the composer and the visible send button.
 - Mode controls: the deprecated answer-capture helper can still look for `智能`
-  and `Pro 扩展`, but `ask` and `batch-ask` are submit-only and do not select a
-  mode before sending.
+  and `Pro 扩展`. `ask` and `batch-ask` are submit-only; they enable Web Search
+  and select Pro extension before sending, but they do not select `智能`.
 - Assistant messages: submission-start detection uses
   `data-message-author-role="assistant"`; broader article/markdown fallbacks are
   limited to the deprecated answer-capture helper.

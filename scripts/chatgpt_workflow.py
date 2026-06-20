@@ -751,7 +751,27 @@ def select_intelligent_mode(book: ActionBook) -> dict[str, Any]:
 
 
 def select_pro_extension(book: ActionBook) -> None:
-    click_visible_control(book, "Pro extension", menu_item_control_js("Pro 扩展|Pro", "Pro extension"))
+    last_result: Any = None
+    for _attempt in range(2):
+        click_control_via_pointer_events(book, "composer plus", COMPOSER_PLUS_CONTROL_JS)
+        deadline = time.time() + 3.0
+        while time.time() < deadline:
+            result = api_eval(
+                book,
+                menu_item_control_js("Pro 扩展|Pro extension", "Pro extension"),
+                "find Pro extension",
+                timeout=1.0,
+            )
+            last_result = result
+            if isinstance(result, dict) and result.get("ok"):
+                click_control_via_pointer_events(
+                    book,
+                    "Pro extension",
+                    menu_item_control_pointer_click_js("Pro 扩展|Pro extension", "Pro extension"),
+                )
+                return
+            time.sleep(0.5)
+    raise RuntimeError(f"Pro extension control not found or did not click: {last_result}")
 
 
 def fill_prompt(book: ActionBook, question: str) -> None:
@@ -1091,6 +1111,8 @@ def is_nonfatal_submit_error(exc: Exception) -> bool:
         r"send button not found",
         r"composer not found",
         r"new chat did not become ready",
+        r"timeout",
+        r"timed out",
         r"submission did not start before timeout",
         r"answer did not start before timeout",
     ]
