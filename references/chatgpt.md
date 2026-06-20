@@ -9,14 +9,12 @@ conversation replies to local Markdown.
 The workflow can:
 
 1. Open `https://chatgpt.com/` with the user's Chrome login state.
-2. Create one new chat or many new chats from local tasks.
-3. Enable web search, intelligent mode, and Pro extension through the ChatGPT
-   UI.
-4. Send the question and wait for the assistant answer to finish.
-5. Reopen or locate existing conversations from the sidebar.
-6. Scroll to the conversation bottom.
-7. Click ChatGPT's own `复制回复` / `Copy response` button.
-8. Save the copied Markdown to local `.md` files.
+2. Create one new chat or many new chats from local JSON / JSONL tasks.
+3. Enable web search and Pro extension through the ChatGPT UI.
+4. Send each question and confirm the conversation started.
+5. Write `submissions.json` and `failures.json` for submitted questions.
+6. Reopen or locate existing conversations from the sidebar.
+7. Export existing conversation replies to local Markdown through `export`.
 
 Final answer extraction does not use DOM text fallback. The workflow writes a
 sentinel to the macOS system clipboard, clicks ChatGPT's `复制回复` / `Copy
@@ -25,7 +23,7 @@ Markdown.
 
 ## Commands
 
-Ask one question and export the latest assistant answer:
+Ask one question and record the submitted conversation URL:
 
 ```bash
 python3 scripts/chatgpt_workflow.py ask \
@@ -91,14 +89,17 @@ the Markdown filename.
 
 ## Output
 
-Default ask output:
+Default ask / batch-ask output:
 
 ```text
 assets/chatgpt/runs/yyyyMMdd-HHmmss/
-  001-<title>.md
-  summary.json
+  submissions.json
   failures.json
 ```
+
+`ask` and `batch-ask` do not wait for complete answers and do not write
+Markdown files. Use `export` later to copy finished answers from existing
+conversations.
 
 Default export output:
 
