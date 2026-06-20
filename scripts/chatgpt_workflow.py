@@ -23,6 +23,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+CURRENT_SCRIPT_DIR = Path(__file__).resolve().parent
+if str(CURRENT_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(CURRENT_SCRIPT_DIR))
+
 from actionbook_interrupts import install_interrupt_handlers
 from actionbook_session import ActionBookSession as ActionBook
 
