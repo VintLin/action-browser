@@ -1079,6 +1079,13 @@ def failure_record(index: int, task: ChatGptTask, url: str, exc: Exception) -> d
     }
 
 
+def current_browser_url(book: ActionBook) -> str:
+    try:
+        return str(book.browser("url", timeout=10.0) or "")
+    except Exception:
+        return ""
+
+
 def submission_record(
     index: int,
     task: ChatGptTask,
@@ -1231,9 +1238,19 @@ def run_ask(args: argparse.Namespace) -> int:
     output_dir = Path(args.output_dir).expanduser() if args.output_dir else default_run_output_dir()
     output_dir.mkdir(parents=True, exist_ok=True)
     book = start_book(args)
-    ensure_chatgpt_ready(book)
     submissions: list[dict[str, Any]] = []
     failures: list[dict[str, Any]] = []
+    try:
+        ensure_chatgpt_ready(book)
+    except Exception as exc:  # noqa: BLE001
+        failure = failure_record(1, task, current_browser_url(book), exc)
+        failure["attempts"] = 0
+        failure["fatal"] = True
+        failures.append(failure)
+        write_submit_outputs(output_dir, submissions, failures)
+        log(f"失败 1: {exc}")
+        log(f"完成: 提交 {len(submissions)}，失败 {len(failures)}，输出 {output_dir}")
+        return 1
     attempts = 0
     while attempts < 2 and not submissions:
         attempts += 1
@@ -1241,12 +1258,7 @@ def run_ask(args: argparse.Namespace) -> int:
             submissions.append(submit_one_task(book, task, 1, attempts))
         except Exception as exc:  # noqa: BLE001
             if attempts >= 2:
-                current_url = ""
-                try:
-                    current_url = str(book.browser("url", timeout=10.0) or "")
-                except Exception:
-                    current_url = ""
-                failure = failure_record(1, task, current_url, exc)
+                failure = failure_record(1, task, current_browser_url(book), exc)
                 failure["attempts"] = attempts
                 failure["fatal"] = is_fatal_submit_error(exc)
                 failures.append(failure)
@@ -1262,9 +1274,20 @@ def run_batch_ask(args: argparse.Namespace) -> int:
     output_dir = Path(args.output_dir).expanduser() if args.output_dir else default_run_output_dir()
     output_dir.mkdir(parents=True, exist_ok=True)
     book = start_book(args)
-    ensure_chatgpt_ready(book)
     submissions: list[dict[str, Any]] = []
     failures: list[dict[str, Any]] = []
+    try:
+        ensure_chatgpt_ready(book)
+    except Exception as exc:  # noqa: BLE001
+        task = tasks[0]
+        failure = failure_record(1, task, current_browser_url(book), exc)
+        failure["attempts"] = 0
+        failure["fatal"] = True
+        failures.append(failure)
+        write_submit_outputs(output_dir, submissions, failures)
+        log(f"失败 1: {exc}")
+        log(f"完成: 提交 {len(submissions)}，失败 {len(failures)}，输出 {output_dir}")
+        return 1
     stop_batch = False
     for index, task in enumerate(tasks, start=1):
         if stop_batch:
@@ -1281,13 +1304,8 @@ def run_batch_ask(args: argparse.Namespace) -> int:
                     log(f"重试 {index}: {exc}")
                     continue
 
-                current_url = ""
-                try:
-                    current_url = str(book.browser("url", timeout=10.0) or "")
-                except Exception:
-                    current_url = ""
                 fatal = is_fatal_submit_error(exc)
-                failure = failure_record(index, task, current_url, exc)
+                failure = failure_record(index, task, current_browser_url(book), exc)
                 failure["attempts"] = attempts
                 failure["fatal"] = fatal
                 failures.append(failure)
