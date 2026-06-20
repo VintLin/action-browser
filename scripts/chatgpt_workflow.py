@@ -1383,7 +1383,7 @@ def positive_int(value: str) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Export latest ChatGPT QX conversations to Markdown.")
+    parser = argparse.ArgumentParser(description="Submit ChatGPT questions or export conversations.")
     parser.add_argument("--session", default=DEFAULT_SESSION, help="ActionBook session id")
     parser.add_argument("--tab", default=DEFAULT_TAB, help="ActionBook tab id; auto-detect when omitted")
     parser.add_argument("--prefix", default=DEFAULT_PREFIXES, help="Comma-separated title prefixes")
