@@ -1098,21 +1098,27 @@ def run_ask(args: argparse.Namespace) -> int:
     output_dir.mkdir(parents=True, exist_ok=True)
     book = start_book(args)
     ensure_chatgpt_ready(book)
-    summary: list[dict[str, Any]] = []
+    submissions: list[dict[str, Any]] = []
     failures: list[dict[str, Any]] = []
-    try:
-        summary.append(ask_one_task(book, task, 1, output_dir, int(args.answer_timeout)))
-    except Exception as exc:  # noqa: BLE001
-        current_url = ""
+    attempts = 0
+    while attempts < 2 and not submissions:
+        attempts += 1
         try:
-            current_url = str(book.browser("url", timeout=10.0) or "")
-        except Exception:
-            current_url = ""
-        failures.append(failure_record(1, task, current_url, exc))
-        log(f"失败 1: {exc}")
-    write_json(output_dir / "summary.json", summary)
-    write_json(output_dir / "failures.json", failures)
-    log(f"完成: 成功 {len(summary)}，失败 {len(failures)}，输出 {output_dir}")
+            submissions.append(submit_one_task(book, task, 1, attempts))
+        except Exception as exc:  # noqa: BLE001
+            if attempts >= 2:
+                current_url = ""
+                try:
+                    current_url = str(book.browser("url", timeout=10.0) or "")
+                except Exception:
+                    current_url = ""
+                failure = failure_record(1, task, current_url, exc)
+                failure["attempts"] = attempts
+                failure["fatal"] = is_fatal_submit_error(exc)
+                failures.append(failure)
+                log(f"失败 1: {exc}")
+    write_submit_outputs(output_dir, submissions, failures)
+    log(f"完成: 提交 {len(submissions)}，失败 {len(failures)}，输出 {output_dir}")
     return 0 if not failures else 1
 
 
@@ -1123,24 +1129,40 @@ def run_batch_ask(args: argparse.Namespace) -> int:
     output_dir.mkdir(parents=True, exist_ok=True)
     book = start_book(args)
     ensure_chatgpt_ready(book)
-    summary: list[dict[str, Any]] = []
+    submissions: list[dict[str, Any]] = []
     failures: list[dict[str, Any]] = []
+    stop_batch = False
     for index, task in enumerate(tasks, start=1):
-        log(f"提问 {index}/{len(tasks)}: {task.title}")
-        try:
-            summary.append(ask_one_task(book, task, index, output_dir, int(args.answer_timeout)))
-        except Exception as exc:  # noqa: BLE001
-            current_url = ""
+        if stop_batch:
+            break
+        log(f"提交 {index}/{len(tasks)}: {task.title}")
+        submitted = False
+        for attempts in range(1, 3):
             try:
-                current_url = str(book.browser("url", timeout=10.0) or "")
-            except Exception:
+                submissions.append(submit_one_task(book, task, index, attempts))
+                submitted = True
+                break
+            except Exception as exc:  # noqa: BLE001
+                if attempts < 2:
+                    log(f"重试 {index}: {exc}")
+                    continue
                 current_url = ""
-            failures.append(failure_record(index, task, current_url, exc))
-            log(f"失败 {index}: {exc}")
-        time.sleep(max(0.2, float(args.delay)))
-    write_json(output_dir / "summary.json", summary)
-    write_json(output_dir / "failures.json", failures)
-    log(f"完成: 成功 {len(summary)}，失败 {len(failures)}，输出 {output_dir}")
+                try:
+                    current_url = str(book.browser("url", timeout=10.0) or "")
+                except Exception:
+                    current_url = ""
+                fatal = is_fatal_submit_error(exc)
+                failure = failure_record(index, task, current_url, exc)
+                failure["attempts"] = attempts
+                failure["fatal"] = fatal
+                failures.append(failure)
+                log(f"失败 {index}: {exc}")
+                if fatal:
+                    stop_batch = True
+        write_submit_outputs(output_dir, submissions, failures)
+        if submitted:
+            time.sleep(max(0.2, float(args.delay)))
+    log(f"完成: 提交 {len(submissions)}，失败 {len(failures)}，输出 {output_dir}")
     return 0 if not failures else 1
 
 
