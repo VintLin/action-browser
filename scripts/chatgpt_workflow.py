@@ -579,7 +579,7 @@ COMPOSER_PLUS_CONTROL_JS = r"""
   const item = candidates[0];
   if (!item) return { ok: false };
   clickWithPointerEvents(item.node);
-  return item;
+  return { ok: true, x: item.x, y: item.y, text: item.text };
 })()
 """
 
