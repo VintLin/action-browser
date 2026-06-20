@@ -1143,22 +1143,25 @@ def run_batch_ask(args: argparse.Namespace) -> int:
                 submitted = True
                 break
             except Exception as exc:  # noqa: BLE001
-                if attempts < 2:
-                    log(f"重试 {index}: {exc}")
-                    continue
-                current_url = ""
-                try:
-                    current_url = str(book.browser("url", timeout=10.0) or "")
-                except Exception:
-                    current_url = ""
                 fatal = is_fatal_submit_error(exc)
-                failure = failure_record(index, task, current_url, exc)
-                failure["attempts"] = attempts
-                failure["fatal"] = fatal
-                failures.append(failure)
-                log(f"失败 {index}: {exc}")
-                if fatal:
-                    stop_batch = True
+                if attempts >= 2 or fatal:
+                    current_url = ""
+                    try:
+                        current_url = str(book.browser("url", timeout=10.0) or "")
+                    except Exception:
+                        current_url = ""
+                    failure = failure_record(index, task, current_url, exc)
+                    failure["attempts"] = attempts
+                    failure["fatal"] = fatal
+                    failures.append(failure)
+                    log(f"失败 {index}: {exc}")
+                    if fatal:
+                        stop_batch = True
+                    break
+
+                log(f"重试 {index}: {exc}")
+                continue
+
         write_submit_outputs(output_dir, submissions, failures)
         if submitted:
             time.sleep(max(0.2, float(args.delay)))
@@ -1237,18 +1240,28 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-scrolls", type=positive_int, default=30, help="Sidebar scroll attempts")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    ask_parser = sub.add_parser("ask", help="Ask one ChatGPT question and export the latest answer")
+    ask_parser = sub.add_parser("ask", help="Submit one ChatGPT question")
     ask_parser.add_argument("--title", required=True, help="Task title for metadata and filename")
     ask_parser.add_argument("--question", required=True, help="Question text to send to ChatGPT")
     ask_parser.add_argument("--output-dir", default="", help="Output directory")
-    ask_parser.add_argument("--answer-timeout", type=positive_int, default=900, help="Seconds to wait for answer completion")
+    ask_parser.add_argument(
+        "--answer-timeout",
+        type=positive_int,
+        default=900,
+        help="Deprecated; kept for compatibility, ignored in submit-only mode",
+    )
     ask_parser.set_defaults(func=run_ask)
 
-    batch_parser = sub.add_parser("batch-ask", help="Ask multiple ChatGPT questions from a JSON or JSONL task file")
+    batch_parser = sub.add_parser("batch-ask", help="Submit multiple ChatGPT questions from JSON/JSONL")
     batch_parser.add_argument("--tasks-file", required=True, help="JSON or JSONL task file")
     batch_parser.add_argument("--output-dir", default="", help="Output directory")
     batch_parser.add_argument("--delay", type=float, default=60.0, help="Delay between tasks")
-    batch_parser.add_argument("--answer-timeout", type=positive_int, default=900, help="Seconds to wait for answer completion")
+    batch_parser.add_argument(
+        "--answer-timeout",
+        type=positive_int,
+        default=900,
+        help="Deprecated; kept for compatibility, ignored in submit-only mode",
+    )
     batch_parser.set_defaults(func=run_batch_ask)
 
     list_parser = sub.add_parser("list", help="List matching ChatGPT conversations")
