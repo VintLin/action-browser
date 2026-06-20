@@ -1143,24 +1143,23 @@ def run_batch_ask(args: argparse.Namespace) -> int:
                 submitted = True
                 break
             except Exception as exc:  # noqa: BLE001
-                fatal = is_fatal_submit_error(exc)
-                if attempts >= 2 or fatal:
-                    current_url = ""
-                    try:
-                        current_url = str(book.browser("url", timeout=10.0) or "")
-                    except Exception:
-                        current_url = ""
-                    failure = failure_record(index, task, current_url, exc)
-                    failure["attempts"] = attempts
-                    failure["fatal"] = fatal
-                    failures.append(failure)
-                    log(f"失败 {index}: {exc}")
-                    if fatal:
-                        stop_batch = True
-                    break
+                if attempts < 2:
+                    log(f"重试 {index}: {exc}")
+                    continue
 
-                log(f"重试 {index}: {exc}")
-                continue
+                current_url = ""
+                try:
+                    current_url = str(book.browser("url", timeout=10.0) or "")
+                except Exception:
+                    current_url = ""
+                fatal = is_fatal_submit_error(exc)
+                failure = failure_record(index, task, current_url, exc)
+                failure["attempts"] = attempts
+                failure["fatal"] = fatal
+                failures.append(failure)
+                log(f"失败 {index}: {exc}")
+                if fatal:
+                    stop_batch = True
 
         write_submit_outputs(output_dir, submissions, failures)
         if submitted:
