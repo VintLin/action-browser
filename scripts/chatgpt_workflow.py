@@ -440,6 +440,19 @@ def click_visible_control(
     return result
 
 
+def click_control_via_pointer_events(
+    book: ActionBook,
+    label: str,
+    click_script: str,
+    timeout: float = 10.0,
+) -> dict[str, Any]:
+    result = api_eval(book, click_script, f"click {label} via pointer events", timeout=timeout)
+    if not isinstance(result, dict) or not result.get("ok"):
+        raise RuntimeError(f"{label} control not found or did not click: {result}")
+    time.sleep(0.4)
+    return result
+
+
 NEW_CHAT_CONTROL_JS = r"""
 (() => {
   const visible = node => {
@@ -523,6 +536,30 @@ def create_new_chat(book: ActionBook) -> None:
 
 COMPOSER_PLUS_CONTROL_JS = r"""
 (() => {
+  const clickWithPointerEvents = node => {
+    const rect = node.getBoundingClientRect();
+    const x = Math.round(rect.left + rect.width / 2);
+    const y = Math.round(rect.top + rect.height / 2);
+    const options = {
+      bubbles: true,
+      cancelable: true,
+      view: window,
+      clientX: x,
+      clientY: y,
+      screenX: x,
+      screenY: y,
+      button: 0
+    };
+    const events = ['pointerover', 'mouseover', 'mousemove', 'pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'];
+    for (const type of events) {
+      try {
+        node.dispatchEvent(new PointerEvent(type, options));
+      } catch (error) {
+        node.dispatchEvent(new MouseEvent(type.replace('pointer', 'mouse'), options));
+      }
+    }
+  };
+
   const visible = node => {
     const rect = node.getBoundingClientRect();
     const style = getComputedStyle(node);
@@ -540,7 +577,9 @@ COMPOSER_PLUS_CONTROL_JS = r"""
     .filter(item => item.score > 0)
     .sort((a, b) => b.score - a.score);
   const item = candidates[0];
-  return item ? { ok: true, x: item.x, y: item.y, text: item.text } : { ok: false };
+  if (!item) return { ok: false };
+  clickWithPointerEvents(item.node);
+  return item;
 })()
 """
 
@@ -572,13 +611,65 @@ def menu_item_control_js(pattern: str, label: str) -> str:
     """
 
 
+def menu_item_control_pointer_click_js(pattern: str, label: str) -> str:
+    return f"""
+    (() => {{
+      const regex = new RegExp({json.dumps(pattern)}, 'i');
+      const visible = node => {{
+        const rect = node.getBoundingClientRect();
+        const style = getComputedStyle(node);
+        return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
+      }};
+      const clickWithPointerEvents = node => {{
+        const rect = node.getBoundingClientRect();
+        const x = Math.round(rect.left + rect.width / 2);
+        const y = Math.round(rect.top + rect.height / 2);
+        const options = {{
+          bubbles: true,
+          cancelable: true,
+          view: window,
+          clientX: x,
+          clientY: y,
+          screenX: x,
+          screenY: y,
+          button: 0
+        }};
+        const events = ['pointerover', 'mouseover', 'mousemove', 'pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'];
+        for (const type of events) {{
+          try {{
+            node.dispatchEvent(new PointerEvent(type, options));
+          }} catch (error) {{
+            node.dispatchEvent(new MouseEvent(type.replace('pointer', 'mouse'), options));
+          }}
+        }}
+      }};
+      const candidates = [...document.querySelectorAll('[role^=\"menuitem\"], button, [role=\"button\"]')]
+        .filter(visible)
+        .map(node => {{
+          const text = [node.getAttribute('aria-label'), node.getAttribute('data-testid'), node.innerText, node.textContent]
+            .map(value => String(value || '').trim()).join('\\n');
+          const rect = node.getBoundingClientRect();
+          const inMainPane = rect.left > Math.min(260, window.innerWidth * 0.25);
+          const score = regex.test(text) && inMainPane ? 100 : 0;
+          return {{ node, score, x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2), text }};
+        }})
+        .filter(item => item.score > 0)
+        .sort((a, b) => b.score - a.score);
+      const item = candidates[0];
+      if (!item) return {{ ok: false }};
+      clickWithPointerEvents(item.node);
+      return {{ ok: true, x: item.x, y: item.y, text: item.text, label: {json.dumps(label)} }};
+    }})()
+    """
+
+
 def enable_web_search(book: ActionBook) -> None:
     state = api_eval(book, search_mode_state_js(), "check search mode state", timeout=10.0)
     if isinstance(state, dict) and state.get("search_enabled"):
         return
     last_result: Any = None
     for _attempt in range(2):
-        click_visible_control(book, "composer plus", COMPOSER_PLUS_CONTROL_JS)
+        click_control_via_pointer_events(book, "composer plus", COMPOSER_PLUS_CONTROL_JS)
         time.sleep(0.5)
         result = api_eval(
             book,
@@ -588,7 +679,11 @@ def enable_web_search(book: ActionBook) -> None:
         )
         last_result = result
         if isinstance(result, dict) and result.get("ok"):
-            book.browser("click", f"{int(result['x'])},{int(result['y'])}", timeout=10.0)
+            click_control_via_pointer_events(
+                book,
+                "web search",
+                menu_item_control_pointer_click_js("网页搜索|web search|search", "web search"),
+            )
             time.sleep(0.5)
             state = api_eval(book, search_mode_state_js(), "check search mode state", timeout=10.0)
             if isinstance(state, dict) and state.get("search_enabled"):
