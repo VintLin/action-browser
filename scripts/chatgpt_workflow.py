@@ -711,6 +711,43 @@ def submit_prompt(book: ActionBook, question: str) -> None:
         book.browser("press", "Enter", timeout=10.0)
 
 
+def wait_for_submission_started(book: ActionBook, timeout_seconds: int = 30) -> str:
+    deadline = time.time() + timeout_seconds
+    last_url = ""
+    while time.time() < deadline:
+        current_url = str(book.browser("url", timeout=10.0) or "")
+        last_url = current_url
+        state = api_eval(
+            book,
+            """
+            (() => {
+              const visible = node => {
+                if (!node) return false;
+                const rect = node.getBoundingClientRect();
+                const style = getComputedStyle(node);
+                return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
+              };
+              const body = document.body?.innerText || '';
+              const stopVisible = [...document.querySelectorAll('button')]
+                .filter(visible)
+                .some(node => /stop|停止|中止/i.test([node.getAttribute('aria-label'), node.innerText, node.textContent].join('\n')));
+              const assistantStarted = [...document.querySelectorAll('[data-message-author-role="assistant"], article, .markdown')]
+                .some(visible);
+              const thinking = /正在思考|thinking|搜索|searching/i.test(body);
+              return { stopVisible, assistantStarted, thinking };
+            })()
+            """,
+            "read ChatGPT submission state",
+            timeout=10.0,
+        )
+        if "/c/" in current_url and isinstance(state, dict) and (
+            state.get("stopVisible") or state.get("assistantStarted") or state.get("thinking")
+        ):
+            return current_url
+        time.sleep(0.5)
+    raise RuntimeError(f"submission did not start before timeout: {timeout_seconds}s url={last_url}")
+
+
 def wait_for_answer_complete(book: ActionBook, timeout_seconds: int) -> None:
     deadline = time.time() + timeout_seconds
     last_text = ""
@@ -967,6 +1004,21 @@ def write_submit_outputs(
 ) -> None:
     write_json(output_dir / "submissions.json", submissions)
     write_json(output_dir / "failures.json", failures)
+
+
+def submit_one_task(
+    book: ActionBook,
+    task: ChatGptTask,
+    index: int,
+    attempts: int,
+) -> dict[str, Any]:
+    create_new_chat(book)
+    enable_web_search(book)
+    select_pro_extension(book)
+    submit_prompt(book, task.question)
+    current_url = wait_for_submission_started(book)
+    submitted_at = datetime.now().isoformat(timespec="seconds")
+    return submission_record(index, task, current_url, attempts, submitted_at)
 
 
 def run_list(args: argparse.Namespace) -> int:
