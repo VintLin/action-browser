@@ -910,6 +910,59 @@ def failure_record(index: int, task: ChatGptTask, url: str, exc: Exception) -> d
     }
 
 
+def submission_record(
+    index: int,
+    task: ChatGptTask,
+    url: str,
+    attempts: int,
+    submitted_at: str,
+) -> dict[str, Any]:
+    return {
+        "index": index,
+        "title": task.title,
+        "question": task.question,
+        "url": url,
+        "status": "submitted",
+        "mode": {
+            "web_search": True,
+            "extension": "pro",
+        },
+        "submitted_at": submitted_at,
+        "attempts": attempts,
+    }
+
+
+def is_nonfatal_submit_error(exc: Exception) -> bool:
+    text = str(exc)
+    return bool(
+        re.search(
+            r"control not found|not found|menu|button|composer|new chat|url=|did not start|did not become ready|send button|web search control",
+            text,
+            re.I,
+        )
+    )
+
+
+def is_fatal_submit_error(exc: Exception) -> bool:
+    text = str(exc)
+    if re.search(
+        r"captcha|cloudflare|verify|verification|unusual activity|rate limit|restricted|login|sign in|log in|验证码|验证|异常活动|频率|限制|登录|登入|受限",
+        text,
+        re.I,
+    ):
+        return True
+    return not is_nonfatal_submit_error(exc)
+
+
+def write_submit_outputs(
+    output_dir: Path,
+    submissions: list[dict[str, Any]],
+    failures: list[dict[str, Any]],
+) -> None:
+    write_json(output_dir / "submissions.json", submissions)
+    write_json(output_dir / "failures.json", failures)
+
+
 def run_list(args: argparse.Namespace) -> int:
     book = start_book(args)
     ensure_chatgpt_ready(book)
