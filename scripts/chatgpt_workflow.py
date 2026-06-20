@@ -670,24 +670,29 @@ def enable_web_search(book: ActionBook) -> None:
     last_result: Any = None
     for _attempt in range(2):
         click_control_via_pointer_events(book, "composer plus", COMPOSER_PLUS_CONTROL_JS)
-        time.sleep(0.5)
-        result = api_eval(
-            book,
-            menu_item_control_js("网页搜索|web search|search", "web search"),
-            "find web search",
-            timeout=10.0,
-        )
-        last_result = result
-        if isinstance(result, dict) and result.get("ok"):
-            click_control_via_pointer_events(
+        deadline = time.time() + 3.0
+        while time.time() < deadline:
+            result = api_eval(
                 book,
-                "web search",
-                menu_item_control_pointer_click_js("网页搜索|web search|search", "web search"),
+                menu_item_control_js("网页搜索|web search|search", "web search"),
+                "find web search",
+                timeout=1.0,
             )
+            last_result = result
+            if isinstance(result, dict) and result.get("ok"):
+                break
             time.sleep(0.5)
-            state = api_eval(book, search_mode_state_js(), "check search mode state", timeout=10.0)
-            if isinstance(state, dict) and state.get("search_enabled"):
-                return
+        else:
+            continue
+        click_control_via_pointer_events(
+            book,
+            "web search",
+            menu_item_control_pointer_click_js("网页搜索|web search|search", "web search"),
+        )
+        time.sleep(0.5)
+        state = api_eval(book, search_mode_state_js(), "check search mode state", timeout=10.0)
+        if isinstance(state, dict) and state.get("search_enabled"):
+            return
     raise RuntimeError(f"web search control not found or did not enable: {last_result}")
 
 
