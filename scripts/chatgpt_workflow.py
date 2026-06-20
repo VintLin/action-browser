@@ -749,7 +749,7 @@ def select_pro_extension(book: ActionBook) -> None:
     click_visible_control(book, "Pro extension", menu_item_control_js("Pro 扩展|Pro", "Pro extension"))
 
 
-def submit_prompt(book: ActionBook, question: str) -> None:
+def fill_prompt(book: ActionBook, question: str) -> None:
     script = f"""
     (() => {{
       const question = {json.dumps(question)};
@@ -776,6 +776,9 @@ def submit_prompt(book: ActionBook, question: str) -> None:
     result = api_eval(book, script, "fill ChatGPT composer", timeout=10.0)
     if isinstance(result, dict) and result.get("error"):
         raise RuntimeError(f"fill ChatGPT composer: {result.get('error')}")
+
+
+def send_current_prompt(book: ActionBook) -> None:
     send_result = api_eval(
         book,
         """
@@ -804,6 +807,11 @@ def submit_prompt(book: ActionBook, question: str) -> None:
         book.browser("click", f"{int(send_result['x'])},{int(send_result['y'])}", timeout=10.0)
     else:
         book.browser("press", "Enter", timeout=10.0)
+
+
+def submit_prompt(book: ActionBook, question: str) -> None:
+    fill_prompt(book, question)
+    send_current_prompt(book)
 
 
 def wait_for_submission_started(book: ActionBook, timeout_seconds: int = 30) -> str:
@@ -1111,9 +1119,10 @@ def submit_one_task(
     attempts: int,
 ) -> dict[str, Any]:
     create_new_chat(book)
+    fill_prompt(book, task.question)
     enable_web_search(book)
     select_pro_extension(book)
-    submit_prompt(book, task.question)
+    send_current_prompt(book)
     current_url = wait_for_submission_started(book)
     submitted_at = datetime.now().isoformat(timespec="seconds")
     return submission_record(index, task, current_url, attempts, submitted_at)
@@ -1275,10 +1284,11 @@ def ask_one_task(
 ) -> dict[str, Any]:
     started_at = datetime.now().isoformat(timespec="seconds")
     create_new_chat(book)
+    fill_prompt(book, task.question)
     enable_web_search(book)
     mode_state = select_intelligent_mode(book)
     select_pro_extension(book)
-    submit_prompt(book, task.question)
+    send_current_prompt(book)
     wait_for_answer_complete(book, answer_timeout)
     scroll_state = go_to_conversation_bottom(book)
     if not scroll_state.get("ok"):
