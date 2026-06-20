@@ -825,7 +825,7 @@ def wait_for_submission_started(book: ActionBook, timeout_seconds: int = 30) -> 
               const body = document.body?.innerText || '';
               const stopVisible = [...document.querySelectorAll('button')]
                 .filter(visible)
-                .some(node => /stop|停止|中止/i.test([node.getAttribute('aria-label'), node.innerText, node.textContent].join('\n')));
+                .some(node => /stop|停止|中止/i.test([node.getAttribute('aria-label'), node.innerText, node.textContent].join('\\n')));
               const assistantStarted = [...document.querySelectorAll('[data-message-author-role="assistant"], article, .markdown')]
                 .some(visible);
               const thinking = /正在思考|thinking|搜索|searching/i.test(body);
