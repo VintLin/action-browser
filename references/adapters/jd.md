@@ -86,7 +86,6 @@ python3 scripts/adapters/jd_workflow.py whoami view
 修改京东脚本或流程说明后，优先运行：
 
 ```bash
-python3 -m unittest tests.test_jd_taobao_workflows
 python3 -m py_compile scripts/adapters/jd_workflow.py
 python3 scripts/adapters/jd_workflow.py --help
 python3 scripts/adapters/jd_workflow.py search view --query "机械键盘" --count 3
