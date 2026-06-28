@@ -121,6 +121,27 @@ def test_start_force_new_tab_does_not_fall_back_to_existing_tab(monkeypatch) -> 
     assert recover_called is False
 
 
+def test_start_no_adopt_does_not_try_other_running_sessions(monkeypatch) -> None:
+    book = ActionBookSession("s1", allow_adopt=False)
+
+    monkeypatch.setattr(actionbook_session, "ensure_chrome_app_running", lambda: None)
+    book._check_extension = lambda require_connected=False: None  # type: ignore[method-assign]
+    book._session_exists = lambda: False  # type: ignore[method-assign]
+    book._find_accessible_tab = lambda preferred_tab=None, target_url="": ""  # type: ignore[method-assign]
+    book._start_new_session = lambda url: None  # type: ignore[method-assign]
+    book._wait_for_accessible_tab = lambda preferred_tab=None, target_url="", timeout_secs=12.0: "new-tab"  # type: ignore[method-assign]
+    book._ensure_target_url = lambda url: None  # type: ignore[method-assign]
+
+    def fail_if_adopt_called(url: str) -> bool:
+        raise AssertionError("allow_adopt=False should not attempt adoption")
+
+    book._adopt_running_session = fail_if_adopt_called  # type: ignore[method-assign]
+
+    book.start("https://example.com", force_new_tab=False)
+
+    assert book.tab == "new-tab"
+
+
 def test_close_tab_raises_on_failed_command_payload() -> None:
     book = ActionBookSession("s1", "tab-1")
     book._run_raw_command = lambda command, timeout=30.0: {  # type: ignore[method-assign]
