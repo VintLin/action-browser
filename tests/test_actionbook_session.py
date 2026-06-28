@@ -1,3 +1,10 @@
+from pathlib import Path
+import sys
+
+ROOT_DIR = Path(__file__).resolve().parents[1]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
 from scripts import actionbook_session
 from scripts.actionbook_session import ActionBookSession
 
@@ -55,3 +62,58 @@ def test_main_new_tab_recovers_session_before_open(monkeypatch) -> None:
 
     assert actionbook_session.main(["new-tab", "--session", "s1", "--url", "https://example.com"]) == 0
     assert events == [("start", "about:blank"), ("new-tab", "https://example.com")]
+
+
+def test_main_ensure_force_new_tab_opens_new_tab(monkeypatch) -> None:
+    events: list[tuple[str, str]] = []
+
+    class FakeSession:
+        def __init__(self, session: str, tab: str = "", allow_adopt: bool = True) -> None:
+            self.session = session
+            self.tab = "old-tab"
+            self.allow_adopt = allow_adopt
+
+        def start(self, url: str, force_new_tab: bool = False) -> None:
+            events.append(("start", f"{url}|force={force_new_tab}|adopt={self.allow_adopt}"))
+            if force_new_tab:
+                self.tab = "new-tab"
+
+        def describe(self, tab: str | None = None) -> dict[str, str]:
+            return {
+                "session_id": self.session,
+                "tab_id": tab or self.tab,
+                "url": "https://example.com",
+                "title": "Example",
+            }
+
+    monkeypatch.setattr(actionbook_session, "ActionBookSession", FakeSession)
+
+    assert (
+        actionbook_session.main(
+            ["ensure", "--session", "s1", "--url", "https://example.com", "--force-new-tab", "--no-adopt"]
+        )
+        == 0
+    )
+    assert events == [("start", "https://example.com|force=True|adopt=False")]
+
+
+def test_main_close_tab_calls_close_tab(monkeypatch, capsys) -> None:
+    events: list[tuple[str, str]] = []
+
+    class FakeSession:
+        def __init__(self, session: str, tab: str = "", allow_adopt: bool = True) -> None:
+            self.session = session
+            self.tab = tab
+
+        def start(self, url: str, force_new_tab: bool = False) -> None:
+            events.append(("start", url))
+
+        def close_tab(self, tab_id: str) -> dict[str, str]:
+            events.append(("close", tab_id))
+            return {"session_id": self.session, "tab_id": tab_id, "status": "closed"}
+
+    monkeypatch.setattr(actionbook_session, "ActionBookSession", FakeSession)
+
+    assert actionbook_session.main(["close-tab", "--session", "s1", "--tab", "tab-9", "--json"]) == 0
+    assert events == [("start", "about:blank"), ("close", "tab-9")]
+    assert '"status": "closed"' in capsys.readouterr().out

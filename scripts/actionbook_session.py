@@ -100,12 +100,19 @@ class ActionBookSession:
         self.tab = tab
         self.allow_adopt = allow_adopt
 
-    def start(self, url: str) -> None:
+    def start(self, url: str, force_new_tab: bool = False) -> None:
         ensure_chrome_app_running()
         self._check_extension(require_connected=False)
         last_error = ""
         for attempt in range(3):
             try:
+                if force_new_tab and self._session_exists():
+                    new_tab = self._open_new_tab(url)
+                    if new_tab:
+                        self.tab = new_tab
+                        self._check_extension(require_connected=True)
+                        self._ensure_target_url(url)
+                        return
                 self._recover_or_attach(url)
                 self._check_extension(require_connected=True)
                 self._ensure_target_url(url)
@@ -178,6 +185,15 @@ class ActionBookSession:
             raise RuntimeError(f"tab is not accessible: {tab_id}")
         self.tab = tab_id
         return self.describe()
+
+    def close_tab(self, tab_id: str) -> dict[str, str]:
+        self._run_raw_command(
+            ["actionbook", "browser", "close-tab", "--session", self.session, "--tab", tab_id, "--json"],
+            timeout=15.0,
+        )
+        if self.tab == tab_id:
+            self.tab = ""
+        return {"session_id": self.session, "tab_id": tab_id, "status": "closed"}
 
     def _recover_or_attach(self, url: str) -> None:
         existing_tab = self._find_accessible_tab(preferred_tab=self.tab or None, target_url=url)
@@ -563,6 +579,8 @@ def build_parser() -> argparse.ArgumentParser:
     ensure.add_argument("--session", default=DEFAULT_SESSION, help="Preferred ActionBook session id")
     ensure.add_argument("--tab", default=DEFAULT_TAB, help="Preferred ActionBook tab id; auto-detect when omitted")
     ensure.add_argument("--url", default="about:blank", help="Target URL to open or attach to")
+    ensure.add_argument("--force-new-tab", action="store_true", help="Always open a new tab in an existing session")
+    ensure.add_argument("--no-adopt", action="store_true", help="Do not adopt another running session")
     ensure.add_argument("--json", action="store_true", help="Print final session state as JSON")
 
     list_tabs = subparsers.add_parser("list-tabs", help="List accessible tabs in a session")
@@ -581,6 +599,11 @@ def build_parser() -> argparse.ArgumentParser:
     select_tab.add_argument("--session", default=DEFAULT_SESSION, help="ActionBook session id")
     select_tab.add_argument("--tab", required=True, help="Existing ActionBook tab id")
     select_tab.add_argument("--json", action="store_true", help="Print selected tab state as JSON")
+
+    close_tab = subparsers.add_parser("close-tab", help="Close one tab in a session")
+    close_tab.add_argument("--session", default=DEFAULT_SESSION, help="ActionBook session id")
+    close_tab.add_argument("--tab", required=True, help="Existing ActionBook tab id")
+    close_tab.add_argument("--json", action="store_true", help="Print close result as JSON")
     return parser
 
 
@@ -593,8 +616,8 @@ def main(argv: list[str] | None = None) -> int:
         raw_args = ["ensure", *raw_args]
     args = parser.parse_args(raw_args)
     if args.command == "ensure":
-        session = ActionBookSession(args.session, args.tab)
-        session.start(args.url)
+        session = ActionBookSession(args.session, args.tab, allow_adopt=not args.no_adopt)
+        session.start(args.url, force_new_tab=args.force_new_tab)
         state = session.describe()
     elif args.command == "list-tabs":
         session = ActionBookSession(args.session, args.tab, allow_adopt=False)
@@ -614,6 +637,10 @@ def main(argv: list[str] | None = None) -> int:
         session = ActionBookSession(args.session, args.tab, allow_adopt=False)
         session.start("about:blank")
         state = session.use_tab(args.tab)
+    elif args.command == "close-tab":
+        session = ActionBookSession(args.session, allow_adopt=False)
+        session.start("about:blank")
+        state = session.close_tab(args.tab)
     else:
         raise RuntimeError(f"unsupported command: {args.command}")
 
