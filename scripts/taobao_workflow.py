@@ -28,6 +28,7 @@ PAGE_SETTLE_SECONDS = 6.0
 WHOAMI_SETTLE_SECONDS = 2.0
 SKILL_DIR = Path(__file__).resolve().parent.parent
 ASSETS_DIR = SKILL_DIR / "assets" / "taobao"
+CONTRACT_DIRNAME = "contract"
 
 
 class LoginRequiredError(RuntimeError):
@@ -223,30 +224,42 @@ def write_contract_outputs(
     needs_user_action: bool,
 ) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
-    artifacts_dir = output_dir / "artifacts"
+    contract_dir = output_dir / CONTRACT_DIRNAME
+    artifacts_dir = contract_dir / "artifacts"
     artifacts_dir.mkdir(parents=True, exist_ok=True)
     write_json(artifacts_dir / "results.json", records)
     write_json(
-        output_dir / "summary.json",
+        contract_dir / "summary.json",
         {
             "ok": True,
             "site": site,
             "intent": intent,
             "requested_count": requested_count,
             "collected_count": len(records),
-            "artifacts": ["artifacts/results.json"],
+            "artifacts": [f"{CONTRACT_DIRNAME}/artifacts/results.json"],
             "warnings": warnings,
             "needs_user_action": needs_user_action,
         },
     )
     write_json(
-        output_dir / "progress.json",
+        contract_dir / "progress.json",
         {
             "stage": "writing_results",
             "completed_items": len(records),
             "requested_items": requested_count,
         },
     )
+
+
+def requested_count_for_intent(args: argparse.Namespace, area: str) -> int:
+    if area in {"detail", "whoami"}:
+        return 1
+    count_value = getattr(args, "count", None)
+    if area == "cart":
+        return read_count(count_value, default=20, max_value=50)
+    if area == "reviews":
+        return read_count(count_value, default=10, max_value=20)
+    return read_count(count_value, default=10, max_value=40)
 
 
 def finish(records: list[dict[str, Any]], args: argparse.Namespace, area: str, title: str) -> int:
@@ -257,7 +270,7 @@ def finish(records: list[dict[str, Any]], args: argparse.Namespace, area: str, t
         output_dir=output_dir,
         site="taobao",
         intent=area,
-        requested_count=len(records) if not getattr(args, "count", None) else read_count(args.count),
+        requested_count=requested_count_for_intent(args, area),
         warnings=[],
         needs_user_action=False,
     )

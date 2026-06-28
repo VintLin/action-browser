@@ -135,4 +135,5 @@ Use `stop --all` only when the user clearly wants every ActionBook workflow stop
 - Use `scripts/scheduler.py` for `submit`, `list`, `status`, `stop`, and `reconcile`.
 - Scheduler-managed tasks open exclusive tabs with `--force-new-tab --no-adopt`.
 - The first pass integrates one adapter contract through Taobao.
+- Legacy workflow records stay at the output root; scheduler contract files live under `contract/`.
 - Unsupported sites still default to direct agent browser work first.

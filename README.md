@@ -137,6 +137,7 @@ python3 scripts/actionbook_run.py stop --id xhs-profile-download
 - Use `scripts/scheduler.py` for `submit`, `list`, `status`, `stop`, and `reconcile`.
 - Scheduler-managed tasks open exclusive tabs with `--force-new-tab --no-adopt`.
 - The first pass integrates one adapter contract through Taobao.
+- Legacy workflow records stay at the output root; scheduler contract files live under `contract/`.
 - Unsupported sites still default to direct agent browser work first.
 
 ### Extract A Rendered Webpage To Markdown
