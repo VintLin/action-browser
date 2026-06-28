@@ -1,6 +1,8 @@
 from pathlib import Path
 import sys
 
+import pytest
+
 # `pytest tests/test_actionbook_session.py -v` does not place the repo root on sys.path here.
 ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
@@ -98,7 +100,68 @@ def test_main_ensure_force_new_tab_opens_new_tab(monkeypatch) -> None:
     assert events == [("start", "https://example.com|force=True|adopt=False")]
 
 
+def test_start_force_new_tab_does_not_fall_back_to_existing_tab(monkeypatch) -> None:
+    book = ActionBookSession("s1", "old-tab", allow_adopt=False)
+    recover_called = False
+
+    monkeypatch.setattr(actionbook_session, "ensure_chrome_app_running", lambda: None)
+    book._check_extension = lambda require_connected=False: None  # type: ignore[method-assign]
+    book._session_exists = lambda: True  # type: ignore[method-assign]
+    book._open_new_tab = lambda url: ""  # type: ignore[method-assign]
+
+    def fail_if_recover_called(url: str) -> None:
+        nonlocal recover_called
+        recover_called = True
+
+    book._recover_or_attach = fail_if_recover_called  # type: ignore[method-assign]
+
+    with pytest.raises(RuntimeError, match="failed to open new tab"):
+        book.start("https://example.com", force_new_tab=True)
+
+    assert recover_called is False
+
+
+def test_close_tab_raises_on_failed_command_payload() -> None:
+    book = ActionBookSession("s1", "tab-1")
+    book._run_raw_command = lambda command, timeout=30.0: {  # type: ignore[method-assign]
+        "ok": False,
+        "error": {"message": "close failed"},
+    }
+
+    with pytest.raises(RuntimeError, match="close failed"):
+        book.close_tab("tab-1")
+
+
+def test_close_tab_clears_current_tab_on_success() -> None:
+    book = ActionBookSession("s1", "tab-1")
+    book._run_raw_command = lambda command, timeout=30.0: {"ok": True, "data": {}}  # type: ignore[method-assign]
+
+    state = book.close_tab("tab-1")
+
+    assert book.tab == ""
+    assert state == {"session_id": "s1", "tab_id": "tab-1", "status": "closed"}
+
+
 def test_main_close_tab_calls_close_tab(monkeypatch, capsys) -> None:
+    events: list[tuple[str, str]] = []
+
+    class FakeSession:
+        def __init__(self, session: str, tab: str = "", allow_adopt: bool = True) -> None:
+            self.session = session
+            self.tab = tab
+
+        def close_tab(self, tab_id: str) -> dict[str, str]:
+            events.append(("close", tab_id))
+            return {"session_id": self.session, "tab_id": tab_id, "status": "closed"}
+
+    monkeypatch.setattr(actionbook_session, "ActionBookSession", FakeSession)
+
+    assert actionbook_session.main(["close-tab", "--session", "s1", "--tab", "tab-9", "--json"]) == 0
+    assert events == [("close", "tab-9")]
+    assert '"status": "closed"' in capsys.readouterr().out
+
+
+def test_main_close_tab_surfaces_missing_session_without_bootstrap(monkeypatch) -> None:
     events: list[tuple[str, str]] = []
 
     class FakeSession:
@@ -108,13 +171,15 @@ def test_main_close_tab_calls_close_tab(monkeypatch, capsys) -> None:
 
         def start(self, url: str, force_new_tab: bool = False) -> None:
             events.append(("start", url))
+            raise AssertionError("close-tab should not bootstrap a new session")
 
         def close_tab(self, tab_id: str) -> dict[str, str]:
             events.append(("close", tab_id))
-            return {"session_id": self.session, "tab_id": tab_id, "status": "closed"}
+            raise RuntimeError("SESSION_NOT_FOUND")
 
     monkeypatch.setattr(actionbook_session, "ActionBookSession", FakeSession)
 
-    assert actionbook_session.main(["close-tab", "--session", "s1", "--tab", "tab-9", "--json"]) == 0
-    assert events == [("start", "about:blank"), ("close", "tab-9")]
-    assert '"status": "closed"' in capsys.readouterr().out
+    with pytest.raises(RuntimeError, match="SESSION_NOT_FOUND"):
+        actionbook_session.main(["close-tab", "--session", "s1", "--tab", "tab-9"])
+
+    assert events == [("close", "tab-9")]

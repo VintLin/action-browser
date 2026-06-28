@@ -108,11 +108,12 @@ class ActionBookSession:
             try:
                 if force_new_tab and self._session_exists():
                     new_tab = self._open_new_tab(url)
-                    if new_tab:
-                        self.tab = new_tab
-                        self._check_extension(require_connected=True)
-                        self._ensure_target_url(url)
-                        return
+                    if not new_tab:
+                        raise RuntimeError(f"failed to open new tab: {url}")
+                    self.tab = new_tab
+                    self._check_extension(require_connected=True)
+                    self._ensure_target_url(url)
+                    return
                 self._recover_or_attach(url)
                 self._check_extension(require_connected=True)
                 self._ensure_target_url(url)
@@ -187,10 +188,18 @@ class ActionBookSession:
         return self.describe()
 
     def close_tab(self, tab_id: str) -> dict[str, str]:
-        self._run_raw_command(
+        tab_id = str(tab_id or "").strip()
+        if not tab_id:
+            raise RuntimeError("tab id is required")
+        envelope = self._run_raw_command(
             ["actionbook", "browser", "close-tab", "--session", self.session, "--tab", tab_id, "--json"],
             timeout=15.0,
         )
+        if envelope is None:
+            raise RuntimeError(f"failed to close tab: {tab_id}")
+        if isinstance(envelope, str):
+            raise RuntimeError(envelope or f"failed to close tab: {tab_id}")
+        unwrap_actionbook_envelope(envelope)
         if self.tab == tab_id:
             self.tab = ""
         return {"session_id": self.session, "tab_id": tab_id, "status": "closed"}
@@ -638,8 +647,7 @@ def main(argv: list[str] | None = None) -> int:
         session.start("about:blank")
         state = session.use_tab(args.tab)
     elif args.command == "close-tab":
-        session = ActionBookSession(args.session, allow_adopt=False)
-        session.start("about:blank")
+        session = ActionBookSession(args.session, args.tab, allow_adopt=False)
         state = session.close_tab(args.tab)
     else:
         raise RuntimeError(f"unsupported command: {args.command}")
