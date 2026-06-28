@@ -89,13 +89,26 @@ The skill will bootstrap an ActionBook session, open or reuse a browser tab, tak
 ### Start A Reusable Browser Session
 
 ```bash
-python3 scripts/actionbook_session.py \
+python3 scripts/actionbook_session.py ensure \
   --session task-browser \
   --url "https://example.com" \
   --json
 ```
 
 The script returns a usable `session_id` and `tab_id`. It first tries to reuse a healthy session, then opens a new tab in that session, and only creates a new session as a fallback.
+
+### Work With Multiple Tabs In One Session
+
+Use one session when tasks need the same logged-in browser context, then give each subtask its own explicit tab id:
+
+```bash
+python3 scripts/actionbook_session.py ensure --session research --url "https://example.com" --json
+python3 scripts/actionbook_session.py new-tab --session research --url "https://example.com/a" --json
+python3 scripts/actionbook_session.py new-tab --session research --url "https://example.com/b" --json
+python3 scripts/actionbook_session.py list-tabs --session research --json
+```
+
+Pass the returned `tab_id` into each workflow with `--tab`. Do not let parallel tasks share one implicit current tab.
 
 ### Run A Long Workflow
 
@@ -179,13 +192,14 @@ This skill uses progressive disclosure:
 
 ## Operating Principles
 
-1. Use one stable session id per task.
+1. Use one stable session id per task or task group.
 2. Confirm the real tab id before interacting with a page.
-3. Take a fresh snapshot after page structure changes.
-4. Use snapshot refs over remembered selectors.
-5. Treat timeouts as failure ceilings, not as a waiting strategy.
-6. Stop for login, CAPTCHA, MFA, and risk-control pages so the user can complete them in the same browser session.
-7. Track long workflows so interruption can stop the underlying process group.
+3. For parallel work in one session, allocate one stable tab id per subtask and pass `--tab` explicitly.
+4. Take a fresh snapshot after page structure changes.
+5. Use snapshot refs over remembered selectors.
+6. Treat timeouts as failure ceilings, not as a waiting strategy.
+7. Stop for login, CAPTCHA, MFA, and risk-control pages so the user can complete them in the same browser session.
+8. Track long workflows so interruption can stop the underlying process group.
 
 ## Safety Boundaries
 

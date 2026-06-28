@@ -11,7 +11,7 @@ Use ActionBook for real browser pages. Prefer `extension` mode when the task nee
 
 1. If the task names a supported site or capability, read the matching reference below before running commands.
 2. For extension-mode tasks, start with `scripts/actionbook_session.py`; it reuses a healthy session, opens a fresh tab when needed, and rebuilds only as a last resort.
-3. Use one stable `session id` per task. Pass `--tab` only after `list-tabs` or the session bootstrap returns the real tab id.
+3. Use one stable `session id` per task group. For parallel work in the same browser session, allocate one stable `tab id` per subtask and pass `--tab` explicitly after `list-tabs`, `new-tab`, or the session bootstrap returns the real tab id.
 4. If login, CAPTCHA, MFA, or risk-control appears, keep the same Chrome window and ask the user to complete it there.
 5. For long workflows, downloads, profile crawls, and batch exports, run through `scripts/actionbook_run.py` so later `中断` / `停止` can stop the process group.
 
@@ -45,10 +45,18 @@ Keep this file site-neutral. Put site command catalogs, payload schemas, DOM det
 ## Startup
 
 ```bash
-python3 scripts/actionbook_session.py \
+python3 scripts/actionbook_session.py ensure \
   --session s1 \
   --url "https://example.com" \
   --json
+```
+
+For multi-tab work in one session:
+
+```bash
+python3 scripts/actionbook_session.py list-tabs --session s1 --json
+python3 scripts/actionbook_session.py new-tab --session s1 --url "https://example.com/a" --json
+python3 scripts/actionbook_session.py new-tab --session s1 --url "https://example.com/b" --json
 ```
 
 For manual checks:
@@ -56,7 +64,7 @@ For manual checks:
 ```bash
 actionbook extension status --json
 actionbook browser list-sessions --json
-actionbook browser list-tabs --session s1 --json
+python3 scripts/actionbook_session.py list-tabs --session s1 --json
 actionbook browser title --session s1 --tab <real-tab-id> --json
 actionbook browser url --session s1 --tab <real-tab-id> --json
 ```
@@ -77,6 +85,7 @@ Rules:
 
 - Run `snapshot` after page structure changes and use the latest refs.
 - Prefer refs from `snapshot` over remembered selectors.
+- For concurrent subtasks, do not share one mutable tab pointer. Keep one explicit tab id per subtask and pass it through every command or workflow.
 - Treat `timeout` as the failure ceiling, not a wait strategy.
 - After each operation, verify URL, title, key elements, list count, or detail container state.
 - Wait for explicit state with `wait navigation`, `wait element`, or `eval`; avoid fixed sleeps except brief animation waits under 1 second.

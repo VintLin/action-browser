@@ -13,6 +13,7 @@ import argparse
 import json
 import random
 import subprocess
+import sys
 import time
 from datetime import datetime
 from typing import Any
@@ -122,10 +123,12 @@ class ActionBookSession:
     def goto(self, url: str) -> None:
         self.browser("goto", url, timeout=45.0)
 
-    def open_new_tab(self, url: str) -> str:
+    def open_new_tab(self, url: str, switch: bool = False) -> str:
         tab_id = self._open_new_tab(url)
         if not tab_id:
             raise RuntimeError(f"failed to open new tab: {url}")
+        if switch:
+            self.tab = tab_id
         return tab_id
 
     def eval(self, script: str, timeout: float = 30.0) -> Any:
@@ -138,13 +141,43 @@ class ActionBookSession:
         envelope = self._run_browser_command(subcommand, *args, timeout=timeout, tab=active_tab)
         return unwrap_actionbook_envelope(envelope)
 
-    def describe(self) -> dict[str, str]:
+    def describe(self, tab: str | None = None) -> dict[str, str]:
+        active_tab = tab or self.tab
+        if not active_tab:
+            raise RuntimeError(f"ActionBook tab is not ready for session {self.session!r}")
         return {
             "session_id": self.session,
-            "tab_id": self.tab,
-            "url": str(self.browser("url", timeout=10.0) or ""),
-            "title": str(self.browser("title", timeout=10.0) or ""),
+            "tab_id": active_tab,
+            "url": str(self.browser("url", timeout=10.0, tab=active_tab) or ""),
+            "title": str(self.browser("title", timeout=10.0, tab=active_tab) or ""),
         }
+
+    def list_tabs(self) -> list[dict[str, str]]:
+        items: list[dict[str, str]] = []
+        for tab in self._list_tabs():
+            if not isinstance(tab, dict):
+                continue
+            tab_id = str(tab.get("tab_id") or tab.get("tabId") or tab.get("id") or "").strip()
+            if not tab_id:
+                continue
+            items.append(
+                {
+                    "tab_id": tab_id,
+                    "url": str(tab.get("url") or "").strip(),
+                    "title": str(tab.get("title") or "").strip(),
+                    "active": "true" if tab_id == self.tab else "false",
+                }
+            )
+        return items
+
+    def use_tab(self, tab_id: str) -> dict[str, str]:
+        tab_id = str(tab_id or "").strip()
+        if not tab_id:
+            raise RuntimeError("tab id is required")
+        if not self._is_tab_accessible(tab_id):
+            raise RuntimeError(f"tab is not accessible: {tab_id}")
+        self.tab = tab_id
+        return self.describe()
 
     def _recover_or_attach(self, url: str) -> None:
         existing_tab = self._find_accessible_tab(preferred_tab=self.tab or None, target_url=url)
@@ -523,21 +556,74 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Ensure a usable ActionBook extension session/tab for browser tasks."
     )
-    parser.add_argument("--session", default=DEFAULT_SESSION, help="Preferred ActionBook session id")
-    parser.add_argument("--tab", default=DEFAULT_TAB, help="Preferred ActionBook tab id; auto-detect when omitted")
-    parser.add_argument("--url", default="about:blank", help="Target URL to open or attach to")
-    parser.add_argument("--json", action="store_true", help="Print final session state as JSON")
+    subparsers = parser.add_subparsers(dest="command")
+
+    ensure = subparsers.add_parser("ensure", help="Ensure a usable session and tab")
+    ensure.set_defaults(command="ensure")
+    ensure.add_argument("--session", default=DEFAULT_SESSION, help="Preferred ActionBook session id")
+    ensure.add_argument("--tab", default=DEFAULT_TAB, help="Preferred ActionBook tab id; auto-detect when omitted")
+    ensure.add_argument("--url", default="about:blank", help="Target URL to open or attach to")
+    ensure.add_argument("--json", action="store_true", help="Print final session state as JSON")
+
+    list_tabs = subparsers.add_parser("list-tabs", help="List accessible tabs in a session")
+    list_tabs.add_argument("--session", default=DEFAULT_SESSION, help="ActionBook session id")
+    list_tabs.add_argument("--tab", default=DEFAULT_TAB, help="Current tab id to mark as active")
+    list_tabs.add_argument("--json", action="store_true", help="Print tabs as JSON")
+
+    new_tab = subparsers.add_parser("new-tab", help="Open a new tab in a session")
+    new_tab.add_argument("--session", default=DEFAULT_SESSION, help="ActionBook session id")
+    new_tab.add_argument("--tab", default=DEFAULT_TAB, help="Current tab id")
+    new_tab.add_argument("--url", required=True, help="Target URL for the new tab")
+    new_tab.add_argument("--switch", action="store_true", help="Update the current tab pointer to the new tab")
+    new_tab.add_argument("--json", action="store_true", help="Print the new tab state as JSON")
+
+    select_tab = subparsers.add_parser("select-tab", help="Verify and select an existing tab")
+    select_tab.add_argument("--session", default=DEFAULT_SESSION, help="ActionBook session id")
+    select_tab.add_argument("--tab", required=True, help="Existing ActionBook tab id")
+    select_tab.add_argument("--json", action="store_true", help="Print selected tab state as JSON")
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
-    args = parser.parse_args(argv)
-    session = ActionBookSession(args.session, args.tab)
-    session.start(args.url)
-    state = session.describe()
-    if args.json:
+    raw_args = list(argv if argv is not None else sys.argv[1:])
+    if not raw_args:
+        raw_args = ["ensure"]
+    elif raw_args[0].startswith("-"):
+        raw_args = ["ensure", *raw_args]
+    args = parser.parse_args(raw_args)
+    if args.command == "ensure":
+        session = ActionBookSession(args.session, args.tab)
+        session.start(args.url)
+        state = session.describe()
+    elif args.command == "list-tabs":
+        session = ActionBookSession(args.session, args.tab, allow_adopt=False)
+        session.start("about:blank")
+        state = {
+            "session_id": session.session,
+            "current_tab_id": session.tab,
+            "tabs": session.list_tabs(),
+        }
+    elif args.command == "new-tab":
+        session = ActionBookSession(args.session, args.tab, allow_adopt=False)
+        session.start("about:blank")
+        tab_id = session.open_new_tab(args.url, switch=args.switch)
+        state = session.describe(tab=tab_id)
+        state["current_tab_id"] = session.tab
+    elif args.command == "select-tab":
+        session = ActionBookSession(args.session, args.tab, allow_adopt=False)
+        session.start("about:blank")
+        state = session.use_tab(args.tab)
+    else:
+        raise RuntimeError(f"unsupported command: {args.command}")
+
+    if getattr(args, "json", False):
         print(json.dumps(state, ensure_ascii=False, indent=2))
+    elif isinstance(state, dict) and "tabs" in state:
+        print(f"session={state['session_id']}")
+        print(f"current_tab={state['current_tab_id']}")
+        for tab in state["tabs"]:
+            print(f"tab={tab['tab_id']}\tactive={tab['active']}\turl={tab['url']}\ttitle={tab['title']}")
     else:
         print(f"session={state['session_id']}")
         print(f"tab={state['tab_id']}")
