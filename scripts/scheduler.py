@@ -4,8 +4,14 @@ import argparse
 import json
 import os
 from pathlib import Path
+import sys
 
-from scripts.scheduler_lib.lifecycle import load_task_record
+if __package__ in {None, ""}:
+    ROOT_DIR = Path(__file__).resolve().parents[1]
+    if str(ROOT_DIR) not in sys.path:
+        sys.path.insert(0, str(ROOT_DIR))
+
+from scripts.scheduler_lib.lifecycle import has_task_record, load_task_record
 from scripts.scheduler_lib.state import SchedulerStore
 
 
@@ -15,33 +21,44 @@ def scheduler_root() -> Path:
     ).expanduser()
 
 
+def emit_json(payload: dict[str, object]) -> None:
+    print(json.dumps(payload, ensure_ascii=False))
+
+
 def cmd_submit(args: argparse.Namespace) -> int:
+    if args.limit <= 0:
+        emit_json({"error": "invalid_limit", "limit": args.limit})
+        return 1
     store = SchedulerStore(scheduler_root())
     payload = {"query": args.query, "limit": args.limit}
     task = store.create_task(site=args.site, intent=args.intent, payload=payload)
-    print(json.dumps({"task_id": task["task_id"], "status": task["status"]}, ensure_ascii=False, indent=2))
+    emit_json({"task_id": task["task_id"], "status": task["status"]})
     return 0
 
 
 def cmd_list(_args: argparse.Namespace) -> int:
     snapshot = SchedulerStore(scheduler_root()).load_snapshot()
-    print(json.dumps(snapshot.get("tasks", {}), ensure_ascii=False, indent=2))
+    emit_json(snapshot.get("tasks", {}))
     return 0
 
 
 def cmd_status(args: argparse.Namespace) -> int:
-    print(json.dumps(load_task_record(scheduler_root(), args.task), ensure_ascii=False, indent=2))
+    root = scheduler_root()
+    if not has_task_record(root, args.task):
+        emit_json({"error": "task_not_found", "task_id": args.task})
+        return 1
+    emit_json(load_task_record(root, args.task))
     return 0
 
 
 def cmd_stop(args: argparse.Namespace) -> int:
-    print(json.dumps({"task_id": args.task, "status": "stop_not_implemented"}, ensure_ascii=False, indent=2))
-    return 0
+    emit_json({"error": "not_implemented", "command": "stop", "task_id": args.task})
+    return 1
 
 
 def cmd_reconcile(_args: argparse.Namespace) -> int:
-    print(json.dumps({"status": "reconcile_not_implemented"}, ensure_ascii=False, indent=2))
-    return 0
+    emit_json({"error": "not_implemented", "command": "reconcile"})
+    return 1
 
 
 def build_parser() -> argparse.ArgumentParser:

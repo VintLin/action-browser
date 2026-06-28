@@ -1,4 +1,9 @@
+from __future__ import annotations
+
+import json
+import os
 from pathlib import Path
+import subprocess
 import sys
 
 # `pytest tests/test_scheduler_cli.py -v` does not place the repo root on sys.path here.
@@ -7,6 +12,39 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 from scripts import scheduler
+
+
+def parse_json_output(text: str) -> dict[str, object]:
+    return json.loads(text)
+
+
+def test_script_entrypoint_submit_from_repo_root(tmp_path: Path) -> None:
+    env = dict(os.environ)
+    env["ACTION_BROWSER_SCHEDULER_DIR"] = str(tmp_path)
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "scripts/scheduler.py",
+            "submit",
+            "--site",
+            "taobao",
+            "--intent",
+            "search",
+            "--query",
+            "儿童童书",
+            "--limit",
+            "20",
+        ],
+        cwd=ROOT_DIR,
+        capture_output=True,
+        text=True,
+        env=env,
+        check=False,
+    )
+
+    assert completed.returncode == 0
+    assert parse_json_output(completed.stdout)["task_id"]
+    assert (tmp_path / "state.json").exists()
 
 
 def test_submit_creates_task_and_prints_id(tmp_path: Path, monkeypatch, capsys) -> None:
@@ -20,8 +58,21 @@ def test_submit_creates_task_and_prints_id(tmp_path: Path, monkeypatch, capsys) 
     )
 
     out = capsys.readouterr().out
-    assert "task_id" in out
+    assert parse_json_output(out)["task_id"]
     assert (tmp_path / "state.json").exists()
+
+
+def test_submit_rejects_non_positive_limit(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.setenv("ACTION_BROWSER_SCHEDULER_DIR", str(tmp_path))
+
+    assert (
+        scheduler.main(["submit", "--site", "taobao", "--intent", "search", "--query", "儿童童书", "--limit", "0"])
+        != 0
+    )
+
+    payload = parse_json_output(capsys.readouterr().out)
+    assert payload["error"] == "invalid_limit"
+    assert not (tmp_path / "state.json").exists()
 
 
 def test_list_shows_queued_task(tmp_path: Path, monkeypatch, capsys) -> None:
@@ -31,3 +82,25 @@ def test_list_shows_queued_task(tmp_path: Path, monkeypatch, capsys) -> None:
     assert scheduler.main(["list"]) == 0
 
     assert "queued" in capsys.readouterr().out
+
+
+def test_status_missing_task_returns_controlled_error(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.setenv("ACTION_BROWSER_SCHEDULER_DIR", str(tmp_path))
+
+    assert scheduler.main(["status", "--task", "missing-task"]) == 1
+
+    payload = parse_json_output(capsys.readouterr().out)
+    assert payload["error"] == "task_not_found"
+    assert payload["task_id"] == "missing-task"
+
+
+def test_stop_and_reconcile_report_unimplemented(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.setenv("ACTION_BROWSER_SCHEDULER_DIR", str(tmp_path))
+
+    assert scheduler.main(["stop", "--task", "t1"]) == 1
+    stop_payload = parse_json_output(capsys.readouterr().out)
+    assert stop_payload["error"] == "not_implemented"
+
+    assert scheduler.main(["reconcile"]) == 1
+    reconcile_payload = parse_json_output(capsys.readouterr().out)
+    assert reconcile_payload["error"] == "not_implemented"
