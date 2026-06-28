@@ -71,10 +71,10 @@ class SchedulerStore:
         finally:
             os.close(dir_fd)
 
-    def _write_json(self, path: Path, payload: dict[str, Any]) -> None:
+    def _write_json(self, path: Path, payload: dict[str, Any], *, updated_at: str | None = None) -> dict[str, Any]:
         data = dict(payload)
         data["schema_version"] = SCHEMA_VERSION
-        data["updated_at"] = utc_now()
+        data["updated_at"] = updated_at or utc_now()
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_suffix(path.suffix + ".tmp")
         with tmp.open("w", encoding="utf-8") as fh:
@@ -83,6 +83,7 @@ class SchedulerStore:
             os.fsync(fh.fileno())
         tmp.replace(path)
         self._sync_directory(path.parent)
+        return data
 
     def _append_event(self, payload: dict[str, Any]) -> None:
         event = dict(payload)
@@ -104,6 +105,7 @@ class SchedulerStore:
     def create_task(self, *, site: str, intent: str, payload: dict[str, Any]) -> dict[str, Any]:
         with self.locked():
             task_id = self._new_task_id(site, intent, payload)
+            task_updated_at = utc_now()
             task = {
                 "schema_version": SCHEMA_VERSION,
                 "task_id": task_id,
@@ -114,7 +116,7 @@ class SchedulerStore:
                 "stage": "triaging",
                 "attempts": 0,
                 "followups": [],
-                "updated_at": utc_now(),
+                "updated_at": task_updated_at,
             }
             snapshot = self.load_snapshot()
             snapshot["tasks"][task_id] = {"status": task["status"], "stage": task["stage"]}
@@ -129,6 +131,6 @@ class SchedulerStore:
                     "at": utc_now(),
                 }
             )
-            self._write_json(self.tasks_dir / f"{task_id}.json", task)
+            task = self._write_json(self.tasks_dir / f"{task_id}.json", task, updated_at=task_updated_at)
             self._write_json(self.snapshot_path, snapshot)
         return task

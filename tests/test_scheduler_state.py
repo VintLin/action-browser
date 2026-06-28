@@ -9,6 +9,7 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
+from scripts.scheduler_lib import state as scheduler_state
 from scripts.scheduler_lib.state import SchedulerStore, sanitize_id
 
 
@@ -56,3 +57,27 @@ def test_store_event_includes_lifecycle_fields(tmp_path: Path) -> None:
     assert event["task_id"] == task["task_id"]
     assert event["status"] == task["status"]
     assert event["stage"] == task["stage"]
+
+
+def test_create_task_returns_persisted_task_record(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    store = SchedulerStore(tmp_path)
+    timestamps = iter(
+        [
+            "2026-06-28T00:00:00+00:00",
+            "2026-06-28T00:00:01+00:00",
+            "2026-06-28T00:00:02+00:00",
+            "2026-06-28T00:00:03+00:00",
+            "2026-06-28T00:00:04+00:00",
+            "2026-06-28T00:00:05+00:00",
+        ]
+    )
+
+    monkeypatch.setattr(scheduler_state, "utc_now", lambda: next(timestamps))
+
+    task = store.create_task(site="taobao", intent="search", payload={"query": "儿童童书"})
+    persisted = json.loads((tmp_path / "tasks" / f"{task['task_id']}.json").read_text(encoding="utf-8"))
+
+    assert task["task_id"] == persisted["task_id"]
+    assert task["status"] == persisted["status"]
+    assert task["stage"] == persisted["stage"]
+    assert task["updated_at"] == persisted["updated_at"]
