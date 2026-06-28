@@ -24,16 +24,19 @@
 2. Chrome 或 Chromium 系浏览器
 3. Actionbook CLI
 4. Actionbook 基础配置
-5. 可选的 Chrome 插件模式
+5. Chrome 插件模式
 
 有些步骤需要用户手动完成：
 
-- 安装 Chrome Web Store 插件
+- 在 Chrome 中手动加载 skill 自带的固定扩展目录
 - 在 Chrome 中确认扩展权限
 - 登录目标网站、处理验证码或安全验证
-- 输入 API Key、账号、密码等敏感信息
+- 输入账号、密码等敏感信息
+
+初始化本 skill 不要求 API Key。没有 `ACTIONBOOK_API_KEY` 也应继续完成安装与验证，不要把 API Key 当作前置条件。
 
 Agent 不应自动读取、保存或提交用户的账号密码、Cookie、Token、API Key。
+Agent 也不能直接替用户把扩展安装进 Chrome profile；它只能准备 zip、解压目录，并引导用户在 `chrome://extensions/` 手动完成 `加载未打包的扩展程序`。
 
 ## 1. 前置检查
 
@@ -150,10 +153,24 @@ actionbook setup
 actionbook setup --browser local --non-interactive
 ```
 
+`action-browser` 里的大多数站点适配器依赖当前 Chrome 登录态；新用户安装此 skill 后，默认应完成插件模式初始化，而不是只停在本地模式。
+
+本 skill 额外自带一个固定版本的 Chrome 扩展包：
+
+```text
+<skill-dir>/actionbook-extension-v0.5.0.zip
+```
+
+初始化时优先使用这个 zip，不要默认依赖当前已安装 CLI 自带的扩展目录，因为 CLI 自带扩展可能与当前 skill 预期版本不一致。
+
+此流程同样不需要 API Key。除非用户后续明确要配置 ActionBook 云端额度或私有限额，否则不要额外要求设置 `ACTIONBOOK_API_KEY`。
+
 如果需要使用当前 Chrome 登录态和插件模式：
 
 ```bash
 actionbook setup --browser extension --non-interactive
+cd "<skill-dir>"
+unzip -o actionbook-extension-v0.5.0.zip
 ```
 
 配置文件位置：
@@ -205,41 +222,39 @@ actionbook browser close --session init-check --json
 
 如果任务不需要用户当前登录态，优先使用本地模式。插件模式依赖 Chrome 扩展和用户 profile，排查成本更高。
 
+对于 `action-browser` skill 的新用户，推荐把插件模式当作默认完成标准。仅复制 skill 文件还不够，Chrome 里还必须安装并启用插件。
+
 先配置为插件模式：
 
 ```bash
 actionbook setup --browser extension --non-interactive
+cd "<skill-dir>"
+unzip -o actionbook-extension-v0.5.0.zip
 ```
 
-安装 Chrome 插件的推荐方式是 Chrome Web Store：
+这里的插件来源要写死：优先使用 skill 自带的固定 zip `actionbook-extension-v0.5.0.zip`，不要默认改用 CLI 当前捆绑目录或浏览器商店版本。当前已核实该 zip 内扩展 `manifest.json`：
 
-```text
-https://chromewebstore.google.com/detail/actionbook/bebchpafpemheedhcdabookaifcijmfo
+```json
+{
+  "version": "0.5.0"
+}
 ```
 
-Agent 可以打开该链接，但添加扩展通常需要用户在 Chrome 中确认。
+`version: 0.5.0` 是当前应加载进 Chrome 的扩展版本。
 
-安装后确认 Chrome 扩展管理页中 Actionbook 已启用：
+然后在 Chrome 中执行：
 
 ```text
 chrome://extensions/
 ```
 
-如果 Web Store 安装不可用，可以使用本地 fallback 包：
-
-```bash
-actionbook extension install --force --json
-actionbook extension path --json
-```
-
-然后在 Chrome 中执行：
-
 1. 打开 `chrome://extensions/`
 2. 开启开发者模式
 3. 点击“加载未打包的扩展程序”
-4. 选择 `actionbook extension path` 输出的目录
+4. 选择解压后的 `<skill-dir>/actionbook-extension-v0.5.0`
 
-本地 fallback 包只负责把扩展文件放到本机目录，不会自动把扩展安装进 Chrome。必须在 Chrome 扩展页手动加载。
+zip 只负责把固定版本扩展随 skill 一起分发，不会自动把扩展安装进 Chrome。必须在 Chrome 扩展页手动加载并启用。
+Agent 不能代替用户完成这个 Chrome UI 安装动作；最多只能打开说明、准备目录并提醒用户点击。
 
 ## 6. 插件模式验证
 
@@ -276,11 +291,19 @@ actionbook browser start --session extension-check --open-url "https://example.c
 - Chrome 是否正在运行
 - Chrome 扩展页中 Actionbook 是否启用
 - 是否安装了正确扩展 ID：`bebchpafpemheedhcdabookaifcijmfo`
+- Chrome 当前加载的是否是 `<skill-dir>/actionbook-extension-v0.5.0`
+- 当前加载扩展的 `manifest.json` 版本是否为要求的 `0.5.0`
 - `~/.actionbook/config.toml` 中 `browser.mode` 是否为 `extension`
 
 ## 7. API Key
 
-Actionbook 可在没有 API Key 的情况下运行，但可能受到公共限额限制。
+Actionbook 可在没有 API Key 的情况下运行；对本 skill 的本地初始化来说，API Key 不是必需项。
+
+结论先写明：
+
+- 新用户安装 `action-browser` skill 时，不需要先配置 `ACTIONBOOK_API_KEY`
+- 没有 API Key 时，也应先完成 CLI、Chrome 扩展、`extension_connected=true` 和 session bootstrap 验证
+- 只有用户明确要配置额外额度、私有限额或特定云端能力时，再单独处理 API Key
 
 如果有 API Key，可以写入环境变量：
 
@@ -298,6 +321,8 @@ export ACTIONBOOK_API_KEY="your_api_key"
 - `actionbook setup` 已执行完成
 - `~/.actionbook/config.toml` 存在
 - 本地模式下可以打开 `https://example.com`
+- 插件模式下已解压 `<skill-dir>/actionbook-extension-v0.5.0.zip`
+- 插件模式下已在 Chrome 中加载 `<skill-dir>/actionbook-extension-v0.5.0`，且扩展版本为 `0.5.0`
 - 插件模式下 `actionbook extension status --json` 显示 `bridge=listening` 且 `extension_connected=true`
 
 完成后再执行具体网页自动化任务。
@@ -321,27 +346,20 @@ npm install -g @actionbookdev/cli@latest
 # 4. 验证 CLI
 actionbook --version
 
-# 5. 默认配置为本地模式
-actionbook setup --browser local --non-interactive
-
-# 6. 测试本地模式
-actionbook browser start --session init-check --open-url "https://example.com" --json
-actionbook browser snapshot --session init-check --tab t1 --json
-```
-
-如果任务明确需要 Chrome 当前登录态，再追加插件模式配置：
-
-```bash
+# 5. 配置为插件模式
 actionbook setup --browser extension --non-interactive
-actionbook extension install --force --json
-actionbook extension path --json
-```
+cd "<skill-dir>"
+unzip -o actionbook-extension-v0.5.0.zip
 
-然后让用户在 Chrome 中安装或启用 Actionbook 插件，再执行：
+# 6. 让用户在 chrome://extensions/ 中加载 <skill-dir>/actionbook-extension-v0.5.0
+# agent 不能直接替用户完成这一步；这里只能引导用户手动加载
 
-```bash
-actionbook browser start --session extension-check --open-url "https://example.com" --json
+# 7. 验证插件连接
 actionbook extension status --json
+
+# 8. 测试 session bootstrap
+actionbook browser start --session extension-check --open-url "https://example.com" --json
+python3 scripts/actionbook_session.py ensure --session extension-check --url "https://example.com" --json
 ```
 
 ## 10. 干净电脑完成标准
@@ -353,8 +371,9 @@ actionbook extension status --json
 - `which actionbook` 能找到 CLI
 - `actionbook --version` 正常输出
 - `~/.actionbook/config.toml` 存在
-- 本地模式可以打开并读取 `https://example.com`
-- 需要插件模式时，Chrome 已安装 Actionbook 插件并启用
+- `<skill-dir>/actionbook-extension-v0.5.0.zip` 已存在且已成功解压
+- Chrome 已加载 `<skill-dir>/actionbook-extension-v0.5.0`
+- Chrome 已启用该扩展，且扩展版本是 `0.5.0`
 - 插件模式下 `bridge=listening` 且 `extension_connected=true`
 
 若任一项不满足，应先修复初始化，不要进入正式网页自动化。

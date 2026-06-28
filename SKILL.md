@@ -1,21 +1,29 @@
 ---
 name: action-browser
-description: "Use when an agent needs ActionBook or Chrome extension mode for real browser tasks, also known as 浏览器操作: opening pages, clicking, filling forms, searching, scrolling, popup handling, page-state reading, structured extraction, downloads, authenticated Chrome sessions, site workflow recovery, or stopping tracked browser workflows."
+description: "Use when an agent needs ActionBook or Chrome extension mode for real browser tasks, or when installing, initializing, verifying, or repairing this browser skill's Chrome extension, session, bridge, or tab workflow."
 ---
 
 # 浏览器操作
 
 Use ActionBook for real browser pages. Prefer `extension` mode when the task needs the user's Chrome login state, cookies, or existing browser environment. Do not switch modes unless the user confirms it.
 
+First-run setup is not optional for most adapters in this skill:
+
+- No API key is required for local initialization.
+- Use the skill-bundled `actionbook-extension-v0.5.0.zip` as the default Chrome extension source.
+- The agent can unzip and point the user to the folder, but cannot finish the Chrome install on the user's behalf.
+- The user must open `chrome://extensions/`, enable Developer mode, and `Load unpacked` the extracted `actionbook-extension-v0.5.0/` directory.
+
 ## Before Acting
 
-1. If the task names a supported site or capability, read the matching reference below before running commands.
-2. For extension-mode tasks, start with `scripts/actionbook_session.py`; with an explicit `--session`, it reuses only that same session, opens a fresh tab when needed, and rebuilds only as a last resort.
-3. Treat `session` as the browser container and `tab` as the task-level page context. For parallel work in one browser session, allocate one stable `tab id` per subtask and pass `--tab` explicitly after `list-tabs`, `new-tab`, or the session bootstrap returns the real tab id.
-4. Do not assume a started extension session is reusable until a second CLI command can still access it. If the session disappears between commands, stop and repair the ActionBook runtime before scheduling tasks onto tabs.
-5. Use the helper as the default boundary: `ensure`, `list-tabs`, `new-tab`, `select-tab`, and `close-tab` should go through `scripts/actionbook_session.py`. Keep raw `actionbook browser start/new-tab/list-tabs/close-tab` for diagnostics only.
-6. If login, CAPTCHA, MFA, or risk-control appears, keep the same Chrome window and ask the user to complete it there.
-7. For long workflows, downloads, profile crawls, and batch exports, run through `scripts/actionbook_run.py` so later `中断` / `停止` can stop the process group.
+1. If this is first-time setup, missing Chrome extension, or broken bridge/session state, read `references/initialization.md` or `references/status-check.md` before running site workflows.
+2. If the task names a supported site or capability, read the matching reference below before running commands.
+3. For extension-mode tasks, start with `scripts/actionbook_session.py`; with an explicit `--session`, it reuses only that same session, opens a fresh tab when needed, and rebuilds only as a last resort.
+4. Treat `session` as the browser container and `tab` as the task-level page context. For parallel work in one browser session, allocate one stable `tab id` per subtask and pass `--tab` explicitly after `list-tabs`, `new-tab`, or the session bootstrap returns the real tab id.
+5. Do not assume a started extension session is reusable until a second CLI command can still access it. If the session disappears between commands, stop and repair the ActionBook runtime before scheduling tasks onto tabs.
+6. Use the helper as the default boundary: `ensure`, `list-tabs`, `new-tab`, `select-tab`, and `close-tab` should go through `scripts/actionbook_session.py`. Keep raw `actionbook browser start/new-tab/list-tabs/close-tab` for diagnostics only.
+7. If login, CAPTCHA, MFA, or risk-control appears, keep the same Chrome window and ask the user to complete it there.
+8. For long workflows, downloads, profile crawls, and batch exports, run through `scripts/actionbook_run.py` so later `中断` / `停止` can stop the process group.
 
 ## References
 
@@ -23,7 +31,7 @@ Load only what applies:
 
 | Need | Read / Use |
 | --- | --- |
-| Setup, missing ActionBook, Chrome, extension, CLI | `references/initialization.md` |
+| First-time setup, missing ActionBook, Chrome, extension, CLI, or "how do I initialize this skill?" | `references/initialization.md`, `actionbook-extension-v0.5.0.zip` |
 | Unknown daemon, extension, session, tab state | `references/status-check.md` |
 | Generic webpage to Markdown | `references/webpage-markdown.md`, `scripts/webpage_markdown.py` |
 | Generic session bootstrap | `scripts/actionbook_session.py` |

@@ -57,6 +57,47 @@ mkdir -p <skills-dir>/action-browser
 rsync -a ./ <skills-dir>/action-browser/
 ```
 
+## First-Time Initialization
+
+For a new user, the safe default is to finish the extension-mode setup before using most site adapters in this skill. Many workflows in this repo depend on the user's existing Chrome login state, so installing the skill files alone is not enough.
+
+Run this path in order:
+
+```bash
+npm install -g @actionbookdev/cli
+actionbook --version
+actionbook setup --browser extension --non-interactive
+cd "<skills-dir>/action-browser"
+unzip -o actionbook-extension-v0.5.0.zip
+```
+
+No API key is required for this initialization flow. Do not block setup on `ACTIONBOOK_API_KEY`.
+
+Then install the browser extension in Chrome from the unpacked skill-local directory:
+
+1. Open `chrome://extensions/`
+2. Turn on Developer mode
+3. Click "Load unpacked"
+4. Select `<skills-dir>/action-browser/actionbook-extension-v0.5.0`
+
+The agent cannot directly complete the Chrome extension installation inside the user's browser profile. It can prepare the zip, unpack the directory, and tell the user what to click, but the final `Load unpacked` step must be completed by the user in Chrome.
+
+This skill ships a pinned extension bundle at [actionbook-extension-v0.5.0.zip](/Users/Vint/Repos/04_Skills/01_通用%20Skills/02_action-browser/actionbook-extension-v0.5.0.zip). Use that bundle as the default source for Chrome installation. Do not assume the extension currently bundled inside the installed CLI is compatible with this skill. The pinned extension manifest version is `0.5.0`, and that is the version new users should load into Chrome.
+
+The CLI is still required for the `actionbook` runtime, but the Chrome extension source should come from the skill-local zip above unless you are explicitly debugging a different CLI build.
+
+Verify the setup before using the skill:
+
+```bash
+actionbook extension status --json
+python3 scripts/actionbook_session.py ensure \
+  --session init-check \
+  --url "https://example.com" \
+  --json
+```
+
+Do not start site workflows until `actionbook extension status --json` shows `bridge: listening` and `extension_connected: true`.
+
 ## Requirements
 
 - An agent runtime with local skill support
@@ -75,10 +116,12 @@ For a first-time setup, run:
 actionbook setup
 ```
 
-If the task needs the user's logged-in Chrome session, configure extension mode and install the ActionBook Chrome extension:
+If the task needs the user's logged-in Chrome session, configure extension mode and load the skill-bundled Chrome extension:
 
 ```bash
 actionbook setup --browser extension --non-interactive
+cd "<skills-dir>/action-browser"
+unzip -o actionbook-extension-v0.5.0.zip
 ```
 
 The initialization guide is in `references/initialization.md`.

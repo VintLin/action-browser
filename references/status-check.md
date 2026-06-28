@@ -194,11 +194,22 @@ chrome://extensions/
 - 插件 ID 是 `bebchpafpemheedhcdabookaifcijmfo`
 - Chrome 顶部没有阻止调试或扩展运行的提示
 
-如果插件不存在，打开 Chrome Web Store 页面让用户安装：
+如果插件不存在，不要先跳到浏览器商店版本，也不要先假设 CLI 当前捆绑扩展可用。先按 skill 自带固定 zip 修复：
 
-```text
-https://chromewebstore.google.com/detail/actionbook/bebchpafpemheedhcdabookaifcijmfo
+```bash
+cd "<skill-dir>"
+unzip -o actionbook-extension-v0.5.0.zip
 ```
+
+然后在 `chrome://extensions/`：
+
+1. 开启开发者模式
+2. 点击“加载未打包的扩展程序”
+3. 选择 `<skill-dir>/actionbook-extension-v0.5.0`
+
+当前应确认该目录里的扩展版本是 `0.5.0`，再重试 `actionbook extension status --json`。
+
+这里也要明确：agent 不能直接把扩展安装进 Chrome。若当前线程里的 agent 无法操作用户的 Chrome 扩展页，必须明确提示用户自己完成这 3 个点击步骤，再继续后续检查。
 
 ## 5. 打开目标站点前检查
 
