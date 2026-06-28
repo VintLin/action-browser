@@ -215,6 +215,13 @@ consistently.
 - `summary.json.ok = true` and `needs_user_action = false` and
   `0 < collected_count < requested_count` => `status = completed`,
   `result_quality = partial`
+- `summary.json.ok = true` and `needs_user_action = false` and
+  `requested_count > 0` and `collected_count = 0` => `status = completed`,
+  `result_quality = partial`; expect a warning such as `no_results_found`
+- `summary.json.ok = true` and `needs_user_action = false` and
+  `requested_count = 0` => `status = completed`, `result_quality = full`;
+  do not emit a `no_results_found` warning, but a warning such as
+  `nothing_requested` is allowed when the zero-request outcome is unusual
 - `summary.json.ok = true` and `needs_user_action = true` => `status =
   waiting_user`; preserve any partial counts but do not mark `completed`
 - `summary.json.ok = false` and `needs_user_action = true` => `status =

@@ -134,6 +134,12 @@ Normative scheduler mapping:
 - `ok = true` and `needs_user_action = false` and
   `0 < collected_count < requested_count` maps to `completed` with
   `result_quality = partial`
+- `ok = true` and `needs_user_action = false` and `requested_count > 0` and
+  `collected_count = 0` maps to `completed` with `result_quality = partial`;
+  emit a warning such as `no_results_found`
+- `ok = true` and `needs_user_action = false` and `requested_count = 0` maps
+  to `completed` with `result_quality = full`; do not emit
+  `no_results_found`, though `nothing_requested` is allowed when useful
 - `needs_user_action = true` maps to `waiting_user`, even if partial artifacts
   already exist
 - `ok = false` with no user-action requirement maps to retry, `failed`, or
