@@ -18,7 +18,7 @@ def write_summary(path: Path, payload: dict[str, object]) -> Path:
 
 
 def test_reconcile_keeps_running_when_run_and_tab_are_alive(tmp_path: Path) -> None:
-    task = {"task_id": "t1", "status": "queued"}
+    task = {"task_id": "t1", "status": "queued", "reason_code": "old_failure"}
 
     result = reconcile_task_state(
         task,
@@ -29,6 +29,7 @@ def test_reconcile_keeps_running_when_run_and_tab_are_alive(tmp_path: Path) -> N
 
     assert result["status"] == "running"
     assert result["stage"] == "using_browser"
+    assert result["reason_code"] is None
 
 
 def test_reconcile_marks_completed_partial_from_summary(tmp_path: Path) -> None:
@@ -76,7 +77,7 @@ def test_reconcile_marks_completed_full_from_summary(tmp_path: Path) -> None:
 
 
 def test_reconcile_marks_waiting_user_when_summary_requires_it(tmp_path: Path) -> None:
-    task = {"task_id": "t1", "status": "running"}
+    task = {"task_id": "t1", "status": "running", "result_quality": "full"}
 
     result = reconcile_task_state(
         task,
@@ -96,10 +97,11 @@ def test_reconcile_marks_waiting_user_when_summary_requires_it(tmp_path: Path) -
 
     assert result["status"] == "waiting_user"
     assert result["reason_code"] == "needs_login"
+    assert result["result_quality"] is None
 
 
 def test_reconcile_marks_failed_when_summary_reports_not_ok(tmp_path: Path) -> None:
-    task = {"task_id": "t1", "status": "running"}
+    task = {"task_id": "t1", "status": "running", "result_quality": "partial"}
 
     result = reconcile_task_state(
         task,
@@ -119,6 +121,7 @@ def test_reconcile_marks_failed_when_summary_reports_not_ok(tmp_path: Path) -> N
 
     assert result["status"] == "failed"
     assert result["reason_code"] == "site_error"
+    assert result["result_quality"] is None
 
 
 def test_reconcile_marks_blocked_when_run_missing_and_no_summary(tmp_path: Path) -> None:
