@@ -1,6 +1,7 @@
 from pathlib import Path
 import sys
 
+# `pytest tests/test_actionbook_session.py -v` does not place the repo root on sys.path here.
 ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
