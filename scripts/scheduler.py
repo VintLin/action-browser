@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import redirect_stdout
+from io import StringIO
 import json
 import os
 from pathlib import Path
@@ -11,7 +13,7 @@ if __package__ in {None, ""}:
     if str(ROOT_DIR) not in sys.path:
         sys.path.insert(0, str(ROOT_DIR))
 
-from scripts.scheduler_lib.executor import call_actionbook_run
+from scripts.scheduler_lib.executor import call_actionbook_run, has_tracked_run
 from scripts.scheduler_lib.lifecycle import has_task_record, load_task_record, task_run_id
 from scripts.scheduler_lib.state import SchedulerStore
 
@@ -24,6 +26,10 @@ def scheduler_root() -> Path:
 
 def emit_json(payload: dict[str, object]) -> None:
     print(json.dumps(payload, ensure_ascii=False))
+
+
+def stop_missing_payload(task_id: str, run_id: str) -> dict[str, object]:
+    return {"error": "run_not_found", "task_id": task_id, "run_id": run_id}
 
 
 def cmd_submit(args: argparse.Namespace) -> int:
@@ -58,7 +64,28 @@ def cmd_stop(args: argparse.Namespace) -> int:
         emit_json({"error": "task_not_found", "task_id": args.task})
         return 1
     task = load_task_record(root, args.task)
-    return call_actionbook_run(["stop", "--id", task_run_id(task)])
+    run_id = task_run_id(task)
+    if not has_tracked_run(run_id):
+        emit_json(stop_missing_payload(args.task, run_id))
+        return 1
+    captured = StringIO()
+    with redirect_stdout(captured):
+        exit_code = call_actionbook_run(["stop", "--id", run_id])
+    output = captured.getvalue()
+    payload: dict[str, object] | None = None
+    if output.strip():
+        try:
+            decoded = json.loads(output)
+        except json.JSONDecodeError:
+            decoded = None
+        if isinstance(decoded, dict):
+            payload = decoded
+    if exit_code == 0 and payload and payload.get("status") == "missing":
+        emit_json(stop_missing_payload(args.task, run_id))
+        return 1
+    if output:
+        print(output, end="")
+    return exit_code
 
 
 def cmd_reconcile(_args: argparse.Namespace) -> int:
