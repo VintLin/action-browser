@@ -94,12 +94,25 @@ def test_status_missing_task_returns_controlled_error(tmp_path: Path, monkeypatc
     assert payload["task_id"] == "missing-task"
 
 
-def test_stop_and_reconcile_report_unimplemented(tmp_path: Path, monkeypatch, capsys) -> None:
+def test_stop_delegates_to_actionbook_run(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("ACTION_BROWSER_SCHEDULER_DIR", str(tmp_path))
+    calls: list[list[str]] = []
 
-    assert scheduler.main(["stop", "--task", "t1"]) == 1
-    stop_payload = parse_json_output(capsys.readouterr().out)
-    assert stop_payload["error"] == "not_implemented"
+    def fake_run(args: list[str]) -> int:
+        calls.append(args)
+        return 0
+
+    monkeypatch.setattr(scheduler, "call_actionbook_run", fake_run)
+    scheduler.main(["submit", "--site", "taobao", "--intent", "search", "--query", "儿童童书"])
+    task_id = next(iter(json.loads((tmp_path / "state.json").read_text(encoding="utf-8"))["tasks"].keys()))
+
+    assert scheduler.main(["stop", "--task", task_id]) == 0
+    assert calls and calls[0][:2] == ["stop", "--id"]
+    assert calls[0][2] == task_id
+
+
+def test_reconcile_reports_unimplemented(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.setenv("ACTION_BROWSER_SCHEDULER_DIR", str(tmp_path))
 
     assert scheduler.main(["reconcile"]) == 1
     reconcile_payload = parse_json_output(capsys.readouterr().out)

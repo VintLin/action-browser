@@ -9,12 +9,21 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
+from scripts.scheduler_lib.lifecycle import task_run_id
 from scripts.scheduler_lib.reconcile import reconcile_task_state
 
 
 def write_summary(path: Path, payload: dict[str, object]) -> Path:
     path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
     return path
+
+
+def test_task_run_id_reuses_persisted_run_id() -> None:
+    assert task_run_id({"task_id": "t1", "run_id": "run-1"}) == "run-1"
+
+
+def test_task_run_id_falls_back_to_task_id() -> None:
+    assert task_run_id({"task_id": "t1"}) == "t1"
 
 
 def test_reconcile_keeps_running_when_run_and_tab_are_alive(tmp_path: Path) -> None:

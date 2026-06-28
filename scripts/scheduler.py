@@ -11,7 +11,8 @@ if __package__ in {None, ""}:
     if str(ROOT_DIR) not in sys.path:
         sys.path.insert(0, str(ROOT_DIR))
 
-from scripts.scheduler_lib.lifecycle import has_task_record, load_task_record
+from scripts.scheduler_lib.executor import call_actionbook_run
+from scripts.scheduler_lib.lifecycle import has_task_record, load_task_record, task_run_id
 from scripts.scheduler_lib.state import SchedulerStore
 
 
@@ -52,8 +53,12 @@ def cmd_status(args: argparse.Namespace) -> int:
 
 
 def cmd_stop(args: argparse.Namespace) -> int:
-    emit_json({"error": "not_implemented", "command": "stop", "task_id": args.task})
-    return 1
+    root = scheduler_root()
+    if not has_task_record(root, args.task):
+        emit_json({"error": "task_not_found", "task_id": args.task})
+        return 1
+    task = load_task_record(root, args.task)
+    return call_actionbook_run(["stop", "--id", task_run_id(task)])
 
 
 def cmd_reconcile(_args: argparse.Namespace) -> int:

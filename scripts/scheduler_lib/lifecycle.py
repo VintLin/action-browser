@@ -15,3 +15,7 @@ def load_task_record(root: Path, task_id: str) -> dict[str, Any]:
 
 def has_task_record(root: Path, task_id: str) -> bool:
     return task_path(root, task_id).exists()
+
+
+def task_run_id(task: dict[str, object]) -> str:
+    return str(task.get("run_id") or task["task_id"])
