@@ -132,6 +132,13 @@ Stop it later with:
 python3 scripts/actionbook_run.py stop --id xhs-profile-download
 ```
 
+## Scheduler (First Pass)
+
+- Use `scripts/scheduler.py` for `submit`, `list`, `status`, `stop`, and `reconcile`.
+- Scheduler-managed tasks open exclusive tabs with `--force-new-tab --no-adopt`.
+- The first pass integrates one adapter contract through Taobao.
+- Unsupported sites still default to direct agent browser work first.
+
 ### Extract A Rendered Webpage To Markdown
 
 ```bash

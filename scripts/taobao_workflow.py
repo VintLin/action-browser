@@ -212,9 +212,55 @@ def write_records(records: list[dict[str, Any]], output_dir: Path, title: str) -
     write_json(output_dir / "failures.json", [])
 
 
+def write_contract_outputs(
+    *,
+    records: list[dict[str, Any]],
+    output_dir: Path,
+    site: str,
+    intent: str,
+    requested_count: int,
+    warnings: list[str],
+    needs_user_action: bool,
+) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    artifacts_dir = output_dir / "artifacts"
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    write_json(artifacts_dir / "results.json", records)
+    write_json(
+        output_dir / "summary.json",
+        {
+            "ok": True,
+            "site": site,
+            "intent": intent,
+            "requested_count": requested_count,
+            "collected_count": len(records),
+            "artifacts": ["artifacts/results.json"],
+            "warnings": warnings,
+            "needs_user_action": needs_user_action,
+        },
+    )
+    write_json(
+        output_dir / "progress.json",
+        {
+            "stage": "writing_results",
+            "completed_items": len(records),
+            "requested_items": requested_count,
+        },
+    )
+
+
 def finish(records: list[dict[str, Any]], args: argparse.Namespace, area: str, title: str) -> int:
     output_dir = Path(args.output) if args.output else default_output_dir(area)
     write_records(records, output_dir, title)
+    write_contract_outputs(
+        records=records,
+        output_dir=output_dir,
+        site="taobao",
+        intent=area,
+        requested_count=len(records) if not getattr(args, "count", None) else read_count(args.count),
+        warnings=[],
+        needs_user_action=False,
+    )
     log(f"已写入: {output_dir} 条目数={len(records)}")
     return 0
 

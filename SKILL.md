@@ -129,3 +129,10 @@ ps aux | grep -E 'actionbook_run.py|_workflow.py' | grep -v grep
 5. Report stop result, output directory, and durable evidence such as `summary.json`, `metadata.json`, folder count, or the last completed log line.
 
 Use `stop --all` only when the user clearly wants every ActionBook workflow stopped, or all active runs belong to the current task.
+
+## Scheduler (First Pass)
+
+- Use `scripts/scheduler.py` for `submit`, `list`, `status`, `stop`, and `reconcile`.
+- Scheduler-managed tasks open exclusive tabs with `--force-new-tab --no-adopt`.
+- The first pass integrates one adapter contract through Taobao.
+- Unsupported sites still default to direct agent browser work first.
