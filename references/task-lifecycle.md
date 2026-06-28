@@ -31,21 +31,21 @@ There are two progress files with different roles:
 
 - `~/.action-browser/scheduler/progress/<task_id>.json` is the scheduler-owned
   mirror used for list/status commands and restart reconciliation.
-- `<output>/progress.json` is the adapter-owned execution snapshot written by
-  the running task.
+- `<output>/contract/progress.json` is the adapter-owned execution snapshot
+  written by the running task when the site keeps legacy root outputs.
 
-The adapter-owned `<output>/progress.json` is the source of truth while a task
-is active. The scheduler must copy or derive scheduler progress from that file
-under `state.lock`; adapters must not write
+The adapter-owned `<output>/contract/progress.json` is the source of truth
+while a task is active. The scheduler must copy or derive scheduler progress
+from that file under `state.lock`; adapters must not write
 `~/.action-browser/scheduler/progress/<task_id>.json` directly.
 
 Conflict rule:
 
-- if `<output>/progress.json` is newer and valid, the scheduler mirror must be
-  overwritten from it
+- if `<output>/contract/progress.json` is newer and valid, the scheduler mirror
+  must be overwritten from it
 - if the scheduler mirror is newer only because a reconcile or status change
   happened after the run stopped, keep the scheduler mirror and do not write
-  back into `<output>/progress.json`
+  back into `<output>/contract/progress.json`
 - if timestamps disagree but the adapter file is malformed, keep the scheduler
   mirror, record a warning, and treat the adapter progress as unusable
 
@@ -137,9 +137,12 @@ Example:
 
 ## Lease Rules
 
+- In extension mode first pass, the scheduler should prefer one stable browser session and multiple leased tabs inside it, but only after session persistence has been proven across commands.
+- Scheduler and future executors should acquire and release session/tab state through `scripts/actionbook_session.py`, not by open-coding raw `browser start/new-tab/list-tabs/close-tab` calls in control-plane code.
 - Scheduler-managed tasks must request a fresh tab and must not adopt an
   arbitrary existing tab.
 - One `running` task owns exactly one `lease_id` and one `tab_id`.
+- Multiple running tasks may share one browser `session_id` as long as each task has its own leased `tab_id`.
 - The lease belongs to the task until the task reaches a terminal status or
   enters `waiting_user`.
 - Releasing a lease should close only that task tab. If close fails, record a
@@ -184,6 +187,7 @@ Conservative outcomes:
 - live run + lost tab => stop run, then `failed`
 
 Do not silently move a recovered task to a different tab.
+Do not silently migrate a recovered task to a different browser session in extension mode unless the old session is confirmed dead and the task is being restarted, not resumed.
 
 ## Heartbeats And Freshness
 
@@ -209,31 +213,31 @@ task as healthy even if the last snapshot said `running`.
 The scheduler is authoritative for task status, but it must map adapter outputs
 consistently.
 
-- `summary.json.ok = true` and `needs_user_action = false` and
+- `contract/summary.json.ok = true` and `needs_user_action = false` and
   `collected_count >= requested_count` => `status = completed`,
   `result_quality = full`
-- `summary.json.ok = true` and `needs_user_action = false` and
+- `contract/summary.json.ok = true` and `needs_user_action = false` and
   `0 < collected_count < requested_count` => `status = completed`,
   `result_quality = partial`
-- `summary.json.ok = true` and `needs_user_action = false` and
+- `contract/summary.json.ok = true` and `needs_user_action = false` and
   `requested_count > 0` and `collected_count = 0` => `status = completed`,
   `result_quality = partial`; expect a warning such as `no_results_found`
-- `summary.json.ok = true` and `needs_user_action = false` and
+- `contract/summary.json.ok = true` and `needs_user_action = false` and
   `requested_count = 0` => `status = completed`, `result_quality = full`;
   do not emit a `no_results_found` warning, but a warning such as
   `nothing_requested` is allowed when the zero-request outcome is unusual
-- `summary.json.ok = true` and `needs_user_action = true` => `status =
+- `contract/summary.json.ok = true` and `needs_user_action = true` => `status =
   waiting_user`; preserve any partial counts but do not mark `completed`
-- `summary.json.ok = false` and `needs_user_action = true` => `status =
+- `contract/summary.json.ok = false` and `needs_user_action = true` => `status =
   waiting_user`
-- `summary.json.ok = false` and retry budget remains => `status = running`,
+- `contract/summary.json.ok = false` and retry budget remains => `status = running`,
   `stage = retrying`
-- `summary.json.ok = false` and retry budget is exhausted => `status = failed`
+- `contract/summary.json.ok = false` and retry budget is exhausted => `status = failed`
   or `blocked`, based on `reason_code`
 
-If both progress and summary exist and disagree, `summary.json` wins for final
-outcome after the run exits. `progress.json` wins only for in-flight status
-while the run is still active.
+If both progress and summary exist and disagree, `contract/summary.json` wins
+for final outcome after the run exits. `contract/progress.json` wins only for
+in-flight status while the run is still active.
 
 ## Unrecoverable Conditions
 
@@ -243,7 +247,7 @@ Move the task to `blocked` or `failed` when one of these is confirmed:
 - the browser session was rebuilt and the original `tab_id` is gone
 - login, CAPTCHA, MFA, or another challenge is still unresolved after a
   `waiting_user` pause
-- output files exist but `summary.json` is missing or malformed
+- output files exist but `contract/summary.json` is missing or malformed
 - progress freshness exceeded the allowed TTL and the run is stale
 
 ## Event Expectations

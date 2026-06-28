@@ -85,6 +85,29 @@ def test_reconcile_marks_completed_full_from_summary(tmp_path: Path) -> None:
     assert result["result_quality"] == "full"
 
 
+def test_reconcile_marks_zero_request_summary_as_full_and_clears_stale_fields(tmp_path: Path) -> None:
+    task = {"task_id": "t1", "status": "running", "reason_code": "old_failure", "result_quality": "partial"}
+
+    result = reconcile_task_state(
+        task,
+        run_state=None,
+        tab_alive=False,
+        summary_path=write_summary(
+            tmp_path / "summary.json",
+            {
+                "ok": True,
+                "needs_user_action": False,
+                "requested_count": 0,
+                "collected_count": 0,
+            },
+        ),
+    )
+
+    assert result["status"] == "completed"
+    assert result["result_quality"] == "full"
+    assert result["reason_code"] is None
+
+
 def test_reconcile_marks_waiting_user_when_summary_requires_it(tmp_path: Path) -> None:
     task = {"task_id": "t1", "status": "running", "result_quality": "full"}
 
@@ -130,6 +153,31 @@ def test_reconcile_marks_failed_when_summary_reports_not_ok(tmp_path: Path) -> N
 
     assert result["status"] == "failed"
     assert result["reason_code"] == "site_error"
+    assert result["result_quality"] is None
+
+
+def test_reconcile_preserves_blocked_summary_outcome(tmp_path: Path) -> None:
+    task = {"task_id": "t1", "status": "running"}
+
+    result = reconcile_task_state(
+        task,
+        run_state=None,
+        tab_alive=False,
+        summary_path=write_summary(
+            tmp_path / "summary.json",
+            {
+                "ok": False,
+                "status": "blocked",
+                "needs_user_action": False,
+                "requested_count": 20,
+                "collected_count": 0,
+                "reason_code": "adapter_required",
+            },
+        ),
+    )
+
+    assert result["status"] == "blocked"
+    assert result["reason_code"] == "adapter_required"
     assert result["result_quality"] is None
 
 

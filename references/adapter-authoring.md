@@ -32,7 +32,8 @@ The scheduler may also pass task-specific inputs such as `--query`,
 Input semantics:
 
 - `--task-id` is the scheduler-issued stable identifier for one user-visible
-  task attempt and must be copied into `summary.json` and `progress.json`
+  task attempt and must be copied into `contract/summary.json` and
+  `contract/progress.json`
 - `--session` is the existing ActionBook browser session identifier selected by
   the scheduler; adapters must attach to that session and must not create a new
   replacement session silently
@@ -45,6 +46,8 @@ Input semantics:
 ## Ownership Boundaries
 
 - The adapter works inside the tab assigned by the scheduler.
+- Multiple tasks may share the same `--session`, but one adapter run owns only its assigned `--tab`.
+- The scheduler should hand adapters a tab that was opened and validated through the session helper; adapters should not rely on raw session bootstrap semantics themselves.
 - The adapter must not open a replacement tab on its own after failure.
 - The adapter must not adopt a different current tab implicitly.
 - Retry logic belongs to the scheduler. The adapter reports failures; it does
@@ -62,24 +65,35 @@ Minimum output shape:
 ```text
 <output>/
   summary.json
-  progress.json
-  artifacts/
+  failures.json
+  contract/
+    summary.json
+    progress.json
+    artifacts/
 ```
+
+`<output>/summary.json` and other root files may remain legacy site-workflow
+outputs when the site already has an established file shape. For
+scheduler-managed adapter metadata, use `<output>/contract/` as the stable
+contract root in that compatibility mode.
 
 If the adapter creates additional files, keep them under the same output root
 so the scheduler can treat the directory as one durable task artifact set.
 
 ## File Contract
 
-Every adapter-owned JSON file must include `schema_version`. Adapters do not
-own scheduler snapshots, `state.lock`, or `events.jsonl`, but their output must
+Every adapter-owned contract JSON file must include `schema_version`. Raw
+artifact payloads under `contract/artifacts/` may keep their legacy shape when
+they are direct data exports rather than contract metadata. Adapters do not own
+scheduler snapshots, `state.lock`, or `events.jsonl`, but their output must
 remain compatible with the scheduler's file-based persistence model.
 
 Rules:
 
 - the scheduler takes `state.lock` before it updates scheduler snapshots
 - the scheduler appends lifecycle decisions to `events.jsonl`
-- the adapter writes `summary.json` and `progress.json` atomically
+- the adapter writes `contract/summary.json` and `contract/progress.json`
+  atomically when using compatibility mode
 - JSON stays readable after crashes or process kills
 
 An adapter should never edit `~/.action-browser/scheduler/state.json`
@@ -87,17 +101,19 @@ directly.
 
 Progress ownership:
 
-- `<output>/progress.json` is the adapter-owned source of truth while the run
-  is active
+- `<output>/contract/progress.json` is the adapter-owned scheduler contract
+  source of truth while the run is active
 - `~/.action-browser/scheduler/progress/<task_id>.json` is the scheduler-owned
   mirror
 - adapters must never write the scheduler mirror directly
-- after the run exits, `summary.json` becomes the source of truth for final
-  status and result quality if it conflicts with the last progress snapshot
+- after the run exits, `contract/summary.json` becomes the source of truth for
+  final status and result quality if it conflicts with the last progress
+  snapshot
 
-## summary.json
+## contract/summary.json
 
-`summary.json` is the final task outcome as seen by the scheduler and the user.
+`contract/summary.json` is the final scheduler contract outcome as seen by the
+scheduler and the user.
 
 Example:
 
@@ -109,7 +125,7 @@ Example:
   "intent": "search",
   "requested_count": 20,
   "collected_count": 18,
-  "artifacts": ["results.json"],
+  "artifacts": ["contract/artifacts/results.json"],
   "warnings": [],
   "needs_user_action": false,
   "followups": []
@@ -145,10 +161,10 @@ Normative scheduler mapping:
 - `ok = false` with no user-action requirement maps to retry, `failed`, or
   `blocked` based on scheduler retry budget and `reason_code`
 
-## progress.json
+## contract/progress.json
 
-`progress.json` is the mutable execution snapshot for recovery and user-facing
-status.
+`contract/progress.json` is the mutable execution snapshot for recovery and
+user-facing status.
 
 Example:
 

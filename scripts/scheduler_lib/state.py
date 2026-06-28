@@ -10,7 +10,14 @@ from uuid import uuid4
 
 import fcntl
 
-from scripts.scheduler_lib.contracts import DEFAULT_LIMITS, SCHEMA_VERSION
+from scripts.scheduler_lib.contracts import (
+    DEFAULT_LIMITS,
+    SCHEMA_VERSION,
+    build_scheduler_snapshot,
+    build_task_created_event,
+    build_task_record,
+    build_task_snapshot,
+)
 
 
 def utc_now() -> str:
@@ -53,13 +60,7 @@ class SchedulerStore:
         try:
             snapshot = json.loads(self.snapshot_path.read_text(encoding="utf-8"))
         except FileNotFoundError:
-            return {
-                "schema_version": SCHEMA_VERSION,
-                "limits": dict(DEFAULT_LIMITS),
-                "tasks": {},
-                "leases": {},
-                "updated_at": utc_now(),
-            }
+            return build_scheduler_snapshot(updated_at=utc_now(), limits=DEFAULT_LIMITS)
         if not isinstance(snapshot, dict):
             raise ValueError(f"invalid scheduler snapshot: {self.snapshot_path}")
         return snapshot
@@ -106,31 +107,16 @@ class SchedulerStore:
         with self.locked():
             task_id = self._new_task_id(site, intent, payload)
             task_updated_at = utc_now()
-            task = {
-                "schema_version": SCHEMA_VERSION,
-                "task_id": task_id,
-                "site": site,
-                "intent": intent,
-                "payload": dict(payload),
-                "status": "queued",
-                "stage": "triaging",
-                "attempts": 0,
-                "followups": [],
-                "updated_at": task_updated_at,
-            }
-            snapshot = self.load_snapshot()
-            snapshot["tasks"][task_id] = {"status": task["status"], "stage": task["stage"]}
-            self._append_event(
-                {
-                    "event_type": "task_created",
-                    "task_id": task_id,
-                    "site": site,
-                    "intent": intent,
-                    "status": task["status"],
-                    "stage": task["stage"],
-                    "at": utc_now(),
-                }
+            task = build_task_record(
+                task_id=task_id,
+                site=site,
+                intent=intent,
+                payload=payload,
+                updated_at=task_updated_at,
             )
+            snapshot = self.load_snapshot()
+            snapshot["tasks"][task_id] = build_task_snapshot(task)
+            self._append_event(build_task_created_event(task=task, at=utc_now()))
             task = self._write_json(self.tasks_dir / f"{task_id}.json", task, updated_at=task_updated_at)
             self._write_json(self.snapshot_path, snapshot)
         return task

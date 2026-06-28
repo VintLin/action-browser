@@ -84,6 +84,22 @@ def test_list_shows_queued_task(tmp_path: Path, monkeypatch, capsys) -> None:
     assert "queued" in capsys.readouterr().out
 
 
+def test_status_returns_submitted_task_record(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.setenv("ACTION_BROWSER_SCHEDULER_DIR", str(tmp_path))
+    scheduler.main(["submit", "--site", "taobao", "--intent", "search", "--query", "儿童童书", "--limit", "20"])
+    task_id = next(iter(json.loads((tmp_path / "state.json").read_text(encoding="utf-8"))["tasks"].keys()))
+    capsys.readouterr()
+
+    assert scheduler.main(["status", "--task", task_id]) == 0
+
+    payload = parse_json_output(capsys.readouterr().out)
+    assert payload["task_id"] == task_id
+    assert payload["site"] == "taobao"
+    assert payload["intent"] == "search"
+    assert payload["status"] == "queued"
+    assert payload["payload"] == {"query": "儿童童书", "limit": 20}
+
+
 def test_status_missing_task_returns_controlled_error(tmp_path: Path, monkeypatch, capsys) -> None:
     monkeypatch.setenv("ACTION_BROWSER_SCHEDULER_DIR", str(tmp_path))
 

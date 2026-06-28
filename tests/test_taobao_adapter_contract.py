@@ -13,11 +13,11 @@ SCRIPTS_DIR = ROOT_DIR / "scripts"
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
-from scripts import taobao_workflow
+from scripts.adapters import taobao_workflow
 
 
 def build_args(output_dir: Path, *, count: str) -> argparse.Namespace:
-    return argparse.Namespace(output=str(output_dir), count=count)
+    return argparse.Namespace(output=str(output_dir), count=count, task_id="task-123")
 
 
 def test_write_contract_outputs_writes_contract_files_under_stable_path(tmp_path: Path) -> None:
@@ -26,6 +26,7 @@ def test_write_contract_outputs_writes_contract_files_under_stable_path(tmp_path
     taobao_workflow.write_contract_outputs(
         records=records,
         output_dir=tmp_path,
+        task_id="task-123",
         site="taobao",
         intent="search",
         requested_count=20,
@@ -37,10 +38,14 @@ def test_write_contract_outputs_writes_contract_files_under_stable_path(tmp_path
     progress = json.loads((tmp_path / "contract" / "progress.json").read_text(encoding="utf-8"))
     results = json.loads((tmp_path / "contract" / "artifacts" / "results.json").read_text(encoding="utf-8"))
 
+    assert summary["schema_version"] == 1
+    assert summary["task_id"] == "task-123"
     assert summary["site"] == "taobao"
     assert summary["requested_count"] == 20
     assert summary["collected_count"] == 1
     assert summary["artifacts"] == ["contract/artifacts/results.json"]
+    assert progress["schema_version"] == 1
+    assert progress["task_id"] == "task-123"
     assert progress["stage"] == "writing_results"
     assert results == records
 
@@ -61,6 +66,7 @@ def test_finish_preserves_legacy_records_summary_and_writes_contract_summary(tmp
 
     assert exit_code == 0
     assert legacy_summary == records
+    assert contract_summary["task_id"] == "task-123"
     assert contract_summary["site"] == "taobao"
     assert contract_summary["intent"] == "search"
     assert contract_summary["requested_count"] == 20
@@ -81,6 +87,33 @@ def test_finish_uses_single_item_requested_count_for_detail_even_with_invalid_co
     contract_summary = json.loads((tmp_path / "contract" / "summary.json").read_text(encoding="utf-8"))
     contract_progress = json.loads((tmp_path / "contract" / "progress.json").read_text(encoding="utf-8"))
 
+    assert contract_summary["task_id"] == "task-123"
     assert contract_summary["intent"] == "detail"
     assert contract_summary["requested_count"] == 1
+    assert contract_progress["task_id"] == "task-123"
     assert contract_progress["requested_items"] == 1
+
+
+def test_build_parser_accepts_task_id_contract_argument() -> None:
+    parser = taobao_workflow.build_parser()
+
+    args = parser.parse_args(
+        [
+            "search",
+            "view",
+            "--task-id",
+            "task-123",
+            "--session",
+            "s1",
+            "--tab",
+            "t1",
+            "--output",
+            "/tmp/out",
+            "--count",
+            "20",
+            "--query",
+            "儿童童书",
+        ]
+    )
+
+    assert args.task_id == "task-123"

@@ -3,8 +3,10 @@
 """
 Generic ActionBook extension-session bootstrap helper.
 
-It reuses a healthy session when possible, opens a fresh tab in that session,
-and only falls back to creating a new session when reuse is not possible.
+With an explicit session id it reuses only that same session, opens a fresh tab
+in that session, and only falls back to creating that named session when reuse
+is not possible. Cross-session adoption is reserved for the default bootstrap
+session only.
 """
 
 from __future__ import annotations
@@ -111,11 +113,11 @@ class ActionBookSession:
                     if not new_tab:
                         raise RuntimeError(f"failed to open new tab: {url}")
                     self.tab = new_tab
-                    self._check_extension(require_connected=True)
+                    self._wait_for_stable_session(target_url=url)
                     self._ensure_target_url(url)
                     return
                 self._recover_or_attach(url)
-                self._check_extension(require_connected=True)
+                self._wait_for_stable_session(target_url=url)
                 self._ensure_target_url(url)
                 return
             except Exception as exc:  # noqa: BLE001
@@ -266,6 +268,10 @@ class ActionBookSession:
                         tab_id = str((tab_info or {}).get("tab_id") or "").strip()
                         if tab_id:
                             self.tab = tab_id
+                    if not self._session_exists():
+                        raise RuntimeError(f"session started but not registered: session={self.session}")
+                    if not self._session_is_reachable():
+                        raise RuntimeError(f"session started but is not reachable: session={self.session}")
                     sleep_between(0.8, 1.2)
                     return
                 except Exception as exc:  # noqa: BLE001
@@ -304,6 +310,30 @@ class ActionBookSession:
             isinstance(item, dict) and str(item.get("session_id") or "") == self.session
             for item in sessions
         )
+
+    def _session_is_reachable(self) -> bool:
+        envelope = self._run_browser_command("status", timeout=10.0)
+        data = unwrap_actionbook_envelope(envelope)
+        session = data.get("session") if isinstance(data, dict) else None
+        return isinstance(session, dict) and str(session.get("session_id") or "") == self.session
+
+    def _wait_for_stable_session(self, target_url: str = "", timeout_secs: float = 8.0) -> None:
+        deadline = time.time() + timeout_secs
+        last_error = ""
+        while time.time() < deadline:
+            try:
+                self._check_extension(timeout_secs=1.5, require_connected=True)
+                if not self._session_is_reachable():
+                    raise RuntimeError(f"session is not reachable yet: session={self.session}")
+                tab_id = self._find_accessible_tab(preferred_tab=self.tab or None, target_url=target_url)
+                if not tab_id:
+                    raise RuntimeError(f"session is reachable but no accessible tab is ready: session={self.session}")
+                self.tab = tab_id
+                return
+            except Exception as exc:  # noqa: BLE001
+                last_error = str(exc)
+                sleep_between(0.3, 0.6)
+        raise RuntimeError(last_error or f"session did not become stable: session={self.session}")
 
     def _list_sessions(self) -> list[dict[str, Any]]:
         envelope = self._run_raw_command(
@@ -423,9 +453,6 @@ class ActionBookSession:
             ]
             for tab_id in new_tab_ids:
                 if self._is_tab_accessible(tab_id):
-                    return tab_id
-            for tab_id in new_tab_ids:
-                if tab_id:
                     return tab_id
             sleep_between(0.4, 0.8)
         return ""
@@ -589,7 +616,11 @@ def build_parser() -> argparse.ArgumentParser:
     ensure.add_argument("--tab", default=DEFAULT_TAB, help="Preferred ActionBook tab id; auto-detect when omitted")
     ensure.add_argument("--url", default="about:blank", help="Target URL to open or attach to")
     ensure.add_argument("--force-new-tab", action="store_true", help="Always open a new tab in an existing session")
-    ensure.add_argument("--no-adopt", action="store_true", help="Do not adopt another running session")
+    ensure.add_argument(
+        "--no-adopt",
+        action="store_true",
+        help="Do not adopt another running session; explicit --session already disables cross-session adoption",
+    )
     ensure.add_argument("--json", action="store_true", help="Print final session state as JSON")
 
     list_tabs = subparsers.add_parser("list-tabs", help="List accessible tabs in a session")
@@ -625,12 +656,12 @@ def main(argv: list[str] | None = None) -> int:
         raw_args = ["ensure", *raw_args]
     args = parser.parse_args(raw_args)
     if args.command == "ensure":
-        session = ActionBookSession(args.session, args.tab, allow_adopt=not args.no_adopt)
+        allow_cross_session_adopt = not args.no_adopt and args.session == DEFAULT_SESSION
+        session = ActionBookSession(args.session, args.tab, allow_adopt=allow_cross_session_adopt)
         session.start(args.url, force_new_tab=args.force_new_tab)
         state = session.describe()
     elif args.command == "list-tabs":
         session = ActionBookSession(args.session, args.tab, allow_adopt=False)
-        session.start("about:blank")
         state = {
             "session_id": session.session,
             "current_tab_id": session.tab,
@@ -638,13 +669,11 @@ def main(argv: list[str] | None = None) -> int:
         }
     elif args.command == "new-tab":
         session = ActionBookSession(args.session, args.tab, allow_adopt=False)
-        session.start("about:blank")
         tab_id = session.open_new_tab(args.url, switch=args.switch)
         state = session.describe(tab=tab_id)
         state["current_tab_id"] = session.tab
     elif args.command == "select-tab":
         session = ActionBookSession(args.session, args.tab, allow_adopt=False)
-        session.start("about:blank")
         state = session.use_tab(args.tab)
     elif args.command == "close-tab":
         session = ActionBookSession(args.session, args.tab, allow_adopt=False)

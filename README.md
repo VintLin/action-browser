@@ -4,6 +4,15 @@ Action Browser is a portable agent skill for controlling a real browser through 
 
 It is designed for tasks that need a real browser context instead of plain HTTP fetching, especially when the user's Chrome cookies, login state, extensions, or existing tabs matter.
 
+## Session And Tab
+
+- `session` is the ActionBook browser container. It owns browser mode, shared cookies, and the tab set.
+- `tab` is one page inside that session. Clicks, fills, snapshots, and exports run against a specific tab.
+- In the current extension-mode first pass, treat one Chrome-backed session plus multiple task tabs as the default operating model.
+- Treat that operating model as valid only after a second CLI command can still access the same session. A one-shot `browser start` success is not enough.
+- For task flows, treat `scripts/actionbook_session.py` as the only supported session/tab lifecycle entrypoint. Keep raw `actionbook browser start/new-tab/list-tabs/close-tab` for diagnostics and low-level debugging only.
+- Do not model scheduler concurrency as "one task = one extension session" unless the environment has proved that multiple extension sessions are stable.
+
 ## What This Does
 
 Action Browser wraps ActionBook browser automation into a skill-oriented workflow. It provides:
@@ -95,7 +104,7 @@ python3 scripts/actionbook_session.py ensure \
   --json
 ```
 
-The script returns a usable `session_id` and `tab_id`. It first tries to reuse a healthy session, then opens a new tab in that session, and only creates a new session as a fallback.
+The script returns a usable `session_id` and `tab_id`. With an explicit `--session`, it reuses only that same session, then opens a new tab in that session, and only creates that named session as a fallback. Cross-session adoption is reserved for the default bootstrap session only.
 
 ### Work With Multiple Tabs In One Session
 
@@ -108,7 +117,7 @@ python3 scripts/actionbook_session.py new-tab --session research --url "https://
 python3 scripts/actionbook_session.py list-tabs --session research --json
 ```
 
-Pass the returned `tab_id` into each workflow with `--tab`. Do not let parallel tasks share one implicit current tab.
+Pass the returned `tab_id` into each workflow with `--tab`. Do not let parallel tasks share one implicit current tab. For scheduler-style fan-out, prefer one stable extension session and one tab lease per task.
 
 ### Run A Long Workflow
 
@@ -119,7 +128,7 @@ python3 scripts/actionbook_run.py run \
   --id xhs-profile-download \
   --cwd "$PWD" \
   -- \
-  python3 scripts/xiaohongshu_workflow.py profile download \
+  python3 scripts/adapters/xiaohongshu_workflow.py profile download \
     --session xhs-profile-download \
     --profile-url "https://www.xiaohongshu.com/user/profile/..." \
     --count all \
@@ -134,7 +143,9 @@ python3 scripts/actionbook_run.py stop --id xhs-profile-download
 
 ## Scheduler (First Pass)
 
-- Use `scripts/scheduler.py` for `submit`, `list`, `status`, `stop`, and `reconcile`.
+- Use `scripts/scheduler.py` for `submit`, `list`, `status`, and `stop`.
+- `reconcile` is reserved for recovery work but is not implemented in the first pass yet.
+- First-pass extension scheduling assumes one shared browser session and one leased tab per running task.
 - Scheduler-managed tasks open exclusive tabs with `--force-new-tab --no-adopt`.
 - The first pass integrates one adapter contract through Taobao.
 - Legacy workflow records stay at the output root; scheduler contract files live under `contract/`.
@@ -154,19 +165,21 @@ python3 scripts/webpage_markdown.py capture \
 | Script | Purpose |
 | --- | --- |
 | `scripts/actionbook_session.py` | Ensure a usable ActionBook browser session and tab. |
+| `tests/e2e/actionbook_e2e_smoke.py` | Run a helper-first unsupported/serial/parallel browser smoke and write a report. |
+| `scripts/diagnostics/actionbook_diagnose.py` | Probe extension/session persistence and write a diagnostic report. |
 | `scripts/actionbook_run.py` | Run, stop, inspect, and list tracked long-running workflows. |
 | `scripts/webpage_markdown.py` | Capture a rendered webpage or local HTML as Markdown. |
-| `scripts/xiaohongshu_workflow.py` | View and download Xiaohongshu notes, search results, profiles, feeds, favorites, and likes. |
-| `scripts/x_workflow.py` | View and download X home, bookmarks, tweets, threads, searches, profiles, and current account posts. |
-| `scripts/weibo_workflow.py` | View and download Weibo posts, profiles, searches, feeds, comments, favorites, and user data. |
-| `scripts/douban_workflow.py` | View Douban search, charts, subjects, photos, marks, and reviews. |
-| `scripts/zhihu_workflow.py` | View Zhihu hot lists, recommendations, searches, questions, answers, collections, and export articles. |
-| `scripts/youtube_workflow.py` | View YouTube search, video metadata, transcripts, comments, channels, playlists, feeds, history, watch later, and subscriptions. |
-| `scripts/douyin_workflow.py` | View Douyin creator pages, videos, collections, activities, hashtags, locations, stats, and public user videos. |
-| `scripts/bilibili_workflow.py` | View Bilibili hot lists, rankings, search, videos, comments, dynamics, history, following, subtitles, and summaries. |
-| `scripts/jd_workflow.py` | View JD product search, item details, reviews, cart, and current account state. |
-| `scripts/taobao_workflow.py` | View Taobao product search, item details, reviews, cart, and current account state. |
-| `scripts/zhipin_workflow.py` | View BOSS 直聘 filters, recommendation lists, keyword search/detail crawls, and chat metadata with DOM fallback for blocked APIs. |
+| `scripts/adapters/xiaohongshu_workflow.py` | View and download Xiaohongshu notes, search results, profiles, feeds, favorites, and likes. |
+| `scripts/adapters/x_workflow.py` | View and download X home, bookmarks, tweets, threads, searches, profiles, and current account posts. |
+| `scripts/adapters/weibo_workflow.py` | View and download Weibo posts, profiles, searches, feeds, comments, favorites, and user data. |
+| `scripts/adapters/douban_workflow.py` | View Douban search, charts, subjects, photos, marks, and reviews. |
+| `scripts/adapters/zhihu_workflow.py` | View Zhihu hot lists, recommendations, searches, questions, answers, collections, and export articles. |
+| `scripts/adapters/youtube_workflow.py` | View YouTube search, video metadata, transcripts, comments, channels, playlists, feeds, history, watch later, and subscriptions. |
+| `scripts/adapters/douyin_workflow.py` | View Douyin creator pages, videos, collections, activities, hashtags, locations, stats, and public user videos. |
+| `scripts/adapters/bilibili_workflow.py` | View Bilibili hot lists, rankings, search, videos, comments, dynamics, history, following, subtitles, and summaries. |
+| `scripts/adapters/jd_workflow.py` | View JD product search, item details, reviews, cart, and current account state. |
+| `scripts/adapters/taobao_workflow.py` | View Taobao product search, item details, reviews, cart, and current account state. |
+| `scripts/adapters/zhipin_workflow.py` | View BOSS 直聘 filters, recommendation lists, keyword search/detail crawls, and chat metadata with DOM fallback for blocked APIs. |
 
 ## Output Structure
 
@@ -203,11 +216,12 @@ This skill uses progressive disclosure:
 1. Use one stable session id per task or task group.
 2. Confirm the real tab id before interacting with a page.
 3. For parallel work in one session, allocate one stable tab id per subtask and pass `--tab` explicitly.
-4. Take a fresh snapshot after page structure changes.
-5. Use snapshot refs over remembered selectors.
-6. Treat timeouts as failure ceilings, not as a waiting strategy.
-7. Stop for login, CAPTCHA, MFA, and risk-control pages so the user can complete them in the same browser session.
-8. Track long workflows so interruption can stop the underlying process group.
+4. Use the helper for session/tab lifecycle. Raw browser session commands are for diagnostics, not the default task path.
+5. Take a fresh snapshot after page structure changes.
+6. Use snapshot refs over remembered selectors.
+7. Treat timeouts as failure ceilings, not as a waiting strategy.
+8. Stop for login, CAPTCHA, MFA, and risk-control pages so the user can complete them in the same browser session.
+9. Track long workflows so interruption can stop the underlying process group.
 
 ## Safety Boundaries
 

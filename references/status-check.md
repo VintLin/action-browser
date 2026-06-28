@@ -11,7 +11,37 @@ python3 scripts/actionbook_session.py \
   --json
 ```
 
-这个脚本会优先复用健康 session，并返回最终可用的 `session_id` / `tab_id`。只有在需要手工排错时，再按下面的细分检查逐步执行。
+这个脚本会优先复用同名健康 session，并返回最终可用的 `session_id` / `tab_id`。显式传入的 `--session` 不会再偷偷 adopt 到别的 session。只有在需要手工排错时，再按下面的细分检查逐步执行。
+
+默认规则：
+
+- 任务流程里的 session/tab 生命周期统一走 `scripts/actionbook_session.py`
+- 原生 `actionbook browser start/new-tab/list-tabs/close-tab` 只用于诊断、对照实验、或 helper 自己的底层实现排查
+
+如果怀疑 extension / session 状态存在抖动，先跑一轮诊断脚本，把 `start -> status -> list-tabs` 的真实输出落盘：
+
+```bash
+python3 scripts/diagnostics/actionbook_diagnose.py --session-prefix diag --url "https://example.com" --delays 0,1,3
+```
+
+如果怀疑是低概率抖动，直接做批量 smoke：
+
+```bash
+python3 scripts/diagnostics/actionbook_diagnose.py --session-prefix diag --url "https://example.com" --delays 0,1,3 --runs 5
+```
+
+优先看报告里的 `summary`：
+
+- `extension_connected_after_start`
+- `session_visible_direct`
+- `session_visible_in_fresh_shell`
+- `tabs_visible_direct`
+
+批量模式再看：
+
+- `start_ok_runs`
+- `session_visible_direct_runs`
+- `session_visible_in_fresh_shell_runs`
 
 ## 目录
 
@@ -84,6 +114,16 @@ actionbook browser start --session task-check --open-url "about:blank" --json
 不要假设之前的 tab id 仍有效。session 重建后应重新 `snapshot`。
 
 如果 `list-sessions` 里能看到 session，但 `tabs_count` 为 `0`，或 `list-tabs` 返回空数组，这也是失效状态。不要继续复用这个空 session；直接关闭并重建。
+
+另外，不要把一次 `browser start` 的成功直接当成“session 已可复用”。至少再跑一条独立命令确认同一个 session 仍然存在，例如：
+
+```bash
+actionbook browser start --session local-check --open-url "https://example.com" --json
+actionbook browser status --session local-check --json
+actionbook browser list-tabs --session local-check --json
+```
+
+如果第二条或第三条命令已经报 `SESSION_NOT_FOUND`，说明当前 ActionBook 运行态还不具备“shared session + leased tabs”的调度前提，先修复 extension / daemon 持久性，不要继续往调度器里塞任务。
 
 ## 3. 本地模式检查
 
@@ -172,6 +212,8 @@ actionbook browser list-tabs --session "$ACTIONBOOK_SESSION_ID" --json
 ```
 
 这里不要先写死 `ACTIONBOOK_TAB_ID=t1`。先从 `browser start` 返回值或 `list-tabs` 结果里确认真实 tab id，再继续后面的命令。
+
+如果任务需要并发页面，不要默认新建多个 extension session。先验证单个 session 是否健康，再在该 session 内分配多个 tab。
 
 再打开目标站点：
 

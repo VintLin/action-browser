@@ -10,10 +10,12 @@ Use ActionBook for real browser pages. Prefer `extension` mode when the task nee
 ## Before Acting
 
 1. If the task names a supported site or capability, read the matching reference below before running commands.
-2. For extension-mode tasks, start with `scripts/actionbook_session.py`; it reuses a healthy session, opens a fresh tab when needed, and rebuilds only as a last resort.
-3. Use one stable `session id` per task group. For parallel work in the same browser session, allocate one stable `tab id` per subtask and pass `--tab` explicitly after `list-tabs`, `new-tab`, or the session bootstrap returns the real tab id.
-4. If login, CAPTCHA, MFA, or risk-control appears, keep the same Chrome window and ask the user to complete it there.
-5. For long workflows, downloads, profile crawls, and batch exports, run through `scripts/actionbook_run.py` so later `中断` / `停止` can stop the process group.
+2. For extension-mode tasks, start with `scripts/actionbook_session.py`; with an explicit `--session`, it reuses only that same session, opens a fresh tab when needed, and rebuilds only as a last resort.
+3. Treat `session` as the browser container and `tab` as the task-level page context. For parallel work in one browser session, allocate one stable `tab id` per subtask and pass `--tab` explicitly after `list-tabs`, `new-tab`, or the session bootstrap returns the real tab id.
+4. Do not assume a started extension session is reusable until a second CLI command can still access it. If the session disappears between commands, stop and repair the ActionBook runtime before scheduling tasks onto tabs.
+5. Use the helper as the default boundary: `ensure`, `list-tabs`, `new-tab`, `select-tab`, and `close-tab` should go through `scripts/actionbook_session.py`. Keep raw `actionbook browser start/new-tab/list-tabs/close-tab` for diagnostics only.
+6. If login, CAPTCHA, MFA, or risk-control appears, keep the same Chrome window and ask the user to complete it there.
+7. For long workflows, downloads, profile crawls, and batch exports, run through `scripts/actionbook_run.py` so later `中断` / `停止` can stop the process group.
 
 ## References
 
@@ -26,19 +28,19 @@ Load only what applies:
 | Generic webpage to Markdown | `references/webpage-markdown.md`, `scripts/webpage_markdown.py` |
 | Generic session bootstrap | `scripts/actionbook_session.py` |
 | Long run tracking and stopping | `scripts/actionbook_run.py` |
-| Xiaohongshu | `references/xiaohongshu.md`, `scripts/xiaohongshu_workflow.py` |
-| X / Twitter | `references/x.md`, `scripts/x_workflow.py` |
-| Weibo | `references/weibo.md`, `scripts/weibo_workflow.py` |
-| Douban | `references/douban.md`, `scripts/douban_workflow.py` |
-| Zhihu | `references/zhihu.md`, `scripts/zhihu_workflow.py` |
-| YouTube | `references/youtube.md`, `scripts/youtube_workflow.py` |
-| Douyin | `references/douyin.md`, `scripts/douyin_workflow.py` |
-| Bilibili | `references/bilibili.md`, `scripts/bilibili_workflow.py` |
-| JD | `references/jd.md`, `scripts/jd_workflow.py` |
-| Taobao | `references/taobao.md`, `scripts/taobao_workflow.py` |
-| BOSS Zhipin | `references/zhipin.md`, `scripts/zhipin_workflow.py` |
-| Feishu / Lark Drive | `references/feishu.md`, `scripts/feishu_workflow.py` |
-| ChatGPT | `references/chatgpt.md`, `scripts/chatgpt_workflow.py` |
+| Xiaohongshu | `references/adapters/xiaohongshu.md`, `scripts/adapters/xiaohongshu_workflow.py` |
+| X / Twitter | `references/adapters/x.md`, `scripts/adapters/x_workflow.py` |
+| Weibo | `references/adapters/weibo.md`, `scripts/adapters/weibo_workflow.py` |
+| Douban | `references/adapters/douban.md`, `scripts/adapters/douban_workflow.py` |
+| Zhihu | `references/adapters/zhihu.md`, `scripts/adapters/zhihu_workflow.py` |
+| YouTube | `references/adapters/youtube.md`, `scripts/adapters/youtube_workflow.py` |
+| Douyin | `references/adapters/douyin.md`, `scripts/adapters/douyin_workflow.py` |
+| Bilibili | `references/adapters/bilibili.md`, `scripts/adapters/bilibili_workflow.py` |
+| JD | `references/adapters/jd.md`, `scripts/adapters/jd_workflow.py` |
+| Taobao | `references/adapters/taobao.md`, `scripts/adapters/taobao_workflow.py` |
+| BOSS Zhipin | `references/adapters/zhipin.md`, `scripts/adapters/zhipin_workflow.py` |
+| Feishu / Lark Drive | `references/adapters/feishu.md`, `scripts/adapters/feishu_workflow.py` |
+| ChatGPT | `references/adapters/chatgpt.md`, `scripts/adapters/chatgpt_workflow.py` |
 
 Keep this file site-neutral. Put site command catalogs, payload schemas, DOM details, output trees, login notes, and risk-control quirks in the matching reference.
 
@@ -132,7 +134,9 @@ Use `stop --all` only when the user clearly wants every ActionBook workflow stop
 
 ## Scheduler (First Pass)
 
-- Use `scripts/scheduler.py` for `submit`, `list`, `status`, `stop`, and `reconcile`.
+- Use `scripts/scheduler.py` for `submit`, `list`, `status`, and `stop`.
+- `reconcile` is reserved for recovery work but is not implemented in the first pass yet.
+- First-pass extension scheduling assumes one shared browser session and one leased tab per running task.
 - Scheduler-managed tasks open exclusive tabs with `--force-new-tab --no-adopt`.
 - The first pass integrates one adapter contract through Taobao.
 - Legacy workflow records stay at the output root; scheduler contract files live under `contract/`.
