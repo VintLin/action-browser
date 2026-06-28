@@ -25,6 +25,30 @@ Every scheduler-owned JSON file must include `schema_version`. The scheduler
 must take `state.lock` before updating snapshot files, append the transition to
 `events.jsonl`, and then atomically replace the latest snapshot.
 
+## Progress Source Of Truth
+
+There are two progress files with different roles:
+
+- `~/.action-browser/scheduler/progress/<task_id>.json` is the scheduler-owned
+  mirror used for list/status commands and restart reconciliation.
+- `<output>/progress.json` is the adapter-owned execution snapshot written by
+  the running task.
+
+The adapter-owned `<output>/progress.json` is the source of truth while a task
+is active. The scheduler must copy or derive scheduler progress from that file
+under `state.lock`; adapters must not write
+`~/.action-browser/scheduler/progress/<task_id>.json` directly.
+
+Conflict rule:
+
+- if `<output>/progress.json` is newer and valid, the scheduler mirror must be
+  overwritten from it
+- if the scheduler mirror is newer only because a reconcile or status change
+  happened after the run stopped, keep the scheduler mirror and do not write
+  back into `<output>/progress.json`
+- if timestamps disagree but the adapter file is malformed, keep the scheduler
+  mirror, record a warning, and treat the adapter progress as unusable
+
 ## Statuses
 
 - `queued`: accepted by the scheduler and waiting for a run slot.
@@ -117,11 +141,18 @@ Example:
   arbitrary existing tab.
 - One `running` task owns exactly one `lease_id` and one `tab_id`.
 - The lease belongs to the task until the task reaches a terminal status or
-  moves to `waiting_user`.
+  enters `waiting_user`.
 - Releasing a lease should close only that task tab. If close fails, record a
   warning and release the lease anyway.
-- A task in `waiting_user` keeps its tab only when the user must complete the
-  next action in that same tab.
+- A task in `waiting_user` keeps a paused lease by default when the required
+  user action must happen in that exact tab, such as login, CAPTCHA, MFA, or a
+  site challenge bound to current page state.
+- A task in `waiting_user` must release its lease if the user action is not
+  tab-bound, if the task can safely resume from a fresh tab later, or if a
+  configured hold timeout expires.
+- The default paused-lease hold timeout is 15 minutes. If the scheduler later
+  exposes `waiting_user_hold_seconds`, use that key; otherwise fall back to 900
+  seconds.
 
 ## Retry Rules
 
@@ -165,8 +196,37 @@ while a task is active:
 - `last_observed_url`
 - `last_observed_title`
 
+Freshness defaults:
+
+- use scheduler config `freshness_ttl_seconds` when present
+- otherwise fall back to 30 seconds for heartbeat and progress freshness
+
 If heartbeats expire and the run is stale, recovery should stop treating the
 task as healthy even if the last snapshot said `running`.
+
+## Status Mapping From Adapter Outputs
+
+The scheduler is authoritative for task status, but it must map adapter outputs
+consistently.
+
+- `summary.json.ok = true` and `needs_user_action = false` and
+  `collected_count >= requested_count` => `status = completed`,
+  `result_quality = full`
+- `summary.json.ok = true` and `needs_user_action = false` and
+  `0 < collected_count < requested_count` => `status = completed`,
+  `result_quality = partial`
+- `summary.json.ok = true` and `needs_user_action = true` => `status =
+  waiting_user`; preserve any partial counts but do not mark `completed`
+- `summary.json.ok = false` and `needs_user_action = true` => `status =
+  waiting_user`
+- `summary.json.ok = false` and retry budget remains => `status = running`,
+  `stage = retrying`
+- `summary.json.ok = false` and retry budget is exhausted => `status = failed`
+  or `blocked`, based on `reason_code`
+
+If both progress and summary exist and disagree, `summary.json` wins for final
+outcome after the run exits. `progress.json` wins only for in-flight status
+while the run is still active.
 
 ## Unrecoverable Conditions
 

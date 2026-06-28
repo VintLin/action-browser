@@ -29,6 +29,19 @@ Every scheduler-managed adapter must accept:
 The scheduler may also pass task-specific inputs such as `--query`,
 `--limit`, or `--item-url`, but the four fields above are the minimum contract.
 
+Input semantics:
+
+- `--task-id` is the scheduler-issued stable identifier for one user-visible
+  task attempt and must be copied into `summary.json` and `progress.json`
+- `--session` is the existing ActionBook browser session identifier selected by
+  the scheduler; adapters must attach to that session and must not create a new
+  replacement session silently
+- `--tab` is the scheduler-issued tab identifier inside `--session`; it is
+  stable only for the lifetime of that browser session and lease, and becomes
+  invalid if the session is rebuilt or the tab is closed
+- `--output` is the adapter-owned output directory for durable artifacts and
+  progress files for that task
+
 ## Ownership Boundaries
 
 - The adapter works inside the tab assigned by the scheduler.
@@ -72,6 +85,16 @@ Rules:
 An adapter should never edit `~/.action-browser/scheduler/state.json`
 directly.
 
+Progress ownership:
+
+- `<output>/progress.json` is the adapter-owned source of truth while the run
+  is active
+- `~/.action-browser/scheduler/progress/<task_id>.json` is the scheduler-owned
+  mirror
+- adapters must never write the scheduler mirror directly
+- after the run exits, `summary.json` becomes the source of truth for final
+  status and result quality if it conflicts with the last progress snapshot
+
 ## summary.json
 
 `summary.json` is the final task outcome as seen by the scheduler and the user.
@@ -103,6 +126,19 @@ Required semantics:
 - `followups` records post-task work such as `adapter_candidate`,
   `selector_hardening`, or `schema_review`
 
+Normative scheduler mapping:
+
+- `ok = true` and `needs_user_action = false` and
+  `collected_count >= requested_count` maps to `completed` with
+  `result_quality = full`
+- `ok = true` and `needs_user_action = false` and
+  `0 < collected_count < requested_count` maps to `completed` with
+  `result_quality = partial`
+- `needs_user_action = true` maps to `waiting_user`, even if partial artifacts
+  already exist
+- `ok = false` with no user-action requirement maps to retry, `failed`, or
+  `blocked` based on scheduler retry budget and `reason_code`
+
 ## progress.json
 
 `progress.json` is the mutable execution snapshot for recovery and user-facing
@@ -126,6 +162,20 @@ Example:
 When the adapter encounters login, CAPTCHA, MFA, or a similar gate, write a
 progress snapshot that makes the pause explicit so the scheduler can transition
 to `waiting_user`.
+
+Required fields when pausing for user action:
+
+- `status = "waiting_user"`
+- `reason_code` such as `needs_login`, `captcha`, or `mfa_required`
+- `last_observed_url`
+- `last_observed_title` when available
+
+Lease expectation:
+
+- assume `waiting_user` keeps the same paused lease only when the required user
+  action is bound to the current tab state
+- otherwise expect the scheduler to release the lease and later resume from a
+  fresh tab
 
 ## Failure And Retry Semantics
 
