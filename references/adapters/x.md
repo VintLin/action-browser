@@ -29,6 +29,8 @@ python3 scripts/adapters/x_workflow.py --help
 
 当前 `scripts/` 下只保留一个 X 相关脚本：`x_workflow.py`。它参考 `xiaohongshu_workflow.py` 的子命令形式，并且所有浏览器操作都走同一个 ActionBook session/tab。
 
+通用运行边界、session/tab 生命周期和停止策略见 [references/adapter-operation-boundaries.md](/Users/Vint/Repos/04_Skills/01_通用%20Skills/02_action-browser/references/adapter-operation-boundaries.md)。
+
 ## Home
 
 读取 Home 时间线前 N 条帖子：

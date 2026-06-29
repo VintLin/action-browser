@@ -29,6 +29,7 @@ if __package__ in {None, ""}:
 from typing import Any
 
 from scripts.actionbook_interrupts import install_interrupt_handlers
+from scripts.adapter_runtime import prepare_task_book
 from scripts.actionbook_session import ActionBookSession as ActionBook
 
 
@@ -111,9 +112,7 @@ def api_eval(book: ActionBook, script: str, label: str, timeout: float = 45.0) -
 
 
 def start_book(args: argparse.Namespace, url: str = BILIBILI_HOME_URL) -> ActionBook:
-    book = ActionBook(args.session, args.tab)
-    book.start(url)
-    return book
+    return prepare_task_book(args, url, ActionBook)
 
 
 def get_page_state(book: ActionBook) -> dict[str, str]:

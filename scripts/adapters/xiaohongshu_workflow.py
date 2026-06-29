@@ -33,6 +33,7 @@ if __package__ in {None, ""}:
 from typing import Any
 
 from scripts.actionbook_interrupts import check_interrupt, install_interrupt_handlers, is_interrupted
+from scripts.adapter_runtime import prepare_task_book
 from scripts.actionbook_session import ActionBookSession as ActionBook
 
 
@@ -2229,20 +2230,23 @@ def default_action_output_dir(source: str, action: str, name: str = "") -> Path:
     return ASSETS_DIR / action_dir / source / stamp
 
 
+def prepare_xhs_book(args: argparse.Namespace, url: str) -> ActionBook:
+    return prepare_task_book(args, url, ActionBook)
+
+
 def run_note(args: argparse.Namespace) -> int:
     note_url = args.url
     note_id = extract_note_id(note_url) or "note"
     output_dir = Path(args.output_dir).expanduser() if args.output_dir else default_action_output_dir("note", args.action, note_id)
-    book = ActionBook(args.session, args.tab)
     if can_direct_open_note_url(note_url):
-        book.start(note_url)
+        book = prepare_xhs_book(args, note_url)
         book.goto(note_url)
     else:
+        book = prepare_xhs_book(args, XHS_EXPLORE)
         if args.tab:
             log(f"裸笔记 URL 不直接访问，尝试点击当前页可见卡片: note_id={note_id}")
         else:
             log(f"裸笔记 URL 不直接访问，先打开推荐页尝试查找可见卡片: note_id={note_id}")
-            book.start(XHS_EXPLORE)
         if not click_note_id_on_current_page(book, note_id, "note"):
             raise RuntimeError(
                 "bare Xiaohongshu note URL cannot be opened directly and no matching visible card was found; "
@@ -2279,11 +2283,10 @@ def run_search(args: argparse.Namespace) -> int:
     count = parse_count(args.count, allow_all=False)
     assert count is not None
     output_dir = Path(args.output_dir).expanduser() if args.output_dir else default_action_output_dir("search", args.action, args.keyword)
-    book = ActionBook(args.session, args.tab)
     if args.include_ai_answer and args.entry != "ai":
         raise RuntimeError("--include-ai-answer requires --entry ai")
     search_url = ai_search_result_url(args.keyword) if args.entry == "ai" else search_result_url(args.keyword)
-    book.start(search_url)
+    book = prepare_xhs_book(args, search_url)
     book.goto(search_url)
     wait_for_search_results(book, args.keyword, retry_url=search_url)
     ai_answer = wait_for_ai_answer(book, args.keyword) if args.include_ai_answer else None
@@ -2309,8 +2312,7 @@ def run_feed(args: argparse.Namespace) -> int:
     count = parse_count(args.count, allow_all=False)
     assert count is not None
     output_dir = Path(args.output_dir).expanduser() if args.output_dir else default_action_output_dir("feed", args.action)
-    book = ActionBook(args.session, args.tab)
-    book.start(XHS_EXPLORE)
+    book = prepare_xhs_book(args, XHS_EXPLORE)
     book.goto(XHS_EXPLORE)
     wait_for_notes_ready(book, "feed")
     book.eval("window.scrollTo(0, 0); window.dispatchEvent(new Event('scroll')); true", timeout=10.0)
@@ -2326,9 +2328,8 @@ def run_profile_tab(args: argparse.Namespace, source: str, labels: tuple[str, ..
     count = parse_count(args.count, allow_all=False)
     assert count is not None
     output_dir = Path(args.output_dir).expanduser() if args.output_dir else default_action_output_dir(source, args.action)
-    book = ActionBook(args.session, args.tab)
     start_url = args.profile_url or XHS_HOME
-    book.start(start_url)
+    book = prepare_xhs_book(args, start_url)
     profile_url = args.profile_url.strip()
     if not profile_url:
         profile_url = get_current_user_profile_url(book)
@@ -2370,8 +2371,7 @@ def run_profile(args: argparse.Namespace) -> int:
         args.action,
         extract_profile_id(profile_url) or "profile",
     )
-    book = ActionBook(args.session, args.tab)
-    book.start(profile_url)
+    book = prepare_xhs_book(args, profile_url)
     profile = wait_for_profile(book, profile_url)
     log(
         "博主主页就绪: "
@@ -2401,8 +2401,7 @@ def run_profile(args: argparse.Namespace) -> int:
 def run_me(args: argparse.Namespace) -> int:
     count = parse_count(args.count, allow_all=True)
     output_dir = Path(args.output_dir).expanduser() if args.output_dir else default_action_output_dir("me", args.action)
-    book = ActionBook(args.session, args.tab)
-    book.start(XHS_HOME)
+    book = prepare_xhs_book(args, XHS_HOME)
     profile_url = get_current_user_profile_url(book)
     if not profile_url:
         raise RuntimeError("无法自动识别当前小红书登录账号主页")

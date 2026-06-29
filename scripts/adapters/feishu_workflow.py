@@ -33,6 +33,7 @@ from urllib.parse import quote, urlparse
 import requests
 
 from scripts.actionbook_interrupts import install_interrupt_handlers
+from scripts.adapter_runtime import close_temporary_tab, prepare_task_book, wait_for_page_settle
 from scripts.actionbook_session import ActionBookSession as ActionBook
 
 
@@ -145,9 +146,7 @@ def parse_root(value: str) -> tuple[str, str]:
 
 
 def start_book(args: argparse.Namespace, url: str) -> ActionBook:
-    book = ActionBook(args.session, args.tab)
-    book.start(url)
-    return book
+    return prepare_task_book(args, url, ActionBook)
 
 
 def chrome_download_dir() -> Path:
@@ -404,7 +403,7 @@ def poll_export(item: dict[str, Any], config: dict[str, str], ticket: str, timeo
             return payload
         if payload.get("job_status") not in (1, 2, None):
             raise RuntimeError(f"export failed: {payload}")
-        time.sleep(2)
+        time.sleep(0.8)
     raise RuntimeError(f"export timeout: {last_payload}")
 
 
@@ -680,10 +679,11 @@ def ui_menu_export_one(book: ActionBook, item: dict[str, Any], output_dir: Path,
     tab = ""
     try:
         tab = book.open_new_tab(item["url"])
-        time.sleep(3)
+        book.use_tab(tab)
+        wait_for_page_settle(book)
         if not open_download_submenu(book.session, tab, config["menu_text"]):
             raise RuntimeError("could not open 下载为 submenu")
-        time.sleep(1)
+        time.sleep(0.4)
         clear_network_requests(book.session, tab)
         if not click_text_menu_item(book.session, tab, config["menu_text"]):
             raise RuntimeError(f"could not click menu item {config['menu_text']}")
@@ -716,6 +716,11 @@ def ui_menu_export_one(book: ActionBook, item: dict[str, Any], output_dir: Path,
     except Exception as exc:
         return {"status": "failed", "kind": kind, "path": item["path"], "url": item["url"], "local_path": str(target), "error": str(exc), "download_dir": str(download_dir)}
     finally:
+        if tab:
+            try:
+                close_temporary_tab(book, tab)
+            except Exception as exc:  # noqa: BLE001
+                log(f"temporary tab close failed: tab={tab} reason={exc}")
         book.tab = previous_tab
 
 

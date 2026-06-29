@@ -28,6 +28,7 @@ if __package__ in {None, ""}:
 from typing import Any
 
 from scripts.actionbook_interrupts import install_interrupt_handlers
+from scripts.adapter_runtime import prepare_task_book, wait_for_page_settle
 from scripts.actionbook_session import ActionBookSession as ActionBook
 
 
@@ -102,9 +103,7 @@ def api_eval(book: ActionBook, script: str, label: str, timeout: float = 45.0) -
 
 
 def start_book(args: argparse.Namespace, url: str) -> ActionBook:
-    book = ActionBook(args.session, args.tab)
-    book.start(url)
-    return book
+    return prepare_task_book(args, url, ActionBook)
 
 
 def ensure_youtube_ready(book: ActionBook) -> None:
@@ -302,7 +301,7 @@ def run_search(args: argparse.Namespace) -> int:
         url += "&sp=" + urllib.parse.quote(sp)
     book = start_book(args, url)
     book.goto(url)
-    time.sleep(2.5)
+    wait_for_page_settle(book)
     ensure_youtube_ready(book)
     data = api_eval(book, f"""
     (() => {{
@@ -380,7 +379,7 @@ def run_video(args: argparse.Namespace) -> int:
     output_dir = Path(args.output) if args.output else default_action_output_dir("video", "view")
     book = start_book(args, YOUTUBE_HOME_URL)
     book.goto(YOUTUBE_HOME_URL)
-    time.sleep(1.0)
+    wait_for_page_settle(book)
     ensure_youtube_ready(book)
     data = api_eval(book, f"""
     (async () => {{
@@ -428,7 +427,7 @@ def run_video(args: argparse.Namespace) -> int:
 
 def load_transcript(book: ActionBook, video_id: str, lang: str) -> dict[str, Any]:
     book.goto(video_url(video_id))
-    time.sleep(2.5)
+    wait_for_page_settle(book)
     ensure_youtube_ready(book)
     data = api_eval(book, f"""
     (async () => {{
@@ -630,7 +629,7 @@ def run_comments(args: argparse.Namespace) -> int:
     output_dir = Path(args.output) if args.output else default_action_output_dir("comments", "view")
     book = start_book(args, video_url(vid))
     book.goto(video_url(vid))
-    time.sleep(3.0)
+    wait_for_page_settle(book)
     ensure_youtube_ready(book)
     data = api_eval(book, f"""
     (async () => {{
@@ -686,7 +685,7 @@ def run_feed(args: argparse.Namespace) -> int:
     output_dir = Path(args.output) if args.output else default_action_output_dir("feed", "view")
     book = start_book(args, YOUTUBE_HOME_URL)
     book.goto(YOUTUBE_HOME_URL)
-    time.sleep(3.0)
+    wait_for_page_settle(book)
     ensure_youtube_ready(book)
     data = api_eval(book, f"""
     (() => {{
@@ -750,7 +749,7 @@ def run_playlist_like(args: argparse.Namespace, source: str, url: str, playlist_
         current_url = str(book.browser("url", timeout=10.0) or "")
         if urllib.parse.urlparse(url).path not in urllib.parse.urlparse(current_url).path and (playlist_id or "") not in current_url:
             raise exc
-    time.sleep(3.0)
+    wait_for_page_settle(book)
     ensure_youtube_ready(book)
     data = api_eval(book, f"""
     (async () => {{
@@ -805,7 +804,7 @@ def run_history(args: argparse.Namespace) -> int:
     output_dir = Path(args.output) if args.output else default_action_output_dir("history", "view")
     book = start_book(args, f"{YOUTUBE_HOME_URL}/feed/history")
     book.goto(f"{YOUTUBE_HOME_URL}/feed/history")
-    time.sleep(3.0)
+    wait_for_page_settle(book)
     ensure_youtube_ready(book)
     for _ in range(min(max((count // 20) + 1, 1), 8)):
         book.eval("window.scrollBy(0, Math.max(800, window.innerHeight)); true", timeout=5.0)
@@ -852,7 +851,7 @@ def run_subscriptions(args: argparse.Namespace) -> int:
     output_dir = Path(args.output) if args.output else default_action_output_dir("subscriptions", "view")
     book = start_book(args, f"{YOUTUBE_HOME_URL}/feed/channels")
     book.goto(f"{YOUTUBE_HOME_URL}/feed/channels")
-    time.sleep(3.0)
+    wait_for_page_settle(book)
     ensure_youtube_ready(book)
     data = api_eval(book, f"""
     (() => {{
@@ -897,7 +896,7 @@ def run_channel(args: argparse.Namespace) -> int:
     start_url = f"{YOUTUBE_HOME_URL}/{channel_input}" if channel_input.startswith("@") else f"{YOUTUBE_HOME_URL}/channel/{channel_input}"
     book = start_book(args, YOUTUBE_HOME_URL)
     book.goto(YOUTUBE_HOME_URL)
-    time.sleep(1.5)
+    wait_for_page_settle(book)
     ensure_youtube_ready(book)
     data = api_eval(book, f"""
     (async () => {{

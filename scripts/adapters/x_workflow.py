@@ -31,6 +31,7 @@ if __package__ in {None, ""}:
 from typing import Any
 
 from scripts.actionbook_interrupts import install_interrupt_handlers
+from scripts.adapter_runtime import close_temporary_tab, prepare_task_book as prepare_runtime_task_book
 from scripts.actionbook_session import ActionBookSession as ActionBook
 
 
@@ -402,6 +403,39 @@ def scroll_page(book: ActionBook) -> float:
         return 0.0
 
 
+def read_scroll_y(book: ActionBook) -> float:
+    value = unwrap_eval(book.eval("window.scrollY || window.pageYOffset || 0", timeout=10.0))
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def wait_for_scroll_progress(book: ActionBook, before_y: float, timeout_secs: float = 3.0) -> float:
+    deadline = time.time() + timeout_secs
+    current = before_y
+    while time.time() < deadline:
+        current = read_scroll_y(book)
+        if current > before_y + 5:
+            return current
+        time.sleep(0.4)
+    return current
+
+
+def is_x_user_gate_state(state: dict[str, Any]) -> bool:
+    href = str(state.get("href") or "")
+    body = str(state.get("body") or "")
+    if re.search(r"/(login|i/flow/login|account/access|account/verify)", href, re.I):
+        return True
+    return bool(re.search(r"登录|Log in|Sign in|验证码|captcha|MFA|Verify your account|unusual activity", body, re.I))
+
+
+def is_x_page_ready_state(state: dict[str, Any]) -> bool:
+    if is_x_user_gate_state(state):
+        return False
+    return int(state.get("primary_articles") or 0) > 0
+
+
 def wait_page_ready(book: ActionBook, source: str, timeout_secs: float = 20.0) -> None:
     deadline = time.time() + timeout_secs
     last_state: dict[str, Any] = {}
@@ -412,16 +446,19 @@ def wait_page_ready(book: ActionBook, source: str, timeout_secs: float = 20.0) -
                 title: document.title,
                 body: (document.body?.innerText || '').slice(0, 600),
                 articles: document.querySelectorAll('article').length,
+                primary_articles: (
+                    document.querySelector('[data-testid="primaryColumn"], main, [role="main"]')
+                    || document
+                ).querySelectorAll('article').length,
             }))()""",
             timeout=10.0,
         ))
         last_state = state if isinstance(state, dict) else {}
-        body = str(last_state.get("body") or "")
-        if "/login" in str(last_state.get("href") or "") or re.search(r"登录|Log in|Sign in", body, re.I):
+        if is_x_user_gate_state(last_state):
             raise RuntimeError(f"X redirected to login page: {last_state.get('href')}")
-        if int(last_state.get("articles") or 0) > 0:
+        if is_x_page_ready_state(last_state):
             return
-        time.sleep(1.0)
+        time.sleep(0.4)
     raise RuntimeError(f"X {source} page did not become ready: {last_state}")
 
 
@@ -436,15 +473,18 @@ def wait_tab_articles(book: ActionBook, tab_id: str, timeout_secs: float = 15.0)
                 title: document.title,
                 body: (document.body?.innerText || '').slice(0, 600),
                 articles: document.querySelectorAll('article').length,
+                primary_articles: (
+                    document.querySelector('[data-testid="primaryColumn"], main, [role="main"]')
+                    || document
+                ).querySelectorAll('article').length,
             }))()""",
             timeout=10.0,
             tab=tab_id,
         ))
         last_state = state if isinstance(state, dict) else {}
-        body = str(last_state.get("body") or "")
-        if "/login" in str(last_state.get("href") or "") or re.search(r"登录|Log in|Sign in", body, re.I):
+        if is_x_user_gate_state(last_state):
             raise RuntimeError(f"X detail redirected to login page: {last_state.get('href')}")
-        if int(last_state.get("articles") or 0) > 0:
+        if is_x_page_ready_state(last_state):
             return
         time.sleep(0.8)
     raise RuntimeError(f"X detail page did not become ready: {last_state}")
@@ -474,11 +514,10 @@ def click_show_more_in_tab(book: ActionBook, tab_id: str) -> int:
                 }
                 return true;
             };
-            let clicked = 0;
             for (const node of candidates) {
-                if (clickLikeUser(node)) clicked += 1;
+                if (clickLikeUser(node)) return 1;
             }
-            return clicked;
+            return 0;
         })()""",
         timeout=10.0,
         tab=tab_id,
@@ -487,6 +526,31 @@ def click_show_more_in_tab(book: ActionBook, tab_id: str) -> int:
         return int(value or 0)
     except (TypeError, ValueError):
         return 0
+
+
+def wait_for_expanded_payload(
+    book: ActionBook,
+    original: TweetPayload,
+    tab_id: str,
+    timeout_secs: float = 3.0,
+) -> TweetPayload | None:
+    deadline = time.time() + timeout_secs
+    fallback: TweetPayload | None = None
+    while time.time() < deadline:
+        candidates = extract_visible_tweets(book, original.source_page, tab_id=tab_id)
+        expanded = next((item for item in candidates if item.tweet_id and item.tweet_id == original.tweet_id), None)
+        if expanded is None and candidates:
+            expanded = candidates[0]
+        if expanded is None:
+            time.sleep(0.4)
+            continue
+        fallback = expanded
+        if expanded.text and len(expanded.text) > len(original.text or ""):
+            return expanded
+        if not needs_show_more_expansion(expanded):
+            return expanded
+        time.sleep(0.4)
+    return fallback
 
 
 ARTICLE_DETAIL_JS = r"""
@@ -722,10 +786,7 @@ def wait_article_detail(book: ActionBook, tab_id: str, timeout_secs: float = 18.
 
 
 def close_article_tab(book: ActionBook, tab_id: str) -> None:
-    try:
-        book.browser("eval", "window.close(); true", timeout=5.0, tab=tab_id)
-    except Exception as exc:  # noqa: BLE001
-        log(f"文章标签页关闭失败: tab={tab_id} reason={exc}")
+    close_temporary_tab(book, tab_id)
 
 
 def enrich_article_payloads(book: ActionBook, payloads: list[TweetPayload]) -> None:
@@ -821,12 +882,12 @@ def expand_show_more_payloads(book: ActionBook, payloads: list[TweetPayload]) ->
             tab_id = book.open_new_tab(payload.source_url)
             wait_tab_articles(book, tab_id)
             clicked = click_show_more_in_tab(book, tab_id)
-            if clicked:
-                time.sleep(0.8)
-            candidates = extract_visible_tweets(book, payload.source_page, tab_id=tab_id)
-            expanded = next((item for item in candidates if item.tweet_id and item.tweet_id == payload.tweet_id), None)
-            if expanded is None and candidates:
-                expanded = candidates[0]
+            expanded = wait_for_expanded_payload(book, payload, tab_id) if clicked else None
+            if expanded is None:
+                candidates = extract_visible_tweets(book, payload.source_page, tab_id=tab_id)
+                expanded = next((item for item in candidates if item.tweet_id and item.tweet_id == payload.tweet_id), None)
+                if expanded is None and candidates:
+                    expanded = candidates[0]
             if expanded is None:
                 payload.extraction_warnings.append("show_more_unexpanded")
                 continue
@@ -861,9 +922,9 @@ def collect_tweets(book: ActionBook, source: str, count: int, max_scrolls: int) 
         idle_rounds = idle_rounds + 1 if added == 0 else 0
         if idle_rounds >= 4:
             break
-        before = scroll_page(book)
-        time.sleep(1.4)
-        after = scroll_page(book)
+        before = read_scroll_y(book)
+        scroll_page(book)
+        after = wait_for_scroll_progress(book, before)
         if after <= before + 5 and added == 0:
             idle_rounds += 1
     return payloads[:count]
@@ -1189,14 +1250,25 @@ def write_summary(payloads: list[TweetPayload], output_dir: Path, source: str, a
     (output_dir / "summary.md").write_text("\n".join(lines).strip() + "\n", encoding="utf-8")
 
 
+def prepare_task_book(args: argparse.Namespace, url: str) -> ActionBook:
+    return prepare_runtime_task_book(args, url, ActionBook)
+
+
+def wait_for_visible_tweets(book: ActionBook, source: str, timeout_secs: float = 3.0) -> None:
+    deadline = time.time() + timeout_secs
+    while time.time() < deadline:
+        if extract_visible_tweets(book, source):
+            return
+        time.sleep(0.4)
+
+
 def run_download(args: argparse.Namespace, source: str, url: str) -> int:
     output_dir = Path(args.output_dir).expanduser() if args.output_dir else default_action_output_dir(source, "download")
-    book = ActionBook(args.session, args.tab)
-    book.start(url)
+    book = prepare_task_book(args, url)
     book.goto(url)
     wait_page_ready(book, source)
     book.eval("window.scrollTo(0, 0); window.dispatchEvent(new Event('scroll')); true", timeout=10.0)
-    time.sleep(1.2)
+    wait_for_visible_tweets(book, source)
     payloads = collect_tweets(book, source, args.count, args.max_scrolls)
     expand_show_more_payloads(book, payloads)
     enrich_article_payloads(book, payloads)
@@ -1215,17 +1287,16 @@ def run_download(args: argparse.Namespace, source: str, url: str) -> int:
         "failures_json": str(output_dir / "failures.json"),
     }
     print(json.dumps(result, ensure_ascii=False, indent=2))
-    return 0 if len(payloads) >= args.count else 1
+    return 0
 
 
 def run_view(args: argparse.Namespace, source: str, url: str) -> int:
     output_dir = Path(args.output_dir).expanduser() if args.output_dir else default_action_output_dir(source, "view")
-    book = ActionBook(args.session, args.tab)
-    book.start(url)
+    book = prepare_task_book(args, url)
     book.goto(url)
     wait_page_ready(book, source)
     book.eval("window.scrollTo(0, 0); window.dispatchEvent(new Event('scroll')); true", timeout=10.0)
-    time.sleep(1.2)
+    wait_for_visible_tweets(book, source)
     payloads = collect_tweets(book, source, args.count, args.max_scrolls)
     expand_show_more_payloads(book, payloads)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -1241,7 +1312,7 @@ def run_view(args: argparse.Namespace, source: str, url: str) -> int:
         "failures_json": str(output_dir / "failures.json"),
     }
     print(json.dumps(result, ensure_ascii=False, indent=2))
-    return 0 if len(payloads) >= args.count else 1
+    return 0
 
 
 def run_home_view(args: argparse.Namespace) -> int:
@@ -1342,8 +1413,7 @@ def run_profile_view(args: argparse.Namespace) -> int:
 
 
 def resolve_current_x_profile_url(args: argparse.Namespace) -> str:
-    book = ActionBook(args.session, args.tab)
-    book.start(HOME_URL)
+    book = prepare_task_book(args, HOME_URL)
     book.goto(HOME_URL)
     wait_page_ready(book, "me")
     profile_url = get_current_x_profile_url(book)

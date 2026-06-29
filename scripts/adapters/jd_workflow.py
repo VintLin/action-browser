@@ -20,6 +20,7 @@ from typing import Any
 from urllib.parse import quote
 
 from scripts.actionbook_interrupts import install_interrupt_handlers
+from scripts.adapter_runtime import prepare_task_book, wait_for_page_settle
 from scripts.actionbook_session import ActionBookSession as ActionBook
 
 
@@ -163,10 +164,9 @@ def ensure_ready(book: ActionBook) -> None:
 
 
 def start_book(args: argparse.Namespace, url: str, settle_seconds: float = 0.0) -> ActionBook:
-    book = ActionBook(args.session, args.tab)
-    book.start(url)
+    book = prepare_task_book(args, url, ActionBook)
     if settle_seconds > 0:
-        time.sleep(settle_seconds)
+        wait_for_page_settle(book, timeout_secs=settle_seconds)
     return book
 
 

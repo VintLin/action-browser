@@ -31,6 +31,7 @@ if __package__ in {None, ""}:
 from typing import Any
 
 from scripts.actionbook_interrupts import install_interrupt_handlers
+from scripts.adapter_runtime import prepare_task_book, wait_for_page_settle
 from scripts.actionbook_session import ActionBookSession as ActionBook
 
 
@@ -119,9 +120,7 @@ def ensure_zhihu_ready(book: ActionBook) -> None:
 
 
 def start_book(args: argparse.Namespace, url: str) -> ActionBook:
-    book = ActionBook(args.session, args.tab)
-    book.start(url)
-    return book
+    return prepare_task_book(args, url, ActionBook)
 
 
 def write_json(path: Path, data: Any) -> None:
@@ -279,7 +278,7 @@ def run_hot(args: argparse.Namespace) -> int:
     output_dir = Path(args.output) if args.output else default_action_output_dir("hot", "view")
     book = start_book(args, ZHIHU_HOME_URL)
     book.goto(ZHIHU_HOME_URL)
-    time.sleep(1.5)
+    wait_for_page_settle(book)
     ensure_zhihu_ready(book)
     data = require_api_payload(api_eval(
         book,
@@ -315,7 +314,7 @@ def run_recommend(args: argparse.Namespace) -> int:
     output_dir = Path(args.output) if args.output else default_action_output_dir("recommend", "view")
     book = start_book(args, ZHIHU_HOME_URL)
     book.goto(ZHIHU_HOME_URL)
-    time.sleep(1.5)
+    wait_for_page_settle(book)
     ensure_zhihu_ready(book)
     rows: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -390,7 +389,7 @@ def run_search(args: argparse.Namespace) -> int:
     output_dir = Path(args.output) if args.output else default_action_output_dir("search", "view")
     book = start_book(args, ZHIHU_HOME_URL)
     book.goto(ZHIHU_HOME_URL)
-    time.sleep(1.5)
+    wait_for_page_settle(book)
     ensure_zhihu_ready(book)
     query = normalize_text(args.query)
     rows: list[dict[str, Any]] = []
@@ -436,7 +435,7 @@ def run_question(args: argparse.Namespace) -> int:
     page_url = f"{ZHIHU_HOME_URL}/question/{question_id}/answers/updated" if sort == "created" else f"{ZHIHU_HOME_URL}/question/{question_id}"
     book = start_book(args, page_url)
     book.goto(page_url)
-    time.sleep(1.5)
+    wait_for_page_settle(book)
     ensure_zhihu_ready(book)
     rows: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -500,7 +499,7 @@ def run_answer_detail(args: argparse.Namespace) -> int:
     output_dir = Path(args.output) if args.output else default_action_output_dir("answer-detail", "view")
     book = start_book(args, target["url"])
     book.goto(target["url"])
-    time.sleep(1.5)
+    wait_for_page_settle(book)
     ensure_zhihu_ready(book)
     current_url = str(book.browser("url", timeout=10.0) or "")
     current_qid = (re.search(r"/question/(\d+)/answer/", current_url) or [None, ""])[1]
@@ -548,7 +547,7 @@ def run_collections(args: argparse.Namespace) -> int:
     output_dir = Path(args.output) if args.output else default_action_output_dir("collections", "view")
     book = start_book(args, ZHIHU_HOME_URL)
     book.goto(ZHIHU_HOME_URL)
-    time.sleep(1.5)
+    wait_for_page_settle(book)
     ensure_zhihu_ready(book)
     url_token = get_me_url_token(book)
     rows: list[dict[str, Any]] = []
@@ -641,7 +640,7 @@ def run_collection(args: argparse.Namespace) -> int:
     output_dir = Path(args.output) if args.output else default_action_output_dir("collection", "view")
     book = start_book(args, ZHIHU_HOME_URL)
     book.goto(ZHIHU_HOME_URL)
-    time.sleep(1.5)
+    wait_for_page_settle(book)
     ensure_zhihu_ready(book)
     rows: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -754,7 +753,7 @@ def run_download(args: argparse.Namespace) -> int:
     output_dir = Path(args.output) if args.output else default_action_output_dir("download", "download")
     book = start_book(args, article_url)
     book.goto(article_url)
-    time.sleep(2.0)
+    wait_for_page_settle(book)
     ensure_zhihu_ready(book)
     data = api_eval(book, """
     (() => {

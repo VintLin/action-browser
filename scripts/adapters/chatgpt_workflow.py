@@ -29,6 +29,7 @@ if __package__ in {None, ""}:
 from typing import Any
 
 from scripts.actionbook_interrupts import install_interrupt_handlers
+from scripts.adapter_runtime import prepare_task_book, wait_for_page_settle
 from scripts.actionbook_session import ActionBookSession as ActionBook
 
 
@@ -163,9 +164,7 @@ def frontmatter_string(data: dict[str, Any]) -> str:
 
 
 def start_book(args: argparse.Namespace, url: str = CHATGPT_URL) -> ActionBook:
-    book = ActionBook(args.session, args.tab)
-    book.start(url)
-    return book
+    return prepare_task_book(args, url, ActionBook)
 
 
 def get_page_state(book: ActionBook) -> dict[str, str]:
@@ -416,7 +415,7 @@ def go_to_conversation_bottom(book: ActionBook) -> dict[str, Any]:
     button = locate_scroll_to_bottom_button(book)
     if button.get("ok"):
         book.browser("click", f"{int(button['x'])},{int(button['y'])}", timeout=10.0)
-        time.sleep(1.0)
+        wait_for_page_settle(book)
         scroll_state = scroll_conversation_to_bottom(book)
         scroll_state["used_bottom_button"] = True
         scroll_state["bottom_button"] = button
@@ -481,7 +480,7 @@ NEW_CHAT_CONTROL_JS = r"""
 
 def create_new_chat(book: ActionBook) -> None:
     click_visible_control(book, "new chat", NEW_CHAT_CONTROL_JS)
-    time.sleep(1.0)
+    wait_for_page_settle(book)
     state = api_eval(
         book,
         """
@@ -913,7 +912,7 @@ def wait_for_answer_complete(book: ActionBook, timeout_seconds: int) -> None:
             last_text = text
             if stable_rounds >= 4 and not state.get("stop_visible") and state.get("composer_ready"):
                 return
-        time.sleep(1.0)
+        time.sleep(0.5)
     if saw_assistant:
         raise RuntimeError(f"answer did not finish before timeout: {timeout_seconds}s")
     raise RuntimeError(f"answer did not start before timeout: {timeout_seconds}s")

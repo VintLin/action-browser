@@ -20,6 +20,7 @@ from typing import Any
 from urllib.parse import quote
 
 from scripts.actionbook_interrupts import install_interrupt_handlers
+from scripts.adapter_runtime import prepare_task_book
 from scripts.actionbook_session import ActionBookSession as ActionBook
 
 
@@ -91,7 +92,7 @@ def api_eval(book: ActionBook, script: str, label: str, timeout: float = 45.0) -
                 or "Cannot find context" in last_error
             )
             if transient and attempt < 2:
-                time.sleep(1.0 + attempt)
+                time.sleep(0.4 * (attempt + 1))
                 continue
             if last_error.startswith(label):
                 raise
@@ -185,9 +186,7 @@ def ensure_ready(book: ActionBook) -> None:
 
 
 def start_book(args: argparse.Namespace, url: str) -> ActionBook:
-    book = ActionBook(args.session, args.tab)
-    book.start(url)
-    return book
+    return prepare_task_book(args, url, ActionBook)
 
 
 def write_json(path: Path, data: Any) -> None:

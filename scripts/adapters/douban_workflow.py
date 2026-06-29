@@ -29,6 +29,7 @@ if __package__ in {None, ""}:
 from typing import Any
 
 from scripts.actionbook_interrupts import install_interrupt_handlers
+from scripts.adapter_runtime import prepare_task_book, wait_for_page_settle
 from scripts.actionbook_session import ActionBookSession as ActionBook
 
 
@@ -112,9 +113,7 @@ def ensure_douban_ready(book: ActionBook) -> None:
 
 
 def start_book(args: argparse.Namespace, url: str) -> ActionBook:
-    book = ActionBook(args.session, args.tab)
-    book.start(url)
-    return book
+    return prepare_task_book(args, url, ActionBook)
 
 
 def write_json(path: Path, data: Any) -> None:
@@ -179,7 +178,7 @@ def download_file(url: str, dest_base: Path, referer: str) -> dict[str, Any]:
 
 def get_self_uid(book: ActionBook) -> str:
     book.goto(MOVIE_HOME_URL + "/mine")
-    time.sleep(1.5)
+    wait_for_page_settle(book)
     ensure_douban_ready(book)
     uid = api_eval(book, r"""
     (() => {
@@ -211,7 +210,7 @@ def run_search(args: argparse.Namespace) -> int:
     output_dir = Path(args.output) if args.output else default_action_output_dir("search", "view")
     book = start_book(args, search_url(args.type, args.keyword))
     book.goto(search_url(args.type, args.keyword))
-    time.sleep(2.5)
+    wait_for_page_settle(book)
     ensure_douban_ready(book)
     data = api_eval(book, f"""
     (async () => {{
@@ -269,7 +268,7 @@ def run_top250(args: argparse.Namespace) -> int:
     output_dir = Path(args.output) if args.output else default_action_output_dir("top250", "view")
     book = start_book(args, MOVIE_HOME_URL + "/top250")
     book.goto(MOVIE_HOME_URL + "/top250")
-    time.sleep(1.5)
+    wait_for_page_settle(book)
     ensure_douban_ready(book)
     rows = api_eval(book, f"""
     (async () => {{
@@ -318,7 +317,7 @@ def run_movie_hot(args: argparse.Namespace) -> int:
     output_dir = Path(args.output) if args.output else default_action_output_dir("movie-hot", "view")
     book = start_book(args, MOVIE_HOME_URL + "/chart")
     book.goto(MOVIE_HOME_URL + "/chart")
-    time.sleep(2.0)
+    wait_for_page_settle(book)
     ensure_douban_ready(book)
     rows = api_eval(book, f"""
     (() => {{
@@ -357,7 +356,7 @@ def run_book_hot(args: argparse.Namespace) -> int:
     output_dir = Path(args.output) if args.output else default_action_output_dir("book-hot", "view")
     book = start_book(args, BOOK_HOME_URL + "/chart")
     book.goto(BOOK_HOME_URL + "/chart")
-    time.sleep(2.0)
+    wait_for_page_settle(book)
     ensure_douban_ready(book)
     rows = api_eval(book, f"""
     (() => {{
@@ -445,7 +444,7 @@ def run_subject(args: argparse.Namespace) -> int:
     output_dir = Path(args.output) if args.output else default_action_output_dir("subject", "view")
     book = start_book(args, f"{home}/subject/{subject_id}/")
     book.goto(f"{home}/subject/{subject_id}/")
-    time.sleep(1.5)
+    wait_for_page_settle(book)
     ensure_douban_ready(book)
     if subject_type == "book":
         raw = api_eval(book, f"""
@@ -502,7 +501,7 @@ def run_subject(args: argparse.Namespace) -> int:
 def load_photos(book: ActionBook, subject_id: str, photo_type: str, count: int, photo_id: str = "") -> dict[str, Any]:
     url = f"{MOVIE_HOME_URL}/subject/{subject_id}/photos?type={urllib.parse.quote(photo_type)}"
     book.goto(url)
-    time.sleep(1.5)
+    wait_for_page_settle(book)
     ensure_douban_ready(book)
     safe_limit = 999999 if photo_id else count
     data = api_eval(book, f"""
@@ -625,7 +624,7 @@ def run_marks(args: argparse.Namespace) -> int:
         offset = 0
         while len(rows) < count:
             book.goto(f"{MOVIE_HOME_URL}/people/{urllib.parse.quote(uid)}/{status}?start={offset}&sort=time&rating=all&filter=all&mode=grid")
-            time.sleep(1.2)
+            wait_for_page_settle(book)
             ensure_douban_ready(book)
             page_rows = api_eval(book, f"""
             (() => {{
@@ -680,7 +679,7 @@ def run_reviews(args: argparse.Namespace) -> int:
     start = 0
     while len(rows) < count:
         book.goto(f"{MOVIE_HOME_URL}/people/{urllib.parse.quote(uid)}/reviews?start={start}&sort=time")
-        time.sleep(1.2)
+        wait_for_page_settle(book)
         ensure_douban_ready(book)
         page_rows = api_eval(book, r"""
         (() => {
@@ -722,7 +721,7 @@ def run_reviews(args: argparse.Namespace) -> int:
             if not row.get("url"):
                 continue
             book.goto(str(row["url"]))
-            time.sleep(1.0)
+            wait_for_page_settle(book)
             row["content"] = str(api_eval(book, """
             (() => (document.querySelector('.review-content')?.textContent || '').replace(/\\s+/g, ' ').trim())()
             """, "douban full review", timeout=20.0) or "")

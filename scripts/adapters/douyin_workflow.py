@@ -28,6 +28,7 @@ if __package__ in {None, ""}:
 from typing import Any
 
 from scripts.actionbook_interrupts import install_interrupt_handlers
+from scripts.adapter_runtime import prepare_task_book, wait_for_page_settle
 from scripts.actionbook_session import ActionBookSession as ActionBook
 
 
@@ -105,9 +106,7 @@ def ensure_douyin_ready(book: ActionBook) -> None:
 
 
 def start_book(args: argparse.Namespace, url: str) -> ActionBook:
-    book = ActionBook(args.session, args.tab)
-    book.start(url)
-    return book
+    return prepare_task_book(args, url, ActionBook)
 
 
 def write_json(path: Path, data: Any) -> None:
@@ -478,7 +477,7 @@ def run_user_videos(args: argparse.Namespace) -> int:
     media_dir = output_dir / "media"
     max_media_bytes = max(0, int(float(args.max_media_mb) * 1024 * 1024))
     book = start_book(args, f"{DOUYIN_HOME_URL}/user/{args.sec_uid}")
-    time.sleep(2.0)
+    wait_for_page_settle(book)
     ensure_douyin_ready(book)
     params = urllib.parse.urlencode({"sec_user_id": args.sec_uid, "max_cursor": "0", "count": str(count), "aid": "6383"})
     data = creator_fetch(

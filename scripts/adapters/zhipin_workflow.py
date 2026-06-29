@@ -28,6 +28,7 @@ if __package__ in {None, ""}:
 from typing import Any
 
 from scripts.actionbook_interrupts import install_interrupt_handlers
+from scripts.adapter_runtime import prepare_task_book, wait_for_page_settle
 from scripts.actionbook_session import ActionBookSession as ActionBook
 
 
@@ -181,8 +182,7 @@ def ensure_ready(book: ActionBook) -> None:
 
 
 def start_book(args: argparse.Namespace, url: str) -> ActionBook:
-    book = ActionBook(args.session, args.tab)
-    book.start(url)
+    book = prepare_task_book(args, url, ActionBook)
     ensure_ready(book)
     return book
 
@@ -715,7 +715,8 @@ def collect_query_jobs(
     existing_jobs: list[dict[str, Any]] | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], int, str]:
     source_url = page_url or f"{ZHIPIN_HOME_URL}/web/geek/jobs?city={city_code}&query={urllib.parse.quote(query)}"
-    book.start(source_url)
+    book.goto(source_url)
+    wait_for_page_settle(book)
     time.sleep(random.uniform(args.query_delay_min, args.query_delay_max))
     jobs: list[dict[str, Any]] = list(existing_jobs or [])
     failures: list[dict[str, Any]] = []
@@ -1081,7 +1082,8 @@ def command_chatlist(args: argparse.Namespace) -> int:
             if isinstance(boss_result, list):
                 records = [map_boss_chat_row(item) for item in boss_result[:args.limit]]
             elif boss_result.get("code") == IDENTITY_MISMATCH_CODE:
-                book.start(f"{ZHIPIN_HOME_URL}/web/geek/chat")
+                book.goto(f"{ZHIPIN_HOME_URL}/web/geek/chat")
+                wait_for_page_settle(book)
                 ensure_ready(book)
                 labels = fetch_geek_friend_label_list(book, read_encrypt_system_id(book))
                 enriched = fetch_geek_friend_info_list(book, [item.get("friendId") for item in labels[:args.limit]])
@@ -1196,7 +1198,8 @@ def command_chatmsg(args: argparse.Namespace) -> int:
             if friend:
                 records = map_boss_chat_messages(fetch_boss_messages(book, friend, args.page), friend)
             else:
-                book.start(f"{ZHIPIN_HOME_URL}/web/geek/chat")
+                book.goto(f"{ZHIPIN_HOME_URL}/web/geek/chat")
+                wait_for_page_settle(book)
                 ensure_ready(book)
                 geek_friend = find_geek_friend_by_uid(book, args.uid)
                 if not geek_friend:
