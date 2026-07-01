@@ -1,6 +1,6 @@
 # 豆瓣 ActionBook 操作说明
 
-本文记录豆瓣网页在 ActionBook extension 模式下的站点专属经验。通用会话、等待、错误处理规则见 `../SKILL.md`。
+本文记录豆瓣网页在 ActionBook extension 模式下的站点专属经验。通用入口见 `../../SKILL.md`，适配脚本运行边界见 `../adapter-operation-boundaries.md`。
 
 ## 支持范围
 
@@ -67,6 +67,19 @@ python3 scripts/adapters/douban_workflow.py reviews view \
 - `--tab`: 已确认存在的 ActionBook tab id。
 - `--output`: 自定义输出目录。
 - `--count`: 输出数量。
+
+批量或长时间读取 `top250`、`marks`、`reviews`，或下载多张图片时，必须通过通用运行器启动：
+
+```bash
+python3 scripts/actionbook_run.py run \
+  --id douban-photos \
+  --cwd "$PWD" \
+  -- \
+  python3 scripts/adapters/douban_workflow.py photos download \
+    --id 30382501 \
+    --type Rb \
+    --count 50
+```
 
 ## 输出位置
 

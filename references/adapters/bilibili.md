@@ -1,6 +1,6 @@
 # Bilibili ActionBook 操作说明
 
-本文记录 Bilibili 网页在 ActionBook extension 模式下的站点专属经验。通用会话、等待、错误处理规则见 `../SKILL.md`。
+本文记录 Bilibili 网页在 ActionBook extension 模式下的站点专属经验。通用入口见 `../../SKILL.md`，适配脚本运行边界见 `../adapter-operation-boundaries.md`。
 
 ## 支持范围
 
@@ -87,6 +87,18 @@ python3 scripts/adapters/bilibili_workflow.py summary view \
 列表类命令支持：
 
 - `--count`: 输出数量。
+
+批量或长时间读取 `history`、`following`、`user-videos`、`comments`、`feed` 时，必须通过通用运行器启动：
+
+```bash
+python3 scripts/actionbook_run.py run \
+  --id bilibili-user-videos \
+  --cwd "$PWD" \
+  -- \
+  python3 scripts/adapters/bilibili_workflow.py user-videos view \
+    --uid 123456 \
+    --count 100
+```
 
 ## 输出位置
 

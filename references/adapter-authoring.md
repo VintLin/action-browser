@@ -17,6 +17,41 @@ If the site is still too brittle, leave the user task as completed and record a
 `followups` entry such as `adapter_candidate` instead of forcing a premature
 script.
 
+## When To Update This Skill
+
+The agent may update this skill while using it when the current browser task
+proves the stored site knowledge is stale or missing.
+
+Do update the skill when:
+
+- a documented adapter fails because the site's UI, routes, payload shape, or
+  DOM controls changed
+- the task succeeds only after a new reliable selector, API call, wait
+  condition, or fallback path is discovered
+- an unsupported site workflow is likely to repeat and the manual steps are now
+  understood well enough to script
+
+Do not update the skill when:
+
+- the failure is login, CAPTCHA, MFA, rate limit, or account risk-control
+- the task is clearly one-off and direct browser work is enough
+- the page is still too unstable to name durable selectors, states, outputs, or
+  verification checks
+
+Minimum update:
+
+1. patch the matching `scripts/adapters/<site>_workflow.py`, or add one only
+   when the flow is reusable
+2. update or add `references/adapters/<site>.md` with supported commands,
+   output files, known brittle areas, and user-action boundaries
+3. keep `SKILL.md` site-neutral; add only the site id to `Current sites` for a
+   new supported site
+4. run the smallest command that proves the changed path still parses or works,
+   plus any existing focused tests for that adapter
+
+If the fix is only a one-time workaround, record it in the run output or
+`followups` instead of growing the skill.
+
 ## Required Inputs
 
 Every scheduler-managed adapter must accept:
@@ -228,7 +263,7 @@ Adapters must not hide repeated failures by recursively relaunching themselves.
 
 When a site becomes supported:
 
-1. add or update `references/<site>.md`
+1. add or update `references/adapters/<site>.md`
 2. describe supported task types and current script coverage
 3. call out known flaky areas and when the agent should prefer direct browser
    actions

@@ -2,6 +2,8 @@
 
 本文用于在 `action-browser` skill 中操作 X。流程依赖 ActionBook Chrome extension 模式和用户当前 Chrome 登录态。
 
+通用入口见 `../../SKILL.md`，适配脚本运行边界见 `../adapter-operation-boundaries.md`。
+
 ## 初始化要求
 
 先确认：
@@ -19,7 +21,7 @@ actionbook extension status --json
 }
 ```
 
-如果 ActionBook、Chrome extension、session 或 tab 状态不明确，先按 `references/status-check.md` 检查。若环境缺失，按 `references/initialization.md` 初始化。遇到登录、验证码、MFA 或风控页时，保留当前 Chrome 窗口，让用户手动完成后再继续。
+如果 ActionBook、Chrome extension、session 或 tab 状态不明确，先按 `../status-check.md` 检查。若环境缺失，按 `../initialization.md` 初始化。遇到登录、验证码、MFA 或风控页时，保留当前 Chrome 窗口，让用户手动完成后再继续。
 
 ## 统一入口
 
@@ -29,7 +31,17 @@ python3 scripts/adapters/x_workflow.py --help
 
 当前 `scripts/` 下只保留一个 X 相关脚本：`x_workflow.py`。它参考 `xiaohongshu_workflow.py` 的子命令形式，并且所有浏览器操作都走同一个 ActionBook session/tab。
 
-通用运行边界、session/tab 生命周期和停止策略见 [references/adapter-operation-boundaries.md](/Users/Vint/Repos/04_Skills/01_通用%20Skills/02_action-browser/references/adapter-operation-boundaries.md)。
+批量或长时间的 `download` / 大 `--count` 抓取必须通过通用运行器启动，方便用户说“中断/停止”时按 run id 停掉实际脚本：
+
+```bash
+python3 scripts/actionbook_run.py run \
+  --id x-download \
+  --cwd "$PWD" \
+  -- \
+  python3 scripts/adapters/x_workflow.py profile download \
+    --handle "@handle" \
+    --count 100
+```
 
 ## Home
 

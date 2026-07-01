@@ -1,13 +1,13 @@
 # 小红书 ActionBook 操作说明
 
-本文记录小红书网页在 ActionBook extension 模式下的站点专属经验。通用会话、等待、错误处理规则见 `../SKILL.md`。
+本文记录小红书网页在 ActionBook extension 模式下的站点专属经验。通用入口见 `../../SKILL.md`，适配脚本运行边界见 `../adapter-operation-boundaries.md`。
 
 如果用户要处理多个搜索结果或多个博主帖子，优先使用脚本：
 
 建议先跑一次通用 bootstrap，拿到当前可用的 `session_id` / `tab_id`，再决定是否手工带上 `--tab`：
 
 ```bash
-python3 scripts/actionbook_session.py \
+python3 scripts/actionbook_session.py ensure \
   --session xhs-task \
   --url "https://www.xiaohongshu.com" \
   --json
@@ -125,7 +125,7 @@ python3 scripts/adapters/xiaohongshu_workflow.py likes download \
 
 `favorites` 与 `likes` 属于登录态个人数据读取。若未传 `--profile-url`，脚本会尝试从当前登录态识别个人主页；识别失败时应显式传入自己的主页 URL。若页面提示收藏或点赞内容不可见、需要登录、验证码或风控，保持当前 Chrome 窗口，让用户手动处理后再重试。
 
-脚本在未传 `--tab` 时会自动探测当前可用 tab；如果遇到“session 存在但没有 tab”或指定 tab 已失效，会先尝试在当前 session 补开新 tab，再尝试复用其他健康的扩展 session，最后才重建 session。首次调用优先直接运行脚本，不要先手工假设 `t1` 可用。
+脚本在未传 `--tab` 时会自动探测当前 session 的可用 tab；如果遇到“session 存在但没有 tab”或指定 tab 已失效，会在当前 session 补开新 tab。不要为规避登录、验证码、风控或页面异常而切换到其他 session 或重建 session；首次调用优先先跑通用 bootstrap，再使用返回的真实 `tab_id`。
 
 ## 固定数据格式
 
@@ -179,18 +179,17 @@ python3 scripts/adapters/xiaohongshu_workflow.py likes download \
 推荐入口：
 
 ```bash
-actionbook browser start \
-  --mode extension \
+python3 scripts/actionbook_session.py ensure \
   --session xhs-task \
-  --open-url "https://www.xiaohongshu.com/explore" \
-  --timeout 30000
+  --url "https://www.xiaohongshu.com/explore" \
+  --json
 ```
 
 启动后检查：
 
 ```bash
 actionbook extension status --json
-actionbook browser list-tabs --session xhs-task --json
+python3 scripts/actionbook_session.py list-tabs --session xhs-task --json
 actionbook browser url --session xhs-task --tab <real-tab-id> --json
 actionbook browser title --session xhs-task --tab <real-tab-id> --json
 ```
@@ -207,7 +206,7 @@ actionbook browser title --session xhs-task --tab <real-tab-id> --json
 {"bridge":"not_listening","extension_connected":false}
 ```
 
-这不一定是故障。先用 `browser start --mode extension --session ...` 触发 bridge，再检查 extension 状态。不要因为初始 `not_listening` 直接重启 daemon；重启 daemon 可能清空 session，并让已连接的 Chrome extension 暂时断开。只有 `browser start` 触发后仍无法连接，或反复出现 `SESSION_NOT_FOUND` / session 列表异常时，再按 `../SKILL.md` 的 Daemon Recovery 处理。
+这不一定是故障。先按 `../status-check.md` 的 `bridge: not_listening` 流程触发 bridge 并复查 extension 状态。不要因为初始 `not_listening` 直接重启 daemon；重启 daemon 可能清空 session，并让已连接的 Chrome extension 暂时断开。只有触发后仍无法连接，或反复出现 `SESSION_NOT_FOUND` / session 列表异常时，再按 `../status-check.md` 的 session/daemon 恢复流程处理。
 
 ## 2. 推荐页帖子
 

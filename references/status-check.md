@@ -5,7 +5,7 @@
 如果任务使用 Chrome 插件模式，优先直接跑通用 bootstrap：
 
 ```bash
-python3 scripts/actionbook_session.py \
+python3 scripts/actionbook_session.py ensure \
   --session task-check \
   --url "https://example.com" \
   --json
@@ -213,23 +213,25 @@ unzip -o actionbook-extension-v0.5.0.zip
 
 ## 5. 打开目标站点前检查
 
-建议先启动固定 session：
+建议先通过 helper 获取固定 session 和真实 tab id：
 
 ```bash
 export ACTIONBOOK_SESSION_ID="task-1"
 
-actionbook browser start --session "$ACTIONBOOK_SESSION_ID" --open-url "about:blank" --json
-actionbook browser list-tabs --session "$ACTIONBOOK_SESSION_ID" --json
+python3 scripts/actionbook_session.py ensure \
+  --session "$ACTIONBOOK_SESSION_ID" \
+  --url "https://example.com" \
+  --json
+python3 scripts/actionbook_session.py list-tabs --session "$ACTIONBOOK_SESSION_ID" --json
 ```
 
-这里不要先写死 `ACTIONBOOK_TAB_ID=t1`。先从 `browser start` 返回值或 `list-tabs` 结果里确认真实 tab id，再继续后面的命令。
+这里不要先写死 `ACTIONBOOK_TAB_ID=t1`。先从 `ensure` 返回值或 `list-tabs` 结果里确认真实 tab id，再继续后面的命令。
 
 如果任务需要并发页面，不要默认新建多个 extension session。先验证单个 session 是否健康，再在该 session 内分配多个 tab。
 
-再打开目标站点：
+如果需要手工复查目标站点状态：
 
 ```bash
-actionbook browser goto "https://example.com" --session "$ACTIONBOOK_SESSION_ID" --tab "<real-tab-id>" --json
 actionbook browser wait network-idle --session "$ACTIONBOOK_SESSION_ID" --tab "<real-tab-id>" --timeout 15000 --json
 actionbook browser snapshot --session "$ACTIONBOOK_SESSION_ID" --tab "<real-tab-id>" --json
 ```

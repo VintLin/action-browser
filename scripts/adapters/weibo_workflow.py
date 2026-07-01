@@ -597,7 +597,7 @@ def get_page_state(book: ActionBook) -> dict[str, Any]:
 
 def page_has_login_or_risk(state: dict[str, Any]) -> bool:
     haystack = "\n".join(str(state.get(key) or "") for key in ("href", "title", "body"))
-    return bool(re.search(r"登录|验证码|安全验证|访问频繁|帐号异常|账号异常|请稍后再试|passport\.weibo|sso\.weibo", haystack, re.I))
+    return bool(re.search(r"验证码|安全验证|访问频繁|帐号异常|账号异常|请稍后再试|请先登录|登录后|立即登录|passport\.weibo|sso\.weibo", haystack, re.I))
 
 
 def wait_page_ready(book: ActionBook, source: str, timeout_secs: float = 25.0) -> None:
@@ -605,12 +605,12 @@ def wait_page_ready(book: ActionBook, source: str, timeout_secs: float = 25.0) -
     last_state: dict[str, Any] = {}
     while time.time() < deadline:
         last_state = get_page_state(book)
+        if page_has_login_or_risk(last_state):
+            raise RuntimeError(f"Weibo requires login or verification: {last_state.get('href')} title={last_state.get('title')}")
         candidates = int(last_state.get("candidates") or 0)
         body = str(last_state.get("body") or "")
         if candidates > 0 and len(body) > 20:
             return
-        if page_has_login_or_risk(last_state) and candidates == 0:
-            raise RuntimeError(f"Weibo requires login or verification: {last_state.get('href')} title={last_state.get('title')}")
         time.sleep(0.4)
     raise RuntimeError(f"Weibo {source} page did not become ready: {last_state}")
 

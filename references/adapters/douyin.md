@@ -1,6 +1,6 @@
 # 抖音 ActionBook 操作说明
 
-本文记录抖音网页在 ActionBook extension 模式下的站点专属经验。通用会话、等待、错误处理规则见 `../SKILL.md`。
+本文记录抖音网页在 ActionBook extension 模式下的站点专属经验。通用入口见 `../../SKILL.md`，适配脚本运行边界见 `../adapter-operation-boundaries.md`。
 
 ## 支持范围
 
@@ -66,6 +66,12 @@ python3 scripts/adapters/douyin_workflow.py user-videos view \
   --count 5 \
   --with-comments \
   --comment-limit 3
+
+python3 scripts/adapters/douyin_workflow.py user-videos view \
+  --sec-uid "MS4wLjABAAAA..." \
+  --count 5 \
+  --download-media \
+  --max-media-mb 50
 ```
 
 所有命令都支持：
@@ -74,6 +80,19 @@ python3 scripts/adapters/douyin_workflow.py user-videos view \
 - `--tab`: 已确认存在的 ActionBook tab id。
 - `--output`: 自定义输出目录。
 - `--count`: 输出数量。
+
+批量或长时间读取 `videos`、`user-videos`，或启用 `--download-media` 时，必须通过通用运行器启动：
+
+```bash
+python3 scripts/actionbook_run.py run \
+  --id douyin-user-videos \
+  --cwd "$PWD" \
+  -- \
+  python3 scripts/adapters/douyin_workflow.py user-videos view \
+    --sec-uid "MS4wLjABAAAA..." \
+    --count 50 \
+    --download-media
+```
 
 ## 输出位置
 
@@ -87,7 +106,7 @@ python3 scripts/adapters/douyin_workflow.py user-videos view \
 - `summary.md`: 人类可读摘要。
 - `failures.json`: 当前实现中为空数组。
 
-当前抖音脚本不提供下载入口，不写入媒体文件，也不上传任何本地文件。
+当前抖音脚本不提供通用 `download` 子命令，也不会上传任何本地文件。`user-videos view --download-media` 是只读媒体落盘能力：仅当页面/API 暴露 `video/mp4` 播放地址且未超过 `--max-media-mb` 时，写入 `media/<index>_<aweme_id>.mp4`，并在每条记录的 `media_download` 字段中记录 `downloaded`、`skipped` 或 `failed`。
 
 ## 登录和风控
 

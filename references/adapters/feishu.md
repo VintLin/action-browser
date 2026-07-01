@@ -2,12 +2,15 @@
 
 This reference is for Feishu/Lark Drive and Feishu Docs tasks that need the user's existing Chrome login state. Prefer ActionBook extension mode and keep all browser/API calls in the same logged-in session.
 
+Common entry rules live in `../../SKILL.md`; adapter runtime boundaries live in
+`../adapter-operation-boundaries.md`.
+
 ## Initialization
 
 Use the generic session bootstrap first:
 
 ```bash
-python3 scripts/actionbook_session.py \
+python3 scripts/actionbook_session.py ensure \
   --session feishu-drive \
   --url "https://<tenant>.feishu.cn/drive/" \
   --json
@@ -68,7 +71,7 @@ In a folder file list, a single click often only selects the row. Double-click t
 After opening a file, run `list-tabs` and choose the newly opened tab whose title or URL matches the target file:
 
 ```bash
-actionbook browser list-tabs --session feishu-drive --json
+python3 scripts/actionbook_session.py list-tabs --session feishu-drive --json
 ```
 
 Common content URL prefixes include:
@@ -213,7 +216,12 @@ python3 scripts/actionbook_run.py run \
   --id feishu-drive-download \
   --cwd "$PWD" \
   -- \
-  python3 your_feishu_download_script.py --session feishu-drive
+  python3 scripts/adapters/feishu_workflow.py \
+    --session feishu-drive \
+    download \
+    --manifest records/feishu_manifest.json \
+    --output-dir downloads \
+    --status-dir records
 ```
 
 ## Verification

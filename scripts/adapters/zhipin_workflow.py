@@ -652,13 +652,23 @@ def click_and_extract(book: ActionBook, url: str, fallback_index: int) -> dict[s
       if (!wrap) return {ok: false, error: 'card_not_found'};
       const area = wrap.querySelector('.card-area') || wrap;
       const link = area.querySelector('a.job-name, a[href*="/job_detail/"]');
+      const expectedTitle = norm(link?.innerText || area.querySelector('.job-name')?.innerText || '');
       wrap.scrollIntoView({block: 'center'});
       await new Promise(resolve => setTimeout(resolve, 500 + Math.random() * 1000));
       (link || area).click();
-      await new Promise(resolve => setTimeout(resolve, 1800 + Math.random() * 2200));
+      const deadline = Date.now() + 6000;
+      let title = '';
+      while (Date.now() < deadline) {
+        await new Promise(resolve => setTimeout(resolve, 350));
+        title = norm(document.querySelector('.job-detail-container .job-name, .job-detail-box .job-name')?.innerText);
+        if (title && (!expectedTitle || title.includes(expectedTitle) || expectedTitle.includes(title))) break;
+      }
       const detail = document.querySelector('.job-detail-container, .job-detail-box');
       const desc = document.querySelector('.job-detail-container p.desc, .job-detail-box p.desc, .job-sec-text, .job-detail-section p');
-      const title = norm(document.querySelector('.job-detail-container .job-name, .job-detail-box .job-name')?.innerText);
+      if (expectedTitle && title && !(title.includes(expectedTitle) || expectedTitle.includes(title))) {
+        return {ok: false, error: 'detail_title_mismatch', expected_title: expectedTitle, actual_title: title};
+      }
+      if (expectedTitle && !title) return {ok: false, error: 'detail_title_not_loaded', expected_title: expectedTitle};
       const salary = norm(document.querySelector('.job-detail-container .job-salary, .job-detail-box .job-salary')?.innerText);
       const tagNodes = [...document.querySelectorAll('.job-detail-container .tag-list li, .job-detail-container .job-label-list li, .job-detail-box .tag-list li, .job-detail-box .job-label-list li')];
       const boss = norm(document.querySelector('.job-boss-info')?.innerText);

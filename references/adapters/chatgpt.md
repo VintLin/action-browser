@@ -4,22 +4,26 @@ This reference covers `chatgpt_workflow.py`, a Chrome extension-mode workflow
 for asking ChatGPT questions through the web UI and exporting ChatGPT
 conversation replies to local Markdown.
 
+Common entry rules live in `../../SKILL.md`; adapter runtime boundaries live in
+`../adapter-operation-boundaries.md`.
+
 ## Goal
 
 The workflow can:
 
 1. Open `https://chatgpt.com/` with the user's Chrome login state.
 2. Create one new chat or many new chats from local JSON / JSONL tasks.
-3. Enable web search and Pro extension through the ChatGPT UI.
+3. Enable web search through the ChatGPT UI and try to select Pro extension.
 4. Send each question and confirm the conversation started.
 5. Write `submissions.json` and `failures.json` for submitted questions.
 6. Reopen or locate existing conversations from the sidebar.
 7. Export existing conversation replies to local Markdown through `export`.
 
-Final answer extraction does not use DOM text fallback. The workflow writes a
-sentinel to the macOS system clipboard, clicks ChatGPT's `复制回复` / `Copy
-response` button, then requires the clipboard to change before writing
-Markdown.
+Final answer extraction prefers the macOS system clipboard. The workflow writes
+a sentinel, clicks ChatGPT's `复制回复` / `Copy response` button, and uses the
+changed clipboard when available. If the copy control is missing or the
+clipboard does not change but the latest assistant message DOM text is readable,
+`export` records `method: dom-fallback` and writes that text instead.
 
 ## Commands
 
@@ -64,6 +68,18 @@ python3 scripts/actionbook_run.py run \
   --cwd "$PWD" \
   -- \
   python3 scripts/adapters/chatgpt_workflow.py export --limit 20
+```
+
+Use the same wrapper for `batch-ask` because it sends multiple real prompts:
+
+```bash
+python3 scripts/actionbook_run.py run \
+  --id chatgpt-batch-ask \
+  --cwd "$PWD" \
+  -- \
+  python3 scripts/adapters/chatgpt_workflow.py batch-ask \
+    --tasks-file /path/to/tasks.jsonl \
+    --delay 60
 ```
 
 ## Task Files
@@ -138,7 +154,10 @@ uses multiple selectors:
   question is sent through the composer and the visible send button.
 - Mode controls: the deprecated answer-capture helper can still look for `智能`
   and `Pro 扩展`. `ask` and `batch-ask` are submit-only; they enable Web Search
-  and select Pro extension before sending, but they do not select `智能`.
+  and make a best-effort Pro extension selection before sending, but they do not
+  select `智能`.
+  If Pro extension cannot be selected, the run continues and records
+  `extension: not-selected` in `submissions.json`.
 - Assistant messages: submission-start detection uses
   `data-message-author-role="assistant"`; broader article/markdown fallbacks are
   limited to the deprecated answer-capture helper.

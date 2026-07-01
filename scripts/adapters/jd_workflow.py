@@ -261,14 +261,19 @@ SEARCH_SCRIPT = """
   const limit = LIMIT_PLACEHOLDER;
   const normalize = value => (value || '').replace(/\\s+/g, ' ').trim();
   const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+  const riskText = () => `${location.href} ${document.title} ${document.body?.innerText || ''}`;
+  const riskPattern = /passport\\.jd\\.com|login\\.aspx|plogin\\.m\\.jd\\.com|安全验证|身份验证|风险|请登录|登录京东/;
   for (let i = 0; i < 20; i++) {
+    if (riskPattern.test(riskText())) return { error: 'LOGIN_REQUIRED: 京东需要登录或安全验证' };
     if (document.querySelectorAll('div[data-sku]').length > 0) break;
     await sleep(500);
   }
+  if (riskPattern.test(riskText())) return { error: 'LOGIN_REQUIRED: 京东需要登录或安全验证' };
   for (let i = 0; i < 2; i++) {
     window.scrollBy(0, Math.max(600, window.innerHeight * 0.9));
     await sleep(1500);
   }
+  if (riskPattern.test(riskText())) return { error: 'LOGIN_REQUIRED: 京东需要登录或安全验证' };
   const results = [];
   for (const el of document.querySelectorAll('div[data-sku]')) {
     const sku = el.getAttribute('data-sku') || '';

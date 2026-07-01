@@ -1,6 +1,6 @@
 # JD ActionBook 操作说明
 
-本文记录京东网页在 ActionBook extension 模式下的站点专属经验。通用会话、等待、错误处理规则见 `../SKILL.md`。
+本文记录京东网页在 ActionBook extension 模式下的站点专属经验。通用入口见 `../../SKILL.md`，适配脚本运行边界见 `../adapter-operation-boundaries.md`。
 
 ## 支持范围
 
@@ -50,6 +50,18 @@ python3 scripts/adapters/jd_workflow.py whoami view
 - `--output`: 自定义输出目录。
 - `--count`: 输出数量，按命令上限裁剪。
 
+批量或长时间读取 `search`、`reviews`、`item` 图片，或用户明确批准的 `cart` 时，必须通过通用运行器启动：
+
+```bash
+python3 scripts/actionbook_run.py run \
+  --id jd-search \
+  --cwd "$PWD" \
+  -- \
+  python3 scripts/adapters/jd_workflow.py search view \
+    --query "机械键盘" \
+    --count 100
+```
+
 ## 输出位置
 
 默认输出在 `assets/jd/` 下：
@@ -64,7 +76,7 @@ python3 scripts/adapters/jd_workflow.py whoami view
 
 ## 登录和风控
 
-脚本通过 `ActionBookSession` 使用 Chrome extension 模式，复用用户当前 Chrome 登录态。浏览器操作节奏参考 OpenCLI：目标页打开后保留 5 秒级等待，滚动延迟保持 1.5 秒级，避免快速连续操作。
+脚本通过 `ActionBookSession` 使用 Chrome extension 模式，复用用户当前 Chrome 登录态。浏览器操作节奏参考 OpenCLI：目标页打开后保留 5 秒级等待，滚动延迟保持 1.5 秒级，避免快速连续操作。这些等待只是京东站点的保守节奏，不是成功判定；等待后仍必须检查当前 URL、标题、登录/风控信号和目标页面关键元素。
 
 检测到以下状态时脚本停止并返回 `LOGIN_REQUIRED`：
 

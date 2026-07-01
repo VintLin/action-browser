@@ -2,6 +2,8 @@
 
 本文用于在 `action-browser` skill 中操作微博。流程依赖 ActionBook Chrome extension 模式和用户当前 Chrome 登录态。
 
+通用入口见 `../../SKILL.md`，适配脚本运行边界见 `../adapter-operation-boundaries.md`。
+
 ## 初始化要求
 
 先确认：
@@ -19,7 +21,7 @@ actionbook extension status --json
 }
 ```
 
-如果 ActionBook、Chrome extension、session 或 tab 状态不明确，先按 `references/status-check.md` 检查。若环境缺失，按 `references/initialization.md` 初始化。遇到登录、验证码、短信验证、安全验证或风控页时，保留当前 Chrome 窗口，让用户手动完成后再继续。
+如果 ActionBook、Chrome extension、session 或 tab 状态不明确，先按 `../status-check.md` 检查。若环境缺失，按 `../initialization.md` 初始化。遇到登录、验证码、短信验证、安全验证或风控页时，保留当前 Chrome 窗口，让用户手动完成后再继续。
 
 ## 统一入口
 
@@ -30,6 +32,18 @@ python3 scripts/adapters/weibo_workflow.py --help
 所有浏览器操作都走同一个 ActionBook session/tab。默认输出在 `assets/weibo/` 下。
 
 当前支持只读能力：`hot`、`search`、`feed`、`user`、`user-posts`、`me`、`post`、`comments`、`favorites`、`home`、`profile`。`publish` 和 `delete` 属于账号写操作，第一版不启用。
+
+批量或长时间的 `feed`、`search`、`user-posts`、`favorites`、`download` 任务必须通过通用运行器启动，方便用户说“中断/停止”时按 run id 停掉实际脚本：
+
+```bash
+python3 scripts/actionbook_run.py run \
+  --id weibo-user-posts \
+  --cwd "$PWD" \
+  -- \
+  python3 scripts/adapters/weibo_workflow.py user-posts download \
+    --profile-url "https://weibo.com/u/2619244577" \
+    --count 100
+```
 
 ## Hot
 

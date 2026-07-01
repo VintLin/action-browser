@@ -2,6 +2,9 @@
 
 Use this reference for BOSS Zhipin job list pages such as `https://www.zhipin.com/web/geek/jobs?city=101020100`.
 
+Common entry rules live in `../../SKILL.md`; adapter runtime boundaries live in
+`../adapter-operation-boundaries.md`.
+
 ## Browser Mode
 
 - Prefer ActionBook Chrome extension mode so the page can reuse the user's existing login state and cookies.

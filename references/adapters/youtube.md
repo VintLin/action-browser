@@ -1,6 +1,6 @@
 # YouTube ActionBook 操作说明
 
-本文记录 YouTube 网页在 ActionBook extension 模式下的站点专属经验。通用会话、等待、错误处理规则见 `../SKILL.md`。
+本文记录 YouTube 网页在 ActionBook extension 模式下的站点专属经验。通用入口见 `../../SKILL.md`，适配脚本运行边界见 `../adapter-operation-boundaries.md`。
 
 ## 支持范围
 
@@ -95,6 +95,18 @@ python3 scripts/adapters/youtube_workflow.py subscriptions view --count 20
 - `--tab`: 已确认存在的 ActionBook tab id。
 - `--output`: 自定义输出目录。
 - `--count`: 输出数量。
+
+批量或长时间读取 `comments`、`playlist`、`channel`、`history`、`watch-later`、`subscriptions`，或批量下载字幕时，必须通过通用运行器启动：
+
+```bash
+python3 scripts/actionbook_run.py run \
+  --id youtube-playlist \
+  --cwd "$PWD" \
+  -- \
+  python3 scripts/adapters/youtube_workflow.py playlist view \
+    --id "https://www.youtube.com/playlist?list=PLAYLIST_ID" \
+    --count 100
+```
 
 ## 输出位置
 
