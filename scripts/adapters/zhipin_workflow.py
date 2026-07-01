@@ -621,7 +621,7 @@ def collect_cards(book: ActionBook) -> list[dict[str, Any]]:
       });
     })()
     """
-    value = api_eval(book, script, "collect visible DOM cards", timeout=15.0)
+    value = api_eval(book, script, "collect visible DOM cards", timeout=25.0)
     return value if isinstance(value, list) else []
 
 
@@ -635,7 +635,7 @@ def scroll_more(book: ActionBook) -> dict[str, Any]:
       return {before, after, y: window.scrollY, height: document.body.scrollHeight};
     })()
     """
-    value = api_eval(book, script, "scroll DOM list", timeout=10.0)
+    value = api_eval(book, script, "scroll DOM list", timeout=60.0)
     return value if isinstance(value, dict) else {}
 
 

@@ -253,6 +253,33 @@ actionbook browser start --session task-check --open-url "about:blank" --json
 
 如果 session 存在但 `list-tabs` 为空，也按同一类问题处理：先关闭，再重建。
 
+`browser start` / `actionbook_session.py ensure` 返回成功，但下一条命令立刻 `SESSION_NOT_FOUND`、`list-tabs: []` 或 `bridge: not_listening`：
+
+- 不要把第一次成功当成可用 session；先停止真实业务发送或下载。
+- 先停本任务的 tracked run，不要直接关 Chrome 登录态：
+
+```bash
+python3 scripts/actionbook_run.py list --active
+python3 scripts/actionbook_run.py stop --id <run-id>
+ps aux | grep -E 'actionbook_run.py|_workflow.py' | grep -v grep
+```
+
+- 如果没有活跃 workflow，重启 ActionBook daemon，再重新 bootstrap：
+
+```bash
+pkill -f 'actionbook __daemon' || true
+python3 scripts/actionbook_session.py ensure --session task-check --url "https://example.com" --json
+python3 scripts/actionbook_session.py list-tabs --session task-check --json
+```
+
+- 如果仍然抖动，先落盘诊断，不要继续调度任务到这个 session：
+
+```bash
+python3 scripts/diagnostics/actionbook_diagnose.py --session-prefix diag --url "https://example.com" --delays 0,1,3
+```
+
+只有报告里 `extension_connected_after_start`、`session_visible_in_fresh_shell`、`tabs_visible_direct` 都为 `true`，才继续站点 workflow。长任务继续用 `scripts/actionbook_run.py run --id <run-id> --cwd "$PWD" --replace -- ...` 启动，让 workflow 自己创建新 session，并保留后续可中断记录。
+
 `CDP_NODE_NOT_FOUND`：
 
 - 页面结构已变化

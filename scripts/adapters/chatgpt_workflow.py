@@ -146,6 +146,25 @@ def load_tasks_file(path: Path) -> list[ChatGptTask]:
     return tasks
 
 
+def load_conversations_file(path: Path) -> list[dict[str, str]]:
+    raw = path.expanduser().read_text(encoding="utf-8")
+    payload = json.loads(raw)
+    if not isinstance(payload, list):
+        raise ValueError(f"{path}: conversations file must contain an array")
+    conversations: list[dict[str, str]] = []
+    for index, item in enumerate(payload, start=1):
+        if not isinstance(item, dict):
+            raise ValueError(f"{path}: record {index} must be an object")
+        title = str(item.get("title") or "").strip()
+        url = str(item.get("url") or "").strip()
+        if not title or not url:
+            raise ValueError(f"{path}: record {index} requires title and url")
+        conversations.append({"title": title, "url": url})
+    if not conversations:
+        raise ValueError(f"{path}: conversations file is empty")
+    return conversations
+
+
 def task_output_stem(task: ChatGptTask) -> str:
     return sanitize_name(task.output_name or task.title, fallback="chatgpt-answer")
 
@@ -750,7 +769,7 @@ def select_intelligent_mode(book: ActionBook) -> dict[str, Any]:
     raise RuntimeError(f"intelligent mode control not found: {result}")
 
 
-def select_pro_extension(book: ActionBook) -> None:
+def select_pro_extension(book: ActionBook) -> bool:
     last_result: Any = None
     for _attempt in range(2):
         click_control_via_pointer_events(book, "composer plus", COMPOSER_PLUS_CONTROL_JS)
@@ -769,9 +788,10 @@ def select_pro_extension(book: ActionBook) -> None:
                     "Pro extension",
                     menu_item_control_pointer_click_js("Pro 扩展|Pro extension", "Pro extension"),
                 )
-                return
+                return True
             time.sleep(0.5)
-    raise RuntimeError(f"Pro extension control not found or did not click: {last_result}")
+    log(f"跳过 Pro extension: control not found or did not click: {last_result}")
+    return False
 
 
 def fill_prompt(book: ActionBook, question: str) -> None:
@@ -990,6 +1010,7 @@ def locate_latest_assistant_copy_button(book: ActionBook) -> dict[str, Any]:
         return {
           ok: false,
           error: 'No copy button found for latest assistant message',
+          fallback_text: fallbackText,
           fallback_length: fallbackText.length,
           message_text_length: domText.length
         };
@@ -1006,6 +1027,7 @@ def locate_latest_assistant_copy_button(book: ActionBook) -> dict[str, Any]:
         button_text: normalize(copyButton.innerText || copyButton.textContent || copyButton.getAttribute('aria-label') || ''),
         latest_top: Math.round(latestRect.top),
         latest_bottom: Math.round(latestRect.bottom),
+        fallback_text: fallbackText,
         fallback_length: fallbackText.length,
         message_text_length: domText.length
       };
@@ -1024,11 +1046,13 @@ def write_markdown(output_dir: Path, index: int, item: dict[str, str], result: d
     warnings: list[str] = []
     if not result.get("clicked_copy"):
         warnings.append("copy button not found or not clicked")
+    if result.get("used_dom_fallback"):
+        warnings.append("used DOM fallback because system clipboard did not change")
     metadata = {
         "title": title,
         "source_url": item.get("url") or "",
         "exported_at": datetime.now().isoformat(timespec="seconds"),
-        "method": "system-clipboard",
+        "method": result.get("method") or "system-clipboard",
         "clicked_copy": bool(result.get("clicked_copy")),
         "warnings": warnings,
     }
@@ -1092,6 +1116,7 @@ def submission_record(
     url: str,
     attempts: int,
     submitted_at: str,
+    pro_extension_selected: bool,
 ) -> dict[str, Any]:
     return {
         "index": index,
@@ -1101,7 +1126,7 @@ def submission_record(
         "status": "submitted",
         "mode": {
             "web_search": True,
-            "extension": "pro",
+            "extension": "pro" if pro_extension_selected else "not-selected",
         },
         "submitted_at": submitted_at,
         "attempts": attempts,
@@ -1155,18 +1180,22 @@ def submit_one_task(
     create_new_chat(book)
     fill_prompt(book, task.question)
     enable_web_search(book)
-    select_pro_extension(book)
+    pro_extension_selected = select_pro_extension(book)
     send_current_prompt(book)
     current_url = wait_for_submission_started(book)
     submitted_at = datetime.now().isoformat(timespec="seconds")
-    return submission_record(index, task, current_url, attempts, submitted_at)
+    return submission_record(index, task, current_url, attempts, submitted_at, pro_extension_selected)
 
 
 def run_list(args: argparse.Namespace) -> int:
     book = start_book(args)
     ensure_chatgpt_ready(book)
     prefixes = parse_prefixes(args.prefix)
-    conversations = collect_conversations(book, prefixes, args.title_pattern, args.limit, args.max_scrolls)
+    conversations = (
+        load_conversations_file(Path(args.conversations_file))
+        if args.conversations_file
+        else collect_conversations(book, prefixes, args.title_pattern, args.limit, args.max_scrolls)
+    )
     print(json.dumps(conversations, ensure_ascii=False, indent=2))
     return 0
 
@@ -1198,17 +1227,24 @@ def run_export(args: argparse.Namespace) -> int:
             clipboard_sentinel = f"__chatgpt_qx_export_sentinel_{datetime.now().timestamp()}_{index}__"
             write_system_clipboard(clipboard_sentinel)
             result = locate_latest_assistant_copy_button(book)
-            if not result.get("ok"):
+            if not result.get("ok") and not normalize_text(result.get("fallback_text") or ""):
                 raise RuntimeError(str(result.get("error") or "copy button not found"))
-            book.browser("click", f"{int(result['x'])},{int(result['y'])}", timeout=10.0)
-            time.sleep(0.4)
-            system_clipboard = read_system_clipboard()
-            if system_clipboard and system_clipboard != clipboard_sentinel:
-                result["text"] = system_clipboard
-                result["used_system_clipboard"] = True
+            if result.get("ok"):
+                book.browser("click", f"{int(result['x'])},{int(result['y'])}", timeout=10.0)
                 result["clicked_copy"] = True
-            elif not normalize_text(result.get("text") or ""):
-                raise RuntimeError("copy clicked but system clipboard did not change")
+                time.sleep(0.4)
+                system_clipboard = read_system_clipboard()
+                if system_clipboard and system_clipboard != clipboard_sentinel:
+                    result["text"] = system_clipboard
+                    result["used_system_clipboard"] = True
+                    result["method"] = "system-clipboard"
+            if not normalize_text(result.get("text") or ""):
+                fallback_text = normalize_text(result.get("fallback_text") or "")
+                if not fallback_text:
+                    raise RuntimeError("copy clicked but system clipboard did not change")
+                result["text"] = fallback_text
+                result["used_dom_fallback"] = True
+                result["method"] = "dom-fallback"
             path = write_markdown(output_dir, index, item, result)
             summary.append(
                 {
@@ -1218,6 +1254,8 @@ def run_export(args: argparse.Namespace) -> int:
                     "file": str(path),
                     "clicked_copy": bool(result.get("clicked_copy")),
                     "used_system_clipboard": bool(result.get("used_system_clipboard")),
+                    "used_dom_fallback": bool(result.get("used_dom_fallback")),
+                    "method": str(result.get("method") or ""),
                     "text_length": len(str(result.get("text") or "")),
                 }
             )
@@ -1429,6 +1467,7 @@ def build_parser() -> argparse.ArgumentParser:
     export_parser.add_argument("--limit", dest="limit_override", type=positive_int, default=0, help="Maximum conversations")
     export_parser.add_argument("--max-scrolls", dest="max_scrolls_override", type=positive_int, default=0, help="Sidebar scroll attempts")
     export_parser.add_argument("--output-dir", default="", help="Output directory")
+    export_parser.add_argument("--conversations-file", default="", help="JSON array with title and url fields")
     export_parser.add_argument("--delay", type=float, default=0.8, help="Delay between conversations")
     export_parser.set_defaults(func=run_export)
     return parser
