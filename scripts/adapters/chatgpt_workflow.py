@@ -1191,11 +1191,7 @@ def run_list(args: argparse.Namespace) -> int:
     book = start_book(args)
     ensure_chatgpt_ready(book)
     prefixes = parse_prefixes(args.prefix)
-    conversations = (
-        load_conversations_file(Path(args.conversations_file))
-        if args.conversations_file
-        else collect_conversations(book, prefixes, args.title_pattern, args.limit, args.max_scrolls)
-    )
+    conversations = collect_conversations(book, prefixes, args.title_pattern, args.limit, args.max_scrolls)
     print(json.dumps(conversations, ensure_ascii=False, indent=2))
     return 0
 
@@ -1206,7 +1202,11 @@ def run_export(args: argparse.Namespace) -> int:
     book = start_book(args)
     ensure_chatgpt_ready(book)
     prefixes = parse_prefixes(args.prefix)
-    conversations = collect_conversations(book, prefixes, args.title_pattern, args.limit, args.max_scrolls)
+    conversations = (
+        load_conversations_file(Path(args.conversations_file))
+        if args.conversations_file
+        else collect_conversations(book, prefixes, args.title_pattern, args.limit, args.max_scrolls)
+    )
     if not conversations:
         raise RuntimeError(
             "No ChatGPT conversations found with "

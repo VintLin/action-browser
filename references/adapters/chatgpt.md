@@ -60,6 +60,20 @@ Export latest matching existing conversations:
 python3 scripts/adapters/chatgpt_workflow.py export --limit 20
 ```
 
+Export the exact conversations that were just submitted:
+
+```bash
+python3 scripts/adapters/chatgpt_workflow.py export \
+  --conversations-file assets/chatgpt/runs/yyyyMMdd-HHmmss/submissions.json \
+  --output-dir assets/chatgpt/exports/qx/yyyyMMdd-HHmmss
+```
+
+Use `--conversations-file` when the sidebar contains unrelated chats, titles
+have changed, or the task requires one submitted question to produce exactly
+one Markdown file. The file must be a JSON array whose records include `title`
+and `url`; the `submissions.json` written by `ask` / `batch-ask` already has
+that shape.
+
 Tracked long run:
 
 ```bash
@@ -118,6 +132,26 @@ assets/chatgpt/runs/yyyyMMdd-HHmmss/
 Markdown files. Use `export` later to copy finished answers from existing
 conversations.
 
+`submissions.json` lifecycle:
+
+- Created by `ask` and `batch-ask` in the run output directory. The default is
+  `assets/chatgpt/runs/yyyyMMdd-HHmmss/`; `--output-dir` overrides it.
+- Written with `failures.json` whenever a submit run exits. `batch-ask` also
+  rewrites both files after each task, so an interrupted run still has the last
+  completed submission records.
+- Each submitted record includes `index`, `title`, `question`, `url`, `status`,
+  `mode`, `submitted_at`, and `attempts`. Treat the `url` as the durable handle
+  for the ChatGPT conversation.
+- Used later by `export --conversations-file <run-dir>/submissions.json` when
+  the export must match the conversations created by that run instead of
+  whatever the ChatGPT sidebar currently shows.
+- Keep the run directory until export succeeds and the exported Markdown files,
+  export `summary.json`, and export `failures.json` have been reviewed. Do not
+  auto-delete it; it is audit/retry evidence and may contain the original
+  questions. Archive by moving or copying the whole run directory with the final
+  deliverable. Delete only when the user explicitly asks or local retention
+  policy requires it.
+
 Default export output:
 
 ```text
@@ -130,6 +164,9 @@ assets/chatgpt/exports/qx/yyyyMMdd-HHmmss/
 
 Each Markdown file includes simple frontmatter with the conversation title,
 source URL, timestamps, extraction method, and task metadata when available.
+`summary.json` records `method`, `used_system_clipboard`, and
+`used_dom_fallback` per conversation. Treat `failures.json` as the source of
+truth for conversations that were skipped or could not be exported.
 
 ## Login And Risk Control
 

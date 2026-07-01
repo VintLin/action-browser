@@ -255,7 +255,7 @@ actionbook browser start --session task-check --open-url "about:blank" --json
 
 如果 session 存在但 `list-tabs` 为空，也按同一类问题处理：先关闭，再重建。
 
-`browser start` / `actionbook_session.py ensure` 返回成功，但下一条命令立刻 `SESSION_NOT_FOUND`、`list-tabs: []` 或 `bridge: not_listening`：
+`browser start` / `actionbook_session.py ensure` 返回成功，但下一条命令立刻 `SESSION_NOT_FOUND`、`list-tabs: []`、`EXTENSION_NOT_CONNECTED`、`bridge: not_listening`，或 `extension_connected: false`：
 
 - 不要把第一次成功当成可用 session；先停止真实业务发送或下载。
 - 先停本任务的 tracked run，不要直接关 Chrome 登录态：
@@ -271,6 +271,7 @@ ps aux | grep -E 'actionbook_run.py|_workflow.py' | grep -v grep
 ```bash
 pkill -f 'actionbook __daemon' || true
 python3 scripts/actionbook_session.py ensure --session task-check --url "https://example.com" --json
+actionbook extension status --json
 python3 scripts/actionbook_session.py list-tabs --session task-check --json
 ```
 
@@ -281,6 +282,8 @@ python3 scripts/diagnostics/actionbook_diagnose.py --session-prefix diag --url "
 ```
 
 只有报告里 `extension_connected_after_start`、`session_visible_in_fresh_shell`、`tabs_visible_direct` 都为 `true`，才继续站点 workflow。长任务继续用 `scripts/actionbook_run.py run --id <run-id> --cwd "$PWD" --replace -- ...` 启动，让 workflow 自己创建新 session，并保留后续可中断记录。
+
+如果 `status` 能读到旧 session，但 `list-tabs` 或 `close` 长时间无返回，不要把这个 session 当作可恢复容器。中断卡住的 CLI 命令后，按上面的 daemon 重启和重新 bootstrap 流程处理。
 
 `CDP_NODE_NOT_FOUND`：
 
@@ -338,12 +341,15 @@ actionbook extension status --json
 - Chrome 插件未启用
 - 插件未连接到 bridge
 - Chrome 当前 profile 没有安装 Actionbook 插件
+- daemon 刚重启，Chrome 端还没有重新连上 bridge
 
 处理：
 
 - 打开 `chrome://extensions/`
 - 确认 Actionbook 插件已启用
+- 确认当前 Chrome profile 里安装的是 skill 自带 `actionbook-extension-v0.5.0/`
 - 重新执行 `actionbook browser start`
+- 再执行 `actionbook extension status --json`，确认 `bridge: listening` 且 `extension_connected: true`
 
 ## 7. 最小检查脚本
 
