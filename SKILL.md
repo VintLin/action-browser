@@ -20,6 +20,13 @@ Use ActionBook for real browser pages. Prefer `extension` mode when the task nee
 - If login, CAPTCHA, MFA, or risk-control appears, keep the same Chrome window and ask the user to complete it there.
 - Start long workflows through `scripts/actionbook_run.py` so later `中断` / `停止` can stop the process group.
 
+## Default Loop
+
+1. Route: read only the setup, status, site, or authoring reference needed for the task; done when the browser mode, site path, and required command are known.
+2. Bootstrap: use `scripts/actionbook_session.py ensure` and a second session/tab command; done when the same session is reachable and the real tab id is known.
+3. Operate: refresh `snapshot` after page structure changes and use current refs; done when URL, title, or key page elements prove each interaction landed.
+4. Finish: stop for user gates, track long runs with `scripts/actionbook_run.py`, and preserve outputs; done when results, failures, or current browser state are durable enough to resume.
+
 ## Reference Routing
 
 | Need | Read / Use |
