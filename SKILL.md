@@ -10,12 +10,16 @@ Use ActionBook for real browser pages. Prefer `extension` mode when the task nee
 ## Core Rules
 
 - First-run setup is not optional for most adapters: no API key is needed, use `actionbook-extension-v0.5.0.zip`, and ask the user to install the unpacked extension in `chrome://extensions/`.
+- Browser/account selection must preserve the user's current context. First use the system default browser. If Chrome extension mode is required, use the currently focused or most recently used Chrome window/profile/account. Do not open another Chrome profile/account with `--profile-directory` unless the user explicitly names it.
+- Before extension-mode work, confirm the selected/default/current browser has Actionbook installed, enabled, connected, and version `0.5.0`. If it is missing, disconnected, or a different version, stop and tell the user exactly what to fix in that same browser/profile; do not silently open or switch to another browser/profile.
 - If setup, extension, daemon, bridge, session, or tab state is unclear, read `references/initialization.md` or `references/status-check.md` before site work.
 - If a supported site or capability is named, read `references/adapters/<site>.md` before running commands.
 - If a supported site's UI drift breaks the documented workflow, or an unsupported site is likely to be reused, the agent may update this skill's adapter script and reference docs. Read `references/adapter-authoring.md` first and keep the patch scoped to observed site behavior.
 - Treat `session` as the browser container and `tab` as the task page. Use one explicit tab id per subtask; do not share a mutable current tab pointer.
 - Use `scripts/actionbook_session.py` for `ensure`, `list-tabs`, `new-tab`, `select-tab`, and `close-tab`. Keep raw `actionbook browser start/new-tab/list-tabs/close-tab` for diagnostics only.
 - Continue only after a second CLI command proves the session and selected tab are still accessible.
+- If `extension status` is `bridge: not_listening` or `extension_connected: false`, do not declare the browser unusable from one check. Run `actionbook browser start --mode extension ...`, poll again, or run `scripts/diagnostics/actionbook_diagnose.py`; only stop when the same browser/profile still cannot connect after that bootstrap.
+- If `browser start` opens a page but the next command returns `SESSION_NOT_FOUND`, treat it as daemon/session persistence failure. Restart the ActionBook daemon, avoid stale fixed session names, and prefer a tracked workflow that creates and uses its tab in one process.
 - For page operations, take a fresh `snapshot` after structure changes, use current refs, and verify URL/title/key elements after each click, fill, press, navigation, or list/detail transition.
 - If login, CAPTCHA, MFA, or risk-control appears, keep the same Chrome window and ask the user to complete it there.
 - Start long workflows through `scripts/actionbook_run.py` so later `中断` / `停止` can stop the process group.
