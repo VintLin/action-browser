@@ -612,20 +612,18 @@ def menu_item_control_js(pattern: str, label: str) -> str:
         const style = getComputedStyle(node);
         return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
       }};
-      const candidates = [...document.querySelectorAll('[role^="menuitem"], [role="option"], [data-radix-collection-item], [cmdk-item], button, [role="button"], div, span')]
+      const candidates = [...document.querySelectorAll('[role^="menuitem"], button, [role="button"]')]
         .filter(visible)
         .map(node => {{
           const text = [node.getAttribute('aria-label'), node.getAttribute('data-testid'), node.innerText, node.textContent]
             .map(value => String(value || '').trim()).join('\\n');
           const rect = node.getBoundingClientRect();
           const inMainPane = rect.left > Math.min(260, window.innerWidth * 0.25);
-          const compact = rect.height <= 44 && rect.width <= 760;
-          const exactish = new RegExp('(^|\\\\n)' + {json.dumps(pattern)} + '(\\\\n|$)', 'i').test(text);
-          const score = regex.test(text) && inMainPane ? (100 + (compact ? 50 : 0) + (exactish ? 50 : 0) - Math.round(rect.height / 10)) : 0;
+          const score = regex.test(text) && inMainPane ? 100 : 0;
           return {{ node, score, x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2), text }};
         }})
         .filter(item => item.score > 0)
-        .sort((a, b) => (b.score - a.score) || (a.node.getBoundingClientRect().width - b.node.getBoundingClientRect().width));
+        .sort((a, b) => b.score - a.score);
       const item = candidates[0];
       return item ? {{ ok: true, x: item.x, y: item.y, text: item.text, label: {json.dumps(label)} }} : {{ ok: false }};
     }})()
@@ -656,25 +654,22 @@ def menu_item_control_pointer_click_js(pattern: str, label: str) -> str:
           button: 0
         }};
         const events = ['pointerover', 'mouseover', 'mousemove', 'pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'];
-        const target = document.elementFromPoint(x, y) || node;
         for (const type of events) {{
           try {{
-            target.dispatchEvent(new PointerEvent(type, options));
+            node.dispatchEvent(new PointerEvent(type, options));
           }} catch (error) {{
-            target.dispatchEvent(new MouseEvent(type.replace('pointer', 'mouse'), options));
+            node.dispatchEvent(new MouseEvent(type.replace('pointer', 'mouse'), options));
           }}
         }}
       }};
-      const candidates = [...document.querySelectorAll('[role^=\"menuitem\"], [role=\"option\"], [data-radix-collection-item], [cmdk-item], button, [role=\"button\"], div, span')]
+      const candidates = [...document.querySelectorAll('[role^=\"menuitem\"], button, [role=\"button\"]')]
         .filter(visible)
         .map(node => {{
           const text = [node.getAttribute('aria-label'), node.getAttribute('data-testid'), node.innerText, node.textContent]
             .map(value => String(value || '').trim()).join('\\n');
           const rect = node.getBoundingClientRect();
           const inMainPane = rect.left > Math.min(260, window.innerWidth * 0.25);
-          const compact = rect.height <= 44 && rect.width <= 760;
-          const exactish = new RegExp('(^|\\\\n)' + {json.dumps(pattern)} + '(\\\\n|$)', 'i').test(text);
-          const score = regex.test(text) && inMainPane ? (100 + (compact ? 50 : 0) + (exactish ? 50 : 0) - Math.round(rect.height / 10)) : 0;
+          const score = regex.test(text) && inMainPane ? 100 : 0;
           return {{ node, score, x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2), text }};
         }})
         .filter(item => item.score > 0)
@@ -687,59 +682,11 @@ def menu_item_control_pointer_click_js(pattern: str, label: str) -> str:
     """
 
 
-MODEL_PICKER_CONTROL_JS = r"""
-(() => {
-  const visible = node => {
-    const rect = node.getBoundingClientRect();
-    const style = getComputedStyle(node);
-    return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
-  };
-  const clickWithPointerEvents = node => {
-    const rect = node.getBoundingClientRect();
-    const x = Math.round(rect.left + rect.width / 2);
-    const y = Math.round(rect.top + rect.height / 2);
-    const options = { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y, screenX: x, screenY: y, button: 0 };
-    for (const type of ['pointerover', 'mouseover', 'mousemove', 'pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click']) {
-      try { node.dispatchEvent(new PointerEvent(type, options)); }
-      catch (error) { node.dispatchEvent(new MouseEvent(type.replace('pointer', 'mouse'), options)); }
-    }
-  };
-  const candidates = [...document.querySelectorAll('button, [role="button"]')]
-    .filter(visible)
-    .map(node => {
-      const rect = node.getBoundingClientRect();
-      const text = [node.getAttribute('aria-label'), node.getAttribute('data-testid'), node.innerText, node.textContent]
-        .map(value => String(value || '').trim()).join('\n');
-      const composerSide = rect.left > window.innerWidth * 0.55 && rect.top > window.innerHeight * 0.3 && rect.top < window.innerHeight * 0.9;
-      const score = composerSide && /高级|超高|模型|model|chatgpt|gpt|自动|auto/i.test(text) ? 100 : 0;
-      return { node, score, x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2), text };
-    })
-    .filter(item => item.score > 0)
-    .sort((a, b) => b.score - a.score);
-  const item = candidates[0];
-  if (!item) return { ok: false };
-  clickWithPointerEvents(item.node);
-  return { ok: true, x: item.x, y: item.y, text: item.text };
-})()
-"""
-
-
-def model_sort_key(label: str) -> tuple[int, ...]:
-    match = re.search(r"GPT-(\d+(?:\.\d+)*)", label, re.I)
-    if not match:
-        return ()
-    return tuple(int(part) for part in match.group(1).split("."))
-
-
-def latest_model_label(labels: list[str]) -> str:
-    candidates = [label for label in labels if model_sort_key(label)]
-    return max(candidates, key=model_sort_key, default="")
-
-
-def enable_web_search(book: ActionBook) -> None:
+def enable_web_search(book: ActionBook) -> dict[str, Any]:
     state = api_eval(book, search_mode_state_js(), "check search mode state", timeout=10.0)
     if isinstance(state, dict) and state.get("search_enabled"):
-        return
+        log(f"网页搜索已开启: {state.get('search_text') or 'visible control'}")
+        return state
     last_result: Any = None
     for _attempt in range(2):
         click_control_via_pointer_events(book, "composer plus", COMPOSER_PLUS_CONTROL_JS)
@@ -747,7 +694,7 @@ def enable_web_search(book: ActionBook) -> None:
         while time.time() < deadline:
             result = api_eval(
                 book,
-                menu_item_control_js("网页搜索|搜索网页|搜索|联网|网络|web search|search", "web search"),
+                menu_item_control_js("网页搜索|web search|search", "web search"),
                 "find web search",
                 timeout=1.0,
             )
@@ -760,109 +707,14 @@ def enable_web_search(book: ActionBook) -> None:
         click_control_via_pointer_events(
             book,
             "web search",
-            menu_item_control_pointer_click_js("网页搜索|搜索网页|搜索|联网|网络|web search|search", "web search"),
+            menu_item_control_pointer_click_js("网页搜索|web search|search", "web search"),
         )
         time.sleep(0.5)
         state = api_eval(book, search_mode_state_js(), "check search mode state", timeout=10.0)
         if isinstance(state, dict) and state.get("search_enabled"):
-            return
+            log(f"已开启网页搜索: {state.get('search_text') or 'visible control'}")
+            return state
     raise RuntimeError(f"web search control not found or did not enable: {last_result}")
-
-
-def select_ultra_high_model(book: ActionBook) -> dict[str, Any]:
-    click_control_via_pointer_events(book, "model picker", MODEL_PICKER_CONTROL_JS)
-    deadline = time.time() + 5.0
-    last_result: Any = None
-    while time.time() < deadline:
-        result = api_eval(
-            book,
-            menu_item_control_js("超高", "ultra high model"),
-            "find ultra high model",
-            timeout=1.0,
-        )
-        last_result = result
-        if isinstance(result, dict) and result.get("ok"):
-            click_control_via_pointer_events(
-                book,
-                "ultra high model",
-                menu_item_control_pointer_click_js("超高", "ultra high model"),
-            )
-            return {"selected": True, "text": str(result.get("text") or "")}
-        time.sleep(0.5)
-    raise RuntimeError(f"ultra high model control not found: {last_result}")
-
-
-def latest_model_control_js(label: str = "") -> str:
-    return f"""
-    (() => {{
-      const requested = {json.dumps(label)};
-      const versionKey = value => {{
-        const match = String(value || '').match(/GPT-(\\d+(?:\\.\\d+)*)/i);
-        return match ? match[1].split('.').map(part => Number(part) || 0) : [];
-      }};
-      const compare = (left, right) => {{
-        const length = Math.max(left.length, right.length);
-        for (let index = 0; index < length; index++) {{
-          const delta = (left[index] || 0) - (right[index] || 0);
-          if (delta) return delta;
-        }}
-        return 0;
-      }};
-      const visible = node => {{
-        const rect = node.getBoundingClientRect();
-        const style = getComputedStyle(node);
-        return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
-      }};
-      const candidates = [...document.querySelectorAll('[role^="menuitem"], [role="option"], [data-radix-collection-item], [cmdk-item], button, [role="button"], div, span')]
-        .filter(visible)
-        .map(node => {{
-          const text = [node.getAttribute('aria-label'), node.innerText, node.textContent]
-            .map(value => String(value || '').trim()).filter(Boolean).join('\\n');
-          const match = text.match(/GPT-\\d+(?:\\.\\d+)*/i);
-          if (!match) return null;
-          const label = match[0];
-          if (requested && label.toLowerCase() !== requested.toLowerCase()) return null;
-          const rect = node.getBoundingClientRect();
-          const role = node.getAttribute('role') || '';
-          const compact = rect.height <= 48 && rect.width <= 420;
-          const exact = new RegExp('^' + label.replace('.', '\\\\.') + '$', 'i').test(text.replace(/\\s+/g, ' ').trim());
-          return {{
-            node,
-            label,
-            key: versionKey(label),
-            score: (role.includes('menuitem') ? 100 : 0) + (compact ? 50 : 0) + (exact ? 50 : 0),
-            x: Math.round(rect.left + rect.width / 2),
-            y: Math.round(rect.top + rect.height / 2),
-            text
-          }};
-        }})
-        .filter(Boolean)
-        .sort((a, b) => compare(b.key, a.key) || b.score - a.score);
-      const item = candidates[0];
-      return item ? {{ ok: true, label: item.label, x: item.x, y: item.y, text: item.text }} : {{ ok: false }};
-    }})()
-    """
-
-
-def select_latest_model(book: ActionBook) -> dict[str, Any]:
-    click_control_via_pointer_events(book, "model picker", MODEL_PICKER_CONTROL_JS)
-    result = api_eval(book, latest_model_control_js(), "find latest model", timeout=2.0)
-    if not isinstance(result, dict) or not result.get("ok"):
-        return {"selected": False, "text": "", "reason": "latest model option not visible"}
-    label = str(result.get("label") or "")
-    click_control_via_pointer_events(book, "latest model", latest_model_control_js(label))
-    time.sleep(0.4)
-
-    submenu_result = api_eval(book, latest_model_control_js(label), "find latest model submenu item", timeout=1.0)
-    if isinstance(submenu_result, dict) and submenu_result.get("ok"):
-        click_control_via_pointer_events(book, "latest model submenu item", latest_model_control_js(label))
-    return {"selected": True, "text": label}
-
-
-def select_default_model(book: ActionBook) -> dict[str, Any]:
-    mode_state = select_ultra_high_model(book)
-    latest_state = select_latest_model(book)
-    return {"mode": mode_state, "latest_model": latest_state}
 
 
 def search_mode_state_js() -> str:
@@ -873,7 +725,7 @@ def search_mode_state_js() -> str:
         const style = getComputedStyle(node);
         return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
       };
-      const controls = [...document.querySelectorAll('button, [role="button"], [role^="menuitem"], [role="textbox"], div, span')]
+      const controls = [...document.querySelectorAll('button, [role="button"], [role^="menuitem"]')]
         .filter(visible)
         .map(node => {
           const rect = node.getBoundingClientRect();
@@ -890,7 +742,7 @@ def search_mode_state_js() -> str:
             insideComposerArea: rect.top > window.innerHeight * 0.35
           };
         });
-      const searchControl = controls.find(item => item.insideComposerArea && /网页搜索|搜索网页|搜索|联网|网络|web search|search/i.test(item.text));
+      const searchControl = controls.find(item => item.insideComposerArea && /网页搜索|搜索|web search|search/i.test(item.text));
       const intelligentControl = controls.find(item => /智能|intelligent/i.test(item.text));
       return {
         search_enabled: Boolean(searchControl),
@@ -1266,7 +1118,8 @@ def submission_record(
     url: str,
     attempts: int,
     submitted_at: str,
-    model_state: dict[str, Any],
+    web_search_state: dict[str, Any],
+    pro_extension_selected: bool,
 ) -> dict[str, Any]:
     return {
         "index": index,
@@ -1275,14 +1128,18 @@ def submission_record(
         "url": url,
         "status": "submitted",
         "mode": {
-            "web_search": True,
-            "model": "ultra_high",
-            "model_text": str((model_state.get("mode") or {}).get("text") or model_state.get("text") or ""),
-            "latest_model": str((model_state.get("latest_model") or {}).get("text") or ""),
+            "web_search": bool(web_search_state.get("search_enabled")),
+            "web_search_state": str(web_search_state.get("search_text") or ""),
+            "extension": "pro" if pro_extension_selected else "not-selected",
         },
         "submitted_at": submitted_at,
         "attempts": attempts,
     }
+
+
+def require_web_search_enabled(state: dict[str, Any], required: bool) -> None:
+    if required and not bool(state.get("search_enabled")):
+        raise RuntimeError("web search was required but could not be verified before sending")
 
 
 def is_nonfatal_submit_error(exc: Exception) -> bool:
@@ -1291,9 +1148,7 @@ def is_nonfatal_submit_error(exc: Exception) -> bool:
         r"composer plus control not found(?: or did not click)?",
         r"new chat control not found(?: or did not click)?",
         r"web search control not found(?: or did not enable)?",
-        r"model picker control not found(?: or did not click)?",
-        r"ultra high model control not found",
-        r"find latest model",
+        r"pro extension control not found(?: or did not click)?",
         r"send button not found",
         r"composer not found",
         r"new chat did not become ready",
@@ -1330,15 +1185,17 @@ def submit_one_task(
     task: ChatGptTask,
     index: int,
     attempts: int,
+    require_web_search: bool = False,
 ) -> dict[str, Any]:
     create_new_chat(book)
     fill_prompt(book, task.question)
-    enable_web_search(book)
-    model_state = select_default_model(book)
+    web_search_state = enable_web_search(book)
+    require_web_search_enabled(web_search_state, require_web_search)
+    pro_extension_selected = select_pro_extension(book)
     send_current_prompt(book)
     current_url = wait_for_submission_started(book)
     submitted_at = datetime.now().isoformat(timespec="seconds")
-    return submission_record(index, task, current_url, attempts, submitted_at, model_state)
+    return submission_record(index, task, current_url, attempts, submitted_at, web_search_state, pro_extension_selected)
 
 
 def run_list(args: argparse.Namespace) -> int:
@@ -1447,7 +1304,7 @@ def run_ask(args: argparse.Namespace) -> int:
     while attempts < 2 and not submissions:
         attempts += 1
         try:
-            submissions.append(submit_one_task(book, task, 1, attempts))
+            submissions.append(submit_one_task(book, task, 1, attempts, require_web_search=args.require_web_search))
         except Exception as exc:  # noqa: BLE001
             if attempts >= 2:
                 failure = failure_record(1, task, current_browser_url(book), exc)
@@ -1488,7 +1345,9 @@ def run_batch_ask(args: argparse.Namespace) -> int:
         submitted = False
         for attempts in range(1, 3):
             try:
-                submissions.append(submit_one_task(book, task, index, attempts))
+                submissions.append(
+                    submit_one_task(book, task, index, attempts, require_web_search=args.require_web_search)
+                )
                 submitted = True
                 break
             except Exception as exc:  # noqa: BLE001
@@ -1594,6 +1453,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=900,
         help="Deprecated; kept for compatibility, ignored in submit-only mode",
     )
+    ask_parser.add_argument(
+        "--require-web-search",
+        action="store_true",
+        help="Fail before sending if Web Search cannot be verified as enabled",
+    )
     ask_parser.set_defaults(func=run_ask)
 
     batch_parser = sub.add_parser("batch-ask", help="Submit multiple ChatGPT questions from JSON/JSONL")
@@ -1605,6 +1469,11 @@ def build_parser() -> argparse.ArgumentParser:
         type=positive_int,
         default=900,
         help="Deprecated; kept for compatibility, ignored in submit-only mode",
+    )
+    batch_parser.add_argument(
+        "--require-web-search",
+        action="store_true",
+        help="Fail before sending if Web Search cannot be verified as enabled",
     )
     batch_parser.set_defaults(func=run_batch_ask)
 

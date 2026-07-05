@@ -17,8 +17,6 @@ python3 scripts/actionbook_session.py ensure \
 
 - 任务流程里的 session/tab 生命周期统一走 `scripts/actionbook_session.py`
 - 原生 `actionbook browser start/new-tab/list-tabs/close-tab` 只用于诊断、对照实验、或 helper 自己的底层实现排查
-- `actionbook extension status --json` 一次返回 `bridge: not_listening` 或 `extension_connected: false` 不是最终结论。先用 `scripts/actionbook_session.py ensure` 触发 bridge 并等待稳定；需要落盘证据时跑诊断脚本。
-- `browser start` 返回成功只代表“刚打开了页”，不代表 session 可复用。必须用第二条独立命令验证同一 session/tab。
 
 如果怀疑 extension / session 状态存在抖动，先跑一轮诊断脚本，把 `start -> status -> list-tabs` 的真实输出落盘：
 
@@ -44,8 +42,6 @@ python3 scripts/diagnostics/actionbook_diagnose.py --session-prefix diag --url "
 - `start_ok_runs`
 - `session_visible_direct_runs`
 - `session_visible_in_fresh_shell_runs`
-
-如果诊断脚本通过，但固定业务 session 仍然 `SESSION_NOT_FOUND`，不要继续复用那个名字。换一个新的 session id，或直接用 `scripts/actionbook_run.py run --replace -- ...` 让同一个 workflow 进程创建 tab、点击页面、写进度文件。
 
 ## 目录
 
@@ -94,7 +90,6 @@ test -f ~/.actionbook/config.toml && sed -n '1,120p' ~/.actionbook/config.toml
 - `[browser] mode = "local"`：独立浏览器模式
 - `[browser] mode = "extension"`：Chrome 插件模式
 - `headless = false`：需要人工登录或查看页面时建议关闭 headless
-- `profile_name = "..."`：如果任务要求默认/当前浏览器账号，先确认这个值不会把 ActionBook 引到另一个 Chrome profile。不要为了找插件而自动切换 profile。
 
 ## 2. 检查 daemon 和 session
 
@@ -157,13 +152,6 @@ actionbook browser close --session local-check --json
 
 ## 4. 插件模式检查
 
-插件模式必须使用用户当前浏览器上下文：
-
-- 首选系统默认浏览器。
-- 需要 Chrome 登录态时，使用当前聚焦或最近一次使用的 Chrome 窗口、profile 和账号。
-- 不要为了寻找插件而指定 `--profile-directory` 打开其它账号；除非用户明确指定目标 profile。
-- 如果当前/default 浏览器没有 Actionbook 插件、插件未启用、未连接，或版本不是 `0.5.0`，直接提示用户在当前浏览器/profile 修复，不要自动切换到其它 profile。
-
 如果使用 Chrome 插件模式，先检查插件状态：
 
 ```bash
@@ -181,19 +169,17 @@ actionbook extension ping --json
 }
 ```
 
-如果显示 `bridge: not_listening`，先用 helper 触发 daemon 和 bridge。helper 内部会轮询插件连接、session 可达性和 tab 可用性：
+如果显示 `bridge: not_listening`，先启动一个浏览器命令触发 daemon 和 bridge：
 
 ```bash
-python3 scripts/actionbook_session.py ensure --session extension-check --url "https://example.com" --json
+actionbook browser start --session extension-check --open-url "https://example.com" --json
 ```
 
-需要记录每次状态输出时，再跑诊断脚本：
+然后再次检查：
 
 ```bash
-python3 scripts/diagnostics/actionbook_diagnose.py --session-prefix diag --url "https://example.com" --delays 0,1,3
+actionbook extension status --json
 ```
-
-如果刚重启 daemon 后出现 `IO_ERROR early eof`，等 1-2 秒再重试一次；不要把这一次当成最终失败。
 
 如果仍未连接，检查 Chrome 扩展页：
 
@@ -206,7 +192,6 @@ chrome://extensions/
 - Actionbook 插件已安装
 - Actionbook 插件已启用
 - 插件 ID 是 `bebchpafpemheedhcdabookaifcijmfo`
-- 插件版本是 `0.5.0`
 - Chrome 顶部没有阻止调试或扩展运行的提示
 
 如果插件不存在，不要先跳到浏览器商店版本，也不要先假设 CLI 当前捆绑扩展可用。先按 skill 自带固定 zip 修复：
@@ -273,7 +258,6 @@ actionbook browser start --session task-check --open-url "about:blank" --json
 `browser start` / `actionbook_session.py ensure` 返回成功，但下一条命令立刻 `SESSION_NOT_FOUND`、`list-tabs: []`、`EXTENSION_NOT_CONNECTED`、`bridge: not_listening`，或 `extension_connected: false`：
 
 - 不要把第一次成功当成可用 session；先停止真实业务发送或下载。
-- 如果固定 session 名反复失效，换一个新的 session id，避免旧 daemon/session 状态污染。
 - 先停本任务的 tracked run，不要直接关 Chrome 登录态：
 
 ```bash
@@ -299,7 +283,17 @@ python3 scripts/diagnostics/actionbook_diagnose.py --session-prefix diag --url "
 
 只有报告里 `extension_connected_after_start`、`session_visible_in_fresh_shell`、`tabs_visible_direct` 都为 `true`，才继续站点 workflow。长任务继续用 `scripts/actionbook_run.py run --id <run-id> --cwd "$PWD" --replace -- ...` 启动，让 workflow 自己创建新 session，并保留后续可中断记录。
 
-如果跨进程读取 session 仍然不稳定，但 workflow 进程内可以完成页面操作，以 workflow 输出文件为准，例如 `submissions.json`、`failures.json`、`summary.json`。不要再用旧 session 做后续页面读取；下一阶段重新 bootstrap。
+如果新建命名 session 稳定失败，但 `list-sessions` 里已有健康的 extension session，先显式复用，不要直接改回原生命令：
+
+```bash
+python3 scripts/actionbook_session.py ensure \
+  --session task-check \
+  --url "https://example.com" \
+  --adopt-running-session \
+  --json
+```
+
+这个开关只在当前命名 session 无法创建或恢复时，允许 helper 复用别的 running extension session；默认仍保持“显式 session 不跨 session adopt”。
 
 如果 `status` 能读到旧 session，但 `list-tabs` 或 `close` 长时间无返回，不要把这个 session 当作可恢复容器。中断卡住的 CLI 命令后，按上面的 daemon 重启和重新 bootstrap 流程处理。
 
@@ -350,7 +344,8 @@ actionbook browser title --session task-check --tab t1 --json
 处理：
 
 ```bash
-python3 scripts/actionbook_session.py ensure --session extension-check --url "https://example.com" --json
+actionbook browser start --session extension-check --open-url "https://example.com" --json
+actionbook extension status --json
 ```
 
 `extension_connected: false`：
@@ -365,8 +360,8 @@ python3 scripts/actionbook_session.py ensure --session extension-check --url "ht
 - 打开 `chrome://extensions/`
 - 确认 Actionbook 插件已启用
 - 确认当前 Chrome profile 里安装的是 skill 自带 `actionbook-extension-v0.5.0/`
-- 重新执行 `python3 scripts/actionbook_session.py ensure --session extension-check --url "https://example.com" --json`
-- 需要落盘确认时执行 `python3 scripts/diagnostics/actionbook_diagnose.py --session-prefix diag --url "https://example.com" --delays 0,1,3`
+- 重新执行 `actionbook browser start`
+- 再执行 `actionbook extension status --json`，确认 `bridge: listening` 且 `extension_connected: true`
 
 ## 7. 最小检查脚本
 

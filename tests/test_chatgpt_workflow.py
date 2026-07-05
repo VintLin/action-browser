@@ -6,30 +6,38 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from scripts.adapters.chatgpt_workflow import ChatGptTask, is_nonfatal_submit_error, latest_model_label, submission_record
+import pytest
+
+from scripts.adapters.chatgpt_workflow import (
+    ChatGptTask,
+    is_nonfatal_submit_error,
+    require_web_search_enabled,
+    submission_record,
+)
 
 
-def test_submission_record_tracks_ultra_high_model() -> None:
+def test_submission_record_tracks_web_search_state_and_extension() -> None:
     record = submission_record(
         1,
         ChatGptTask(title="Q1", question="Question"),
         "https://chatgpt.com/c/1",
         2,
         "2026-07-02T12:00:00",
-        {"text": "超高"},
+        {"search_enabled": True, "search_text": "网页搜索"},
+        False,
     )
 
     assert record["mode"] == {
         "web_search": True,
-        "model": "ultra_high",
-        "model_text": "超高",
-        "latest_model": "",
+        "web_search_state": "网页搜索",
+        "extension": "not-selected",
     }
 
 
-def test_ultra_high_model_selection_failure_is_nonfatal() -> None:
-    assert is_nonfatal_submit_error(RuntimeError("ultra high model control not found: {}"))
+def test_require_web_search_enabled_raises_when_required_but_not_verified() -> None:
+    with pytest.raises(RuntimeError, match="web search was required"):
+        require_web_search_enabled({"search_enabled": False}, True)
 
 
-def test_latest_model_label_uses_highest_gpt_version() -> None:
-    assert latest_model_label(["GPT-5.3", "o3", "GPT-5.5", "GPT-5.4"]) == "GPT-5.5"
+def test_pro_extension_selection_failure_is_nonfatal() -> None:
+    assert is_nonfatal_submit_error(RuntimeError("pro extension control not found: {}"))
