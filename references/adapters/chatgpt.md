@@ -13,7 +13,7 @@ The workflow can:
 
 1. Open `https://chatgpt.com/` with the user's Chrome login state.
 2. Create one new chat or many new chats from local JSON / JSONL tasks.
-3. Enable web search through the ChatGPT UI and try to select Pro extension.
+3. Enable web search through the ChatGPT UI, log the verified search state, and try to select Pro extension.
 4. Send each question and confirm the conversation started.
 5. Write `submissions.json` and `failures.json` for submitted questions.
 6. Reopen or locate existing conversations from the sidebar.
@@ -32,7 +32,8 @@ Ask one question and record the submitted conversation URL:
 ```bash
 python3 scripts/adapters/chatgpt_workflow.py ask \
   --title "Q13：示例问题" \
-  --question "这里是问题正文"
+  --question "这里是问题正文" \
+  --require-web-search
 ```
 
 Ask many questions from JSONL or JSON:
@@ -40,6 +41,7 @@ Ask many questions from JSONL or JSON:
 ```bash
 python3 scripts/adapters/chatgpt_workflow.py batch-ask \
   --tasks-file /path/to/tasks.jsonl \
+  --require-web-search \
   --delay 60
 ```
 
@@ -47,6 +49,8 @@ python3 scripts/adapters/chatgpt_workflow.py batch-ask \
 `--delay` when ChatGPT shows rate limits or temporary access restrictions.
 Stop real sending immediately if the page reports restricted access; continue
 only after the account/browser session is healthy again.
+When `--require-web-search` is set, the workflow aborts before sending if the
+visible ChatGPT composer controls do not confirm that Web Search is enabled.
 
 Preview matching existing conversations:
 
@@ -190,9 +194,9 @@ uses multiple selectors:
   tool menu and choose `网页搜索`; it must not select upload-file items. The
   question is sent through the composer and the visible send button.
 - Mode controls: the deprecated answer-capture helper can still look for `智能`
-  and `Pro 扩展`. `ask` and `batch-ask` are submit-only; they enable Web Search
-  and make a best-effort Pro extension selection before sending, but they do not
-  select `智能`.
+  and `Pro 扩展`. `ask` and `batch-ask` are submit-only; they enable Web Search,
+  log the verified visible search control text, and make a best-effort Pro
+  extension selection before sending, but they do not select `智能`.
   If Pro extension cannot be selected, the run continues and records
   `extension: not-selected` in `submissions.json`.
 - Assistant messages: submission-start detection uses

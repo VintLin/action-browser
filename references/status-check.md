@@ -283,6 +283,18 @@ python3 scripts/diagnostics/actionbook_diagnose.py --session-prefix diag --url "
 
 只有报告里 `extension_connected_after_start`、`session_visible_in_fresh_shell`、`tabs_visible_direct` 都为 `true`，才继续站点 workflow。长任务继续用 `scripts/actionbook_run.py run --id <run-id> --cwd "$PWD" --replace -- ...` 启动，让 workflow 自己创建新 session，并保留后续可中断记录。
 
+如果新建命名 session 稳定失败，但 `list-sessions` 里已有健康的 extension session，先显式复用，不要直接改回原生命令：
+
+```bash
+python3 scripts/actionbook_session.py ensure \
+  --session task-check \
+  --url "https://example.com" \
+  --adopt-running-session \
+  --json
+```
+
+这个开关只在当前命名 session 无法创建或恢复时，允许 helper 复用别的 running extension session；默认仍保持“显式 session 不跨 session adopt”。
+
 如果 `status` 能读到旧 session，但 `list-tabs` 或 `close` 长时间无返回，不要把这个 session 当作可恢复容器。中断卡住的 CLI 命令后，按上面的 daemon 重启和重新 bootstrap 流程处理。
 
 `CDP_NODE_NOT_FOUND`：

@@ -621,6 +621,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Do not adopt another running session; explicit --session already disables cross-session adoption",
     )
+    ensure.add_argument(
+        "--adopt-running-session",
+        action="store_true",
+        help="Opt in to reusing another running extension session when the named session cannot be created or recovered",
+    )
     ensure.add_argument("--json", action="store_true", help="Print final session state as JSON")
 
     list_tabs = subparsers.add_parser("list-tabs", help="List accessible tabs in a session")
@@ -656,7 +661,9 @@ def main(argv: list[str] | None = None) -> int:
         raw_args = ["ensure", *raw_args]
     args = parser.parse_args(raw_args)
     if args.command == "ensure":
-        allow_cross_session_adopt = not args.no_adopt and args.session == DEFAULT_SESSION
+        allow_cross_session_adopt = not args.no_adopt and (
+            args.session == DEFAULT_SESSION or args.adopt_running_session
+        )
         session = ActionBookSession(args.session, args.tab, allow_adopt=allow_cross_session_adopt)
         session.start(args.url, force_new_tab=args.force_new_tab)
         state = session.describe()

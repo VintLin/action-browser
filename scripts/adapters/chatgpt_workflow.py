@@ -682,10 +682,11 @@ def menu_item_control_pointer_click_js(pattern: str, label: str) -> str:
     """
 
 
-def enable_web_search(book: ActionBook) -> None:
+def enable_web_search(book: ActionBook) -> dict[str, Any]:
     state = api_eval(book, search_mode_state_js(), "check search mode state", timeout=10.0)
     if isinstance(state, dict) and state.get("search_enabled"):
-        return
+        log(f"网页搜索已开启: {state.get('search_text') or 'visible control'}")
+        return state
     last_result: Any = None
     for _attempt in range(2):
         click_control_via_pointer_events(book, "composer plus", COMPOSER_PLUS_CONTROL_JS)
@@ -711,7 +712,8 @@ def enable_web_search(book: ActionBook) -> None:
         time.sleep(0.5)
         state = api_eval(book, search_mode_state_js(), "check search mode state", timeout=10.0)
         if isinstance(state, dict) and state.get("search_enabled"):
-            return
+            log(f"已开启网页搜索: {state.get('search_text') or 'visible control'}")
+            return state
     raise RuntimeError(f"web search control not found or did not enable: {last_result}")
 
 
@@ -1116,6 +1118,7 @@ def submission_record(
     url: str,
     attempts: int,
     submitted_at: str,
+    web_search_state: dict[str, Any],
     pro_extension_selected: bool,
 ) -> dict[str, Any]:
     return {
@@ -1125,12 +1128,18 @@ def submission_record(
         "url": url,
         "status": "submitted",
         "mode": {
-            "web_search": True,
+            "web_search": bool(web_search_state.get("search_enabled")),
+            "web_search_state": str(web_search_state.get("search_text") or ""),
             "extension": "pro" if pro_extension_selected else "not-selected",
         },
         "submitted_at": submitted_at,
         "attempts": attempts,
     }
+
+
+def require_web_search_enabled(state: dict[str, Any], required: bool) -> None:
+    if required and not bool(state.get("search_enabled")):
+        raise RuntimeError("web search was required but could not be verified before sending")
 
 
 def is_nonfatal_submit_error(exc: Exception) -> bool:
@@ -1176,15 +1185,17 @@ def submit_one_task(
     task: ChatGptTask,
     index: int,
     attempts: int,
+    require_web_search: bool = False,
 ) -> dict[str, Any]:
     create_new_chat(book)
     fill_prompt(book, task.question)
-    enable_web_search(book)
+    web_search_state = enable_web_search(book)
+    require_web_search_enabled(web_search_state, require_web_search)
     pro_extension_selected = select_pro_extension(book)
     send_current_prompt(book)
     current_url = wait_for_submission_started(book)
     submitted_at = datetime.now().isoformat(timespec="seconds")
-    return submission_record(index, task, current_url, attempts, submitted_at, pro_extension_selected)
+    return submission_record(index, task, current_url, attempts, submitted_at, web_search_state, pro_extension_selected)
 
 
 def run_list(args: argparse.Namespace) -> int:
@@ -1293,7 +1304,7 @@ def run_ask(args: argparse.Namespace) -> int:
     while attempts < 2 and not submissions:
         attempts += 1
         try:
-            submissions.append(submit_one_task(book, task, 1, attempts))
+            submissions.append(submit_one_task(book, task, 1, attempts, require_web_search=args.require_web_search))
         except Exception as exc:  # noqa: BLE001
             if attempts >= 2:
                 failure = failure_record(1, task, current_browser_url(book), exc)
@@ -1334,7 +1345,9 @@ def run_batch_ask(args: argparse.Namespace) -> int:
         submitted = False
         for attempts in range(1, 3):
             try:
-                submissions.append(submit_one_task(book, task, index, attempts))
+                submissions.append(
+                    submit_one_task(book, task, index, attempts, require_web_search=args.require_web_search)
+                )
                 submitted = True
                 break
             except Exception as exc:  # noqa: BLE001
@@ -1440,6 +1453,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=900,
         help="Deprecated; kept for compatibility, ignored in submit-only mode",
     )
+    ask_parser.add_argument(
+        "--require-web-search",
+        action="store_true",
+        help="Fail before sending if Web Search cannot be verified as enabled",
+    )
     ask_parser.set_defaults(func=run_ask)
 
     batch_parser = sub.add_parser("batch-ask", help="Submit multiple ChatGPT questions from JSON/JSONL")
@@ -1451,6 +1469,11 @@ def build_parser() -> argparse.ArgumentParser:
         type=positive_int,
         default=900,
         help="Deprecated; kept for compatibility, ignored in submit-only mode",
+    )
+    batch_parser.add_argument(
+        "--require-web-search",
+        action="store_true",
+        help="Fail before sending if Web Search cannot be verified as enabled",
     )
     batch_parser.set_defaults(func=run_batch_ask)
 
