@@ -290,7 +290,7 @@ actionbook browser start --session extension-check --open-url "https://example.c
 
 - Chrome 是否正在运行
 - Chrome 扩展页中 Actionbook 是否启用
-- 是否安装了正确扩展 ID：`bebchpafpemheedhcdabookaifcijmfo`
+- 不要预设固定扩展 ID；优先确认当前 Chrome profile 实际加载的是 `<skill-dir>/actionbook-extension-v0.5.0`
 - Chrome 当前加载的是否是 `<skill-dir>/actionbook-extension-v0.5.0`
 - 当前加载扩展的 `manifest.json` 版本是否为要求的 `0.5.0`
 - `~/.actionbook/config.toml` 中 `browser.mode` 是否为 `extension`
@@ -326,6 +326,12 @@ export ACTIONBOOK_API_KEY="your_api_key"
 - 插件模式下 `actionbook extension status --json` 显示 `bridge=listening` 且 `extension_connected=true`
 
 完成后再执行具体网页自动化任务。
+
+如果后续需要确认 Chrome 当前实际使用的是哪一个 Actionbook 插件、插件记录指向哪个 unpacked 路径，或排查用户移动目录后的残留记录，运行：
+
+```bash
+python3 scripts/diagnostics/actionbook_chrome_extension_state.py --json
+```
 
 ## 9. Agent 执行顺序
 

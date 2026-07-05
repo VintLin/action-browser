@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 import sys
 
@@ -41,7 +42,13 @@ def test_main_new_tab_uses_existing_session_without_bootstrap(monkeypatch) -> No
     events: list[tuple[str, str]] = []
 
     class FakeSession:
-        def __init__(self, session: str, tab: str = "", allow_adopt: bool = True) -> None:
+        def __init__(
+            self,
+            session: str,
+            tab: str = "",
+            allow_adopt: bool = True,
+            allow_visible_recovery: bool = False,
+        ) -> None:
             self.session = session
             self.tab = tab
 
@@ -67,7 +74,13 @@ def test_main_list_tabs_uses_existing_session_without_bootstrap(monkeypatch, cap
     events: list[str] = []
 
     class FakeSession:
-        def __init__(self, session: str, tab: str = "", allow_adopt: bool = True) -> None:
+        def __init__(
+            self,
+            session: str,
+            tab: str = "",
+            allow_adopt: bool = True,
+            allow_visible_recovery: bool = False,
+        ) -> None:
             self.session = session
             self.tab = tab
 
@@ -86,7 +99,13 @@ def test_main_ensure_force_new_tab_opens_new_tab(monkeypatch) -> None:
     events: list[tuple[str, str]] = []
 
     class FakeSession:
-        def __init__(self, session: str, tab: str = "", allow_adopt: bool = True) -> None:
+        def __init__(
+            self,
+            session: str,
+            tab: str = "",
+            allow_adopt: bool = True,
+            allow_visible_recovery: bool = False,
+        ) -> None:
             self.session = session
             self.tab = "old-tab"
             self.allow_adopt = allow_adopt
@@ -119,7 +138,13 @@ def test_main_ensure_explicit_session_disables_cross_session_adoption(monkeypatc
     events: list[tuple[str, bool]] = []
 
     class FakeSession:
-        def __init__(self, session: str, tab: str = "", allow_adopt: bool = True) -> None:
+        def __init__(
+            self,
+            session: str,
+            tab: str = "",
+            allow_adopt: bool = True,
+            allow_visible_recovery: bool = False,
+        ) -> None:
             self.session = session
             self.tab = "t1"
             self.allow_adopt = allow_adopt
@@ -145,7 +170,7 @@ def test_start_force_new_tab_does_not_fall_back_to_existing_tab(monkeypatch) -> 
     book = ActionBookSession("s1", "old-tab", allow_adopt=False)
     recover_called = False
 
-    monkeypatch.setattr(actionbook_session, "ensure_chrome_app_running", lambda: None)
+    monkeypatch.setattr(actionbook_session, "ensure_chrome_app_running", lambda **kwargs: None)
     book._check_extension = lambda require_connected=False: None  # type: ignore[method-assign]
     book._session_exists = lambda: True  # type: ignore[method-assign]
     book._open_new_tab = lambda url: ""  # type: ignore[method-assign]
@@ -165,7 +190,7 @@ def test_start_force_new_tab_does_not_fall_back_to_existing_tab(monkeypatch) -> 
 def test_start_no_adopt_does_not_try_other_running_sessions(monkeypatch) -> None:
     book = ActionBookSession("s1", allow_adopt=False)
 
-    monkeypatch.setattr(actionbook_session, "ensure_chrome_app_running", lambda: None)
+    monkeypatch.setattr(actionbook_session, "ensure_chrome_app_running", lambda **kwargs: None)
     book._check_extension = lambda require_connected=False: None  # type: ignore[method-assign]
     book._session_exists = lambda: False  # type: ignore[method-assign]
     book._find_accessible_tab = lambda preferred_tab=None, target_url="": ""  # type: ignore[method-assign]
@@ -182,6 +207,43 @@ def test_start_no_adopt_does_not_try_other_running_sessions(monkeypatch) -> None
     book.start("https://example.com", force_new_tab=False)
 
     assert book.tab == "new-tab"
+
+
+def test_start_retries_after_extension_connectivity_delay(monkeypatch) -> None:
+    book = ActionBookSession("s1", allow_adopt=False)
+    waits: list[float] = []
+    attempts = {"count": 0}
+
+    monkeypatch.setattr(actionbook_session, "ensure_chrome_app_running", lambda **kwargs: None)
+    monkeypatch.setattr(actionbook_session, "sleep_between", lambda *args, **kwargs: None)
+    book._check_extension = lambda require_connected=False, timeout_secs=8.0: None  # type: ignore[method-assign]
+    book._session_exists = lambda: False  # type: ignore[method-assign]
+    book._wait_for_stable_session = lambda target_url="", timeout_secs=8.0: None  # type: ignore[method-assign]
+    book._ensure_target_url = lambda url: None  # type: ignore[method-assign]
+    book._safe_close_session = lambda: None  # type: ignore[method-assign]
+
+    def fake_recover_or_attach(url: str) -> None:
+        attempts["count"] += 1
+        if attempts["count"] == 1:
+            raise RuntimeError("no Chrome extension connected to the bridge within 5s")
+        book.tab = "t1"
+
+    book._recover_or_attach = fake_recover_or_attach  # type: ignore[method-assign]
+    book._wait_for_extension_connection = lambda timeout_secs=12.0: waits.append(timeout_secs)  # type: ignore[method-assign]
+
+    book.start("https://example.com", force_new_tab=False)
+
+    assert attempts["count"] == 2
+    assert waits == [12.0]
+
+
+def test_start_does_not_launch_visible_chrome_by_default(monkeypatch) -> None:
+    book = ActionBookSession("s1", allow_adopt=False)
+
+    monkeypatch.setattr(actionbook_session, "is_chrome_running", lambda: False)
+
+    with pytest.raises(RuntimeError, match="Google Chrome is not running"):
+        book.start("https://example.com")
 
 
 def test_wait_for_stable_session_retries_until_session_and_tab_are_ready(monkeypatch) -> None:
@@ -262,6 +324,114 @@ def test_start_new_session_requires_reachable_session_after_start(monkeypatch) -
 
     with pytest.raises(RuntimeError, match="session started but is not reachable"):
         book._start_new_session("https://example.com")
+
+
+def test_find_profiles_with_actionbook_extension_detects_matching_preferences(tmp_path, monkeypatch) -> None:
+    chrome_home = tmp_path / "Library/Application Support/Google/Chrome"
+    default_profile = chrome_home / "Default"
+    other_profile = chrome_home / "Profile 1"
+    default_profile.mkdir(parents=True)
+    other_profile.mkdir(parents=True)
+    (default_profile / "Preferences").write_text(
+        '{"extensions":{"settings":{"random-id":{"path":"/tmp/actionbook-extension-v0.5.0","state":1}}}}',
+        encoding="utf-8",
+    )
+    (other_profile / "Preferences").write_text('{"extensions":{"settings":{}}}', encoding="utf-8")
+
+    monkeypatch.setattr(actionbook_session, "chrome_root", lambda: chrome_home)
+
+    assert actionbook_session.find_profiles_with_actionbook_extension() == ["Default"]
+
+
+def test_check_extension_reports_missing_extension_install(monkeypatch) -> None:
+    book = ActionBookSession("s1")
+
+    monkeypatch.setattr(actionbook_session, "sleep_between", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        actionbook_session,
+        "run_command",
+        lambda args, timeout=10.0, check=False: json.dumps(
+            {
+                "ok": True,
+                "data": {
+                    "bridge": "not_listening",
+                    "extension_connected": False,
+                },
+            }
+        ),
+    )
+    monkeypatch.setattr(actionbook_session, "find_profiles_with_actionbook_extension", lambda: [])
+    monkeypatch.setattr(
+        actionbook_session,
+        "current_actionbook_extension_hint",
+        lambda: "No Chrome profile currently shows an ActionBook unpacked extension record.",
+    )
+
+    with pytest.raises(RuntimeError, match="No Chrome profile currently shows an ActionBook unpacked extension record"):
+        book._check_extension(timeout_secs=0.01, require_connected=True)
+
+
+def test_current_actionbook_extension_hint_reports_selected_profile_broken_path(tmp_path: Path, monkeypatch) -> None:
+    chrome_home = tmp_path / "chrome"
+    chrome_home.mkdir()
+    monkeypatch.setattr(actionbook_session, "chrome_root", lambda: chrome_home)
+    monkeypatch.setattr(
+        actionbook_session,
+        "inspect_profiles",
+        lambda root: {
+            "selected_profile_directory": "Default",
+            "profiles": [
+                {
+                    "profile": "Default",
+                    "records": [
+                        {
+                            "secure_preferences": {
+                                "record_status": "broken_path",
+                                "path": "/old/actionbook-extension-v0.5.0",
+                            }
+                        }
+                    ],
+                }
+            ],
+        },
+    )
+
+    hint = actionbook_session.current_actionbook_extension_hint()
+
+    assert "Selected Chrome profile 'Default' still points at a missing ActionBook unpacked extension path" in hint
+    assert "/old/actionbook-extension-v0.5.0" in hint
+
+
+def test_start_new_session_retries_after_creating_window(monkeypatch) -> None:
+    book = ActionBookSession("s1", allow_visible_recovery=True)
+    calls = {"count": 0}
+
+    monkeypatch.setattr(actionbook_session, "sleep_between", lambda *args, **kwargs: None)
+    monkeypatch.setattr(actionbook_session, "ensure_chrome_window", lambda timeout_secs=12.0, allow_create=False: None)
+
+    def fake_run_raw_command(command, timeout=30.0):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            return {
+                "ok": False,
+                "error": {"message": "failed to create tab via extension: cdp error: CDP error -32000: No current window"},
+            }
+        return {
+            "ok": True,
+            "data": {
+                "session": {"session_id": "s1", "status": "running"},
+                "tab": {"tab_id": "t1"},
+            },
+        }
+
+    book._run_raw_command = fake_run_raw_command  # type: ignore[method-assign]
+    book._session_exists = lambda: True  # type: ignore[method-assign]
+    book._session_is_reachable = lambda: True  # type: ignore[method-assign]
+
+    book._start_new_session("https://example.com")
+
+    assert book.tab == "t1"
+    assert calls["count"] == 2
 
 
 def test_open_new_tab_waits_for_accessible_new_tab(monkeypatch) -> None:

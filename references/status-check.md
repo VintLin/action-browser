@@ -24,6 +24,12 @@ python3 scripts/actionbook_session.py ensure \
 python3 scripts/diagnostics/actionbook_diagnose.py --session-prefix diag --url "https://example.com" --delays 0,1,3
 ```
 
+如果需要确认 Chrome 当前 profile 里实际安装的是哪一个 Actionbook 插件、对应哪个 unpacked 路径，以及 `Secure Preferences` 记录是否失效，直接运行：
+
+```bash
+python3 scripts/diagnostics/actionbook_chrome_extension_state.py --json
+```
+
 如果怀疑是低概率抖动，直接做批量 smoke：
 
 ```bash
@@ -191,7 +197,9 @@ chrome://extensions/
 
 - Actionbook 插件已安装
 - Actionbook 插件已启用
-- 插件 ID 是 `bebchpafpemheedhcdabookaifcijmfo`
+- 不要把固定扩展 ID 当作前提；优先确认当前 Chrome profile 实际加载的是 `actionbook-extension-v0.5.0/`
+- 如果不确定当前 profile 记录了哪一个 Actionbook unpacked 扩展路径，直接运行 `python3 scripts/diagnostics/actionbook_chrome_extension_state.py --json`
+- 重点看 `selected_profile_directory` 对应的 profile：其他 profile 里残留的旧 Actionbook 记录不能证明当前正在运行的 Chrome profile 可用
 - Chrome 顶部没有阻止调试或扩展运行的提示
 
 如果插件不存在，不要先跳到浏览器商店版本，也不要先假设 CLI 当前捆绑扩展可用。先按 skill 自带固定 zip 修复：
@@ -207,7 +215,7 @@ unzip -o actionbook-extension-v0.5.0.zip
 2. 点击“加载未打包的扩展程序”
 3. 选择 `<skill-dir>/actionbook-extension-v0.5.0`
 
-当前应确认该目录里的扩展版本是 `0.5.0`，再重试 `actionbook extension status --json`。
+当前应确认该目录里的扩展版本是 `0.5.0`，再重试 `actionbook extension status --json`。如果 `bridge=listening` 但持续 `extension_connected=false`，继续检查当前 Chrome profile 的 `Secure Preferences` 中 Actionbook unpacked 扩展记录是否仍然指向有效路径，以及是否同时残留多个 Actionbook 扩展 ID。
 
 这里也要明确：agent 不能直接把扩展安装进 Chrome。若当前线程里的 agent 无法操作用户的 Chrome 扩展页，必须明确提示用户自己完成这 3 个点击步骤，再继续后续检查。
 
