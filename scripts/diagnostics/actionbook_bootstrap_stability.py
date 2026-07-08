@@ -26,7 +26,7 @@ def normalize_output(value: Any) -> str:
     return str(value)
 
 
-def run_command(args: list[str], timeout: float = 30.0, check: bool = False) -> dict[str, Any]:
+def run_probe_command(args: list[str], timeout: float = 30.0, check: bool = False) -> dict[str, Any]:
     started = time.time()
     try:
         result = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
@@ -96,7 +96,7 @@ def parse_json_from_result(result: dict[str, Any]) -> dict[str, Any]:
 def wait_for_chrome_stopped(timeout_secs: float = 12.0) -> bool:
     deadline = time.time() + timeout_secs
     while time.time() < deadline:
-        probe = run_command(
+        probe = run_probe_command(
             ["osascript", "-e", 'tell application "System Events" to (name of processes) contains "Google Chrome"'],
             timeout=5.0,
         )
@@ -107,7 +107,7 @@ def wait_for_chrome_stopped(timeout_secs: float = 12.0) -> bool:
 
 
 def close_existing_chrome(round_report: dict[str, Any]) -> None:
-    probe = run_command(
+    probe = run_probe_command(
         ["osascript", "-e", 'tell application "System Events" to (name of processes) contains "Google Chrome"'],
         timeout=5.0,
     )
@@ -115,7 +115,7 @@ def close_existing_chrome(round_report: dict[str, Any]) -> None:
     event(round_report, "chrome_process_probe", probe)
     if str(probe.get("stdout", "")).strip().lower() != "true":
         return
-    quit_result = run_command(["osascript", "-e", 'tell application "Google Chrome" to quit'], timeout=10.0)
+    quit_result = run_probe_command(["osascript", "-e", 'tell application "Google Chrome" to quit'], timeout=10.0)
     round_report["chrome_quit"] = quit_result
     event(round_report, "chrome_quit", quit_result)
     stopped = wait_for_chrome_stopped()
@@ -125,10 +125,10 @@ def close_existing_chrome(round_report: dict[str, Any]) -> None:
 
 def precheck() -> dict[str, Any]:
     return {
-        "actionbook_version": run_command(["actionbook", "--version"], timeout=10.0),
-        "extension_status": run_command(["actionbook", "extension", "status", "--json"], timeout=10.0),
-        "extension_ping": run_command(["actionbook", "extension", "ping", "--json"], timeout=10.0),
-        "list_sessions": run_command(["actionbook", "browser", "list-sessions", "--json"], timeout=10.0),
+        "actionbook_version": run_probe_command(["actionbook", "--version"], timeout=10.0),
+        "extension_status": run_probe_command(["actionbook", "extension", "status", "--json"], timeout=10.0),
+        "extension_ping": run_probe_command(["actionbook", "extension", "ping", "--json"], timeout=10.0),
+        "list_sessions": run_probe_command(["actionbook", "browser", "list-sessions", "--json"], timeout=10.0),
     }
 
 
@@ -146,7 +146,7 @@ def matching_session_ids(payload: dict[str, Any], session_prefix: str) -> list[s
 
 
 def close_known_sessions(round_report: dict[str, Any], session_prefix: str) -> None:
-    sessions_result = run_command(["actionbook", "browser", "list-sessions", "--json"], timeout=10.0)
+    sessions_result = run_probe_command(["actionbook", "browser", "list-sessions", "--json"], timeout=10.0)
     round_report["list_sessions_before_cleanup"] = sessions_result
     event(round_report, "list_sessions_before_cleanup", sessions_result)
     payload = parse_json_from_result(sessions_result)
@@ -155,7 +155,7 @@ def close_known_sessions(round_report: dict[str, Any], session_prefix: str) -> N
     round_report["cleanup_candidate_session_ids"] = matching_ids
     round_report["cleanup_close_results"] = []
     for session_id in matching_ids:
-        close_result = run_command(
+        close_result = run_probe_command(
             ["actionbook", "browser", "close", "--session", session_id, "--json"],
             timeout=15.0,
         )
@@ -167,7 +167,7 @@ def close_known_sessions(round_report: dict[str, Any], session_prefix: str) -> N
 
 def run_diagnose(round_report: dict[str, Any], run_dir: Path, round_id: str) -> None:
     output_path = run_dir / f"{round_id}-diagnose.json"
-    result = run_command(
+    result = run_probe_command(
         [
             "python3",
             str(ROOT_DIR / "scripts/diagnostics/actionbook_diagnose.py"),
@@ -187,14 +187,14 @@ def run_diagnose(round_report: dict[str, Any], run_dir: Path, round_id: str) -> 
 
 
 def restart_daemon(round_report: dict[str, Any]) -> None:
-    result = run_command(["pkill", "-f", "actionbook __daemon"], timeout=10.0)
+    result = run_probe_command(["pkill", "-f", "actionbook __daemon"], timeout=10.0)
     round_report.setdefault("repairs", []).append({"kind": "restart_daemon", "result": result})
     event(round_report, "restart_daemon", result)
     time.sleep(1.0)
 
 
 def ensure_session(round_report: dict[str, Any], session_id: str) -> dict[str, Any]:
-    result = run_command(
+    result = run_probe_command(
         [
             "python3",
             str(SESSION_HELPER),
@@ -213,7 +213,7 @@ def ensure_session(round_report: dict[str, Any], session_id: str) -> dict[str, A
 
 
 def list_tabs(round_report: dict[str, Any], session_id: str) -> dict[str, Any]:
-    result = run_command(
+    result = run_probe_command(
         ["python3", str(SESSION_HELPER), "list-tabs", "--session", session_id, "--json"],
         timeout=20.0,
     )
@@ -223,7 +223,7 @@ def list_tabs(round_report: dict[str, Any], session_id: str) -> dict[str, Any]:
 
 
 def reconnect_session(round_report: dict[str, Any], session_id: str, tab_id: str) -> dict[str, Any]:
-    result = run_command(
+    result = run_probe_command(
         ["python3", str(SESSION_HELPER), "select-tab", "--session", session_id, "--tab", tab_id, "--json"],
         timeout=20.0,
     )
@@ -240,14 +240,14 @@ def verify_tab(round_report: dict[str, Any], session_id: str, tab_id: str, label
     }
     tab_report: dict[str, Any] = {}
     for key, command in commands.items():
-        result = run_command(command, timeout=30.0)
+        result = run_probe_command(command, timeout=30.0)
         tab_report[key] = result
         event(round_report, f"{label}_{key}", result)
     round_report.setdefault("tab_checks", {})[label] = tab_report
 
 
 def create_tab(round_report: dict[str, Any], session_id: str, url: str, label: str) -> str:
-    result = run_command(
+    result = run_probe_command(
         ["python3", str(SESSION_HELPER), "new-tab", "--session", session_id, "--url", url, "--json"],
         timeout=45.0,
     )
@@ -261,7 +261,7 @@ def create_tab(round_report: dict[str, Any], session_id: str, url: str, label: s
 
 
 def close_tab(round_report: dict[str, Any], session_id: str, tab_id: str, label: str) -> None:
-    result = run_command(
+    result = run_probe_command(
         ["python3", str(SESSION_HELPER), "close-tab", "--session", session_id, "--tab", tab_id, "--json"],
         timeout=20.0,
     )
@@ -270,7 +270,7 @@ def close_tab(round_report: dict[str, Any], session_id: str, tab_id: str, label:
 
 
 def close_session(round_report: dict[str, Any], session_id: str) -> None:
-    result = run_command(
+    result = run_probe_command(
         ["actionbook", "browser", "close", "--session", session_id, "--json"],
         timeout=20.0,
     )

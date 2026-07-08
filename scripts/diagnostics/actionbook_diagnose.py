@@ -40,7 +40,7 @@ def parse_json_output(output: str) -> Any:
         return text
 
 
-def run_command(args: list[str], *, shell: bool = False, timeout: float = 30.0) -> dict[str, Any]:
+def run_probe_command(args: list[str], *, shell: bool = False, timeout: float = 30.0) -> dict[str, Any]:
     started = time.time()
     if shell:
         command_text = " ".join(shlex.quote(part) for part in args)
@@ -150,17 +150,17 @@ def summarize_batch(reports: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def poll_session(session_id: str, delay_secs: float) -> dict[str, Any]:
-    extension = run_command(["actionbook", "extension", "status", "--json"], timeout=15.0)
-    status_direct = run_command(
+    extension = run_probe_command(["actionbook", "extension", "status", "--json"], timeout=15.0)
+    status_direct = run_probe_command(
         ["actionbook", "browser", "status", "--session", session_id, "--json"],
         timeout=15.0,
     )
-    status_shell = run_command(
+    status_shell = run_probe_command(
         ["actionbook", "browser", "status", "--session", session_id, "--json"],
         shell=True,
         timeout=15.0,
     )
-    list_tabs_direct = run_command(
+    list_tabs_direct = run_probe_command(
         ["actionbook", "browser", "list-tabs", "--session", session_id, "--json"],
         timeout=15.0,
     )
@@ -214,14 +214,14 @@ def run_diagnosis(*, session_prefix: str, url: str, delays: list[float], keep_se
         report["pre_start_extension"].append(
             build_probe_result(
                 "extension_status_pre_start",
-                run_command(["actionbook", "extension", "status", "--json"], timeout=15.0),
+                run_probe_command(["actionbook", "extension", "status", "--json"], timeout=15.0),
             )
         )
         time.sleep(1.0)
 
     report["start"] = build_probe_result(
         "browser_start",
-        run_command(
+        run_probe_command(
             [
                 "actionbook",
                 "browser",
@@ -248,7 +248,7 @@ def run_diagnosis(*, session_prefix: str, url: str, delays: list[float], keep_se
     if not keep_session:
         report["close"] = build_probe_result(
             "browser_close",
-            run_command(
+            run_probe_command(
                 ["actionbook", "browser", "close", "--session", session_id, "--json"],
                 timeout=15.0,
             ),

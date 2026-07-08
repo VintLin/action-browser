@@ -31,12 +31,12 @@ from typing import Any
 from scripts.actionbook_interrupts import install_interrupt_handlers
 from scripts.adapter_runtime import prepare_task_book
 from scripts.actionbook_session import ActionBookSession as ActionBook
+from scripts.script_common import DEFAULT_TAB, add_session_tab_args, log, unwrap_eval
 
 
 BILIBILI_HOME_URL = "https://www.bilibili.com"
 BILIBILI_API_URL = "https://api.bilibili.com"
 DEFAULT_SESSION = "bilibili-task"
-DEFAULT_TAB = ""
 SKILL_DIR = Path(__file__).resolve().parents[2]
 ASSETS_DIR = SKILL_DIR / "assets" / "bilibili"
 
@@ -46,12 +46,6 @@ MIXIN_KEY_ENC_TAB = [
     37, 48, 7, 16, 24, 55, 40, 61, 26, 17, 0, 1, 60, 51, 30, 4,
     22, 25, 54, 21, 56, 59, 6, 63, 57, 62, 11, 36, 20, 34, 44, 52,
 ]
-
-
-def log(message: str) -> None:
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] {message}", flush=True)
-
-
 def normalize_text(value: Any) -> str:
     return re.sub(r"\s+", " ", str(value or "")).strip()
 
@@ -59,14 +53,6 @@ def normalize_text(value: Any) -> str:
 def strip_html(value: Any) -> str:
     text = re.sub(r"<[^>]+>", " ", str(value or ""))
     return normalize_text(text)
-
-
-def unwrap_eval(value: Any) -> Any:
-    if isinstance(value, dict) and "value" in value:
-        return value["value"]
-    return value
-
-
 def read_count(value: Any, default: int = 20, max_value: int = 1000) -> int:
     try:
         count = int(value)
@@ -739,8 +725,7 @@ def run_summary(args: argparse.Namespace) -> int:
 
 def add_io(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--output", default="", help="Output directory")
-    parser.add_argument("--session", default=DEFAULT_SESSION, help="ActionBook session id")
-    parser.add_argument("--tab", default=DEFAULT_TAB, help="ActionBook tab id")
+    add_session_tab_args(parser, default_session=DEFAULT_SESSION, tab_help="ActionBook tab id")
 
 
 def add_common(parser: argparse.ArgumentParser, default_count: int = 20) -> None:

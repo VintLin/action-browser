@@ -16,17 +16,21 @@ import signal
 import subprocess
 import sys
 import time
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+if __package__ in {None, ""}:
+    ROOT_DIR = Path(__file__).resolve().parents[1]
+    if str(ROOT_DIR) not in sys.path:
+        sys.path.insert(0, str(ROOT_DIR))
+
+from scripts.scheduler_lib import utc_now
+
 
 RUNS_DIR = Path.home() / ".action-browser" / "runs"
+RUNNING_STATUS = "running"
+STALE_STATUS = "stale"
 TERMINAL_STATUSES = {"exited", "failed", "stopped", "stale"}
-
-
-def utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
 def state_path(run_id: str, runs_dir: Path) -> Path:
@@ -67,17 +71,22 @@ def process_alive(pid: int) -> bool:
     return True
 
 
-def running_state(path: Path) -> dict[str, Any] | None:
-    state = load_state(path)
-    if not state:
+def refresh_state(path: Path, state: dict[str, Any] | None = None) -> dict[str, Any] | None:
+    current = state or load_state(path)
+    if not current:
         return None
-    pid = int(state.get("pid") or 0)
-    if str(state.get("status") or "") == "running" and process_alive(pid):
+    pid = int(current.get("pid") or 0)
+    if str(current.get("status") or "") == RUNNING_STATUS and not process_alive(pid):
+        current["status"] = STALE_STATUS
+        current["exit_code"] = None
+        write_state(path, current)
+    return current
+
+
+def running_state(path: Path) -> dict[str, Any] | None:
+    state = refresh_state(path)
+    if state and str(state.get("status") or "") == RUNNING_STATUS:
         return state
-    if str(state.get("status") or "") == "running":
-        state["status"] = "stale"
-        state["exit_code"] = None
-        write_state(path, state)
     return None
 
 
@@ -113,7 +122,7 @@ def terminate_group(pgid: int, grace_seconds: float) -> str:
     return "killed"
 
 
-def run_command(args: argparse.Namespace) -> int:
+def run_command_cli(args: argparse.Namespace) -> int:
     runs_dir = Path(args.runs_dir).expanduser()
     path = state_path(args.id, runs_dir)
     existing = running_state(path)
@@ -182,13 +191,11 @@ def stop_one(path: Path, grace_seconds: float) -> dict[str, Any]:
     state = load_state(path)
     if not state:
         return {"state_file": str(path), "status": "missing"}
+    state = refresh_state(path, state) or {"run_id": path.stem, "status": "missing"}
     status = str(state.get("status") or "")
     pid = int(state.get("pid") or 0)
     pgid = int(state.get("pgid") or pid)
     if status in TERMINAL_STATUSES or not process_alive(pid):
-        if status == "running":
-            state["status"] = "stale"
-            write_state(path, state)
         return {"run_id": state.get("run_id") or path.stem, "status": state.get("status"), "pid": pid, "pgid": pgid}
     result = terminate_group(pgid, grace_seconds)
     state["status"] = "stopped"
@@ -215,11 +222,8 @@ def list_command(args: argparse.Namespace) -> int:
     runs_dir = Path(args.runs_dir).expanduser()
     rows: list[dict[str, Any]] = []
     for path in sorted(runs_dir.glob("*.json")):
-        state = load_state(path) or {"run_id": path.stem, "status": "missing"}
-        if str(state.get("status") or "") == "running" and not process_alive(int(state.get("pid") or 0)):
-            state["status"] = "stale"
-            write_state(path, state)
-        if args.active and str(state.get("status") or "") != "running":
+        state = refresh_state(path) or {"run_id": path.stem, "status": "missing"}
+        if args.active and str(state.get("status") or "") != RUNNING_STATUS:
             continue
         rows.append(state)
     print(json.dumps(rows, ensure_ascii=False, indent=2))
@@ -228,13 +232,10 @@ def list_command(args: argparse.Namespace) -> int:
 
 def status_command(args: argparse.Namespace) -> int:
     path = state_path(args.id, Path(args.runs_dir).expanduser())
-    state = load_state(path)
+    state = refresh_state(path)
     if not state:
         print(json.dumps({"run_id": args.id, "status": "missing", "state_file": str(path)}, indent=2))
         return 1
-    if str(state.get("status") or "") == "running" and not process_alive(int(state.get("pid") or 0)):
-        state["status"] = "stale"
-        write_state(path, state)
     print(json.dumps(state, ensure_ascii=False, indent=2))
     return 0
 
@@ -250,7 +251,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--replace", action="store_true", help="Stop an existing active run with the same id first")
     run.add_argument("--grace", type=float, default=5.0, help="Seconds to wait after SIGTERM before SIGKILL")
     run.add_argument("command", nargs=argparse.REMAINDER, help="Command after --")
-    run.set_defaults(func=run_command)
+    run.set_defaults(func=run_command_cli)
 
     stop = sub.add_parser("stop", help="Stop one tracked run or all active runs")
     stop_group = stop.add_mutually_exclusive_group(required=True)

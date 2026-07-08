@@ -33,18 +33,14 @@ from typing import Any
 from scripts.actionbook_interrupts import install_interrupt_handlers
 from scripts.adapter_runtime import prepare_task_book, wait_for_page_settle
 from scripts.actionbook_session import ActionBookSession as ActionBook
+from scripts.script_common import DEFAULT_TAB, add_session_tab_args, log, unwrap_eval
 
 
 ZHIHU_HOME_URL = "https://www.zhihu.com"
 ZHIHU_ZHUANLAN_URL = "https://zhuanlan.zhihu.com"
 DEFAULT_SESSION = "zhihu-task"
-DEFAULT_TAB = ""
 SKILL_DIR = Path(__file__).resolve().parents[2]
 ASSETS_DIR = SKILL_DIR / "assets" / "zhihu"
-
-
-def log(message: str) -> None:
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] {message}", flush=True)
 
 
 def sanitize_name(value: str, fallback: str = "item", max_length: int = 80) -> str:
@@ -65,12 +61,6 @@ def strip_html(value: str) -> str:
     text = re.sub(r"[ \t]+\n", "\n", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
-
-
-def unwrap_eval(value: Any) -> Any:
-    if isinstance(value, dict) and "value" in value:
-        return value["value"]
-    return value
 
 
 def read_count(value: Any, default: int = 20, max_value: int = 1000) -> int:
@@ -817,8 +807,7 @@ def run_download(args: argparse.Namespace) -> int:
 def add_common(parser: argparse.ArgumentParser, default_count: int = 20) -> None:
     parser.add_argument("--count", type=int, default=default_count, help="Number of records")
     parser.add_argument("--output", default="", help="Output directory")
-    parser.add_argument("--session", default=DEFAULT_SESSION, help="ActionBook session id")
-    parser.add_argument("--tab", default=DEFAULT_TAB, help="ActionBook tab id")
+    add_session_tab_args(parser, default_session=DEFAULT_SESSION, tab_help="ActionBook tab id")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -880,8 +869,7 @@ def build_parser() -> argparse.ArgumentParser:
     download.add_argument("--url", required=True, help="Article URL or article:<id>")
     download.add_argument("--download-images", action="store_true", help="Download images locally")
     download.add_argument("--output", default="", help="Output directory")
-    download.add_argument("--session", default=DEFAULT_SESSION, help="ActionBook session id")
-    download.add_argument("--tab", default=DEFAULT_TAB, help="ActionBook tab id")
+    add_session_tab_args(download, default_session=DEFAULT_SESSION, tab_help="ActionBook tab id")
     download.set_defaults(func=run_download)
 
     return parser

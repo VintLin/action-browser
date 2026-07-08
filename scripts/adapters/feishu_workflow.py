@@ -35,10 +35,10 @@ import requests
 from scripts.actionbook_interrupts import install_interrupt_handlers
 from scripts.adapter_runtime import close_temporary_tab, prepare_task_book, wait_for_page_settle
 from scripts.actionbook_session import ActionBookSession as ActionBook
+from scripts.script_common import DEFAULT_TAB, add_session_tab_args, log, unwrap_eval
 
 
 DEFAULT_SESSION = "feishu-drive"
-DEFAULT_TAB = ""
 DEFAULT_TENANT = "https://www.feishu.cn"
 INVALID_CHARS = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
 EXPORT_CONFIGS = {
@@ -64,12 +64,6 @@ MENU_EXPORT_KIND_HINTS = {
 MENU_EXPORT_CONFIGS = {
     "mindnotes": {"menu_text": "FreeMind", "extension": "mm"},
 }
-
-
-def log(message: str) -> None:
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] {message}", flush=True)
-
-
 def write_json(path: Path, data: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -79,14 +73,6 @@ def append_jsonl(path: Path, record: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(record, ensure_ascii=False) + "\n")
-
-
-def unwrap_eval(value: Any) -> Any:
-    if isinstance(value, dict) and "value" in value:
-        return value["value"]
-    return value
-
-
 def tenant_origin(url: str) -> str:
     parsed = urlparse(url)
     if parsed.scheme and parsed.netloc:
@@ -853,8 +839,7 @@ def command_verify(args: argparse.Namespace) -> None:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Feishu Drive inventory, download, export, and verification workflow.")
-    parser.add_argument("--session", default=DEFAULT_SESSION)
-    parser.add_argument("--tab", default=DEFAULT_TAB)
+    add_session_tab_args(parser, default_session=DEFAULT_SESSION)
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     inventory = subparsers.add_parser("inventory", help="Collect recursive Drive folder inventory through the Feishu children-list API.")

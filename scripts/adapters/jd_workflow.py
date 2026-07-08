@@ -22,12 +22,12 @@ from urllib.parse import quote
 from scripts.actionbook_interrupts import install_interrupt_handlers
 from scripts.adapter_runtime import prepare_task_book, wait_for_page_settle
 from scripts.actionbook_session import ActionBookSession as ActionBook
+from scripts.script_common import DEFAULT_TAB, add_session_tab_args, log, unwrap_eval
 
 
 JD_HOME_URL = "https://www.jd.com"
 JD_SEARCH_URL = "https://search.jd.com/Search"
 DEFAULT_SESSION = "jd-task"
-DEFAULT_TAB = ""
 SEARCH_SETTLE_SECONDS = 5.0
 ITEM_SETTLE_SECONDS = 5.0
 CART_SETTLE_SECONDS = 5.0
@@ -38,12 +38,6 @@ ASSETS_DIR = SKILL_DIR / "assets" / "jd"
 
 class LoginRequiredError(RuntimeError):
     """Raised when JD requires login or security verification."""
-
-
-def log(message: str) -> None:
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] {message}", flush=True)
-
-
 def read_count(value: Any, default: int = 10, max_value: int = 30) -> int:
     try:
         count = int(value)
@@ -67,14 +61,6 @@ def normalize_numeric_id(value: Any, label: str, example: str) -> str:
     if re.fullmatch(r"\d+", raw):
         return raw
     raise argparse.ArgumentTypeError(f"{label} must include a numeric id, for example {example}")
-
-
-def unwrap_eval(value: Any) -> Any:
-    if isinstance(value, dict) and "value" in value:
-        return value["value"]
-    return value
-
-
 def api_eval(book: ActionBook, script: str, label: str, timeout: float = 45.0) -> Any:
     data = unwrap_eval(book.eval(script, timeout=timeout))
     if isinstance(data, dict) and data.get("error"):
@@ -206,8 +192,7 @@ def finish(records: list[dict[str, Any]], args: argparse.Namespace, area: str, t
 
 
 def add_common_view_args(parser: argparse.ArgumentParser, count_default: int) -> None:
-    parser.add_argument("--session", default=DEFAULT_SESSION)
-    parser.add_argument("--tab", default=DEFAULT_TAB)
+    add_session_tab_args(parser, default_session=DEFAULT_SESSION)
     parser.add_argument("--output", default="")
     parser.add_argument("--count", default=str(count_default))
 

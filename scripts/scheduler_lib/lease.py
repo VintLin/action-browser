@@ -1,12 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
 from scripts.scheduler_lib.contracts import build_lease_record
-
-
-def utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+from scripts.scheduler_lib.state import utc_now
 
 
 def build_lease(*, lease_id: str, session_id: str, tab_id: str, task_id: str) -> dict[str, str | int]:

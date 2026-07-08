@@ -22,12 +22,12 @@ from urllib.parse import quote
 from scripts.actionbook_interrupts import install_interrupt_handlers
 from scripts.adapter_runtime import prepare_task_book
 from scripts.actionbook_session import ActionBookSession as ActionBook
+from scripts.script_common import DEFAULT_TAB, add_session_tab_args, log, unwrap_eval
 
 
 TAOBAO_HOME_URL = "https://www.taobao.com"
 TAOBAO_SEARCH_URL = "https://s.taobao.com/search"
 DEFAULT_SESSION = "taobao-task"
-DEFAULT_TAB = ""
 HOME_WARMUP_SECONDS = 2.0
 SEARCH_SETTLE_SECONDS = 8.0
 PAGE_SETTLE_SECONDS = 6.0
@@ -39,12 +39,6 @@ CONTRACT_DIRNAME = "contract"
 
 class LoginRequiredError(RuntimeError):
     """Raised when Taobao requires login or security verification."""
-
-
-def log(message: str) -> None:
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] {message}", flush=True)
-
-
 def read_count(value: Any, default: int = 10, max_value: int = 40) -> int:
     try:
         count = int(value)
@@ -68,14 +62,6 @@ def normalize_numeric_id(value: Any, label: str, example: str) -> str:
     if re.fullmatch(r"\d+", raw):
         return raw
     raise argparse.ArgumentTypeError(f"{label} must include a numeric id, for example {example}")
-
-
-def unwrap_eval(value: Any) -> Any:
-    if isinstance(value, dict) and "value" in value:
-        return value["value"]
-    return value
-
-
 def api_eval(book: ActionBook, script: str, label: str, timeout: float = 45.0) -> Any:
     last_error = ""
     for attempt in range(3):
@@ -290,8 +276,7 @@ def finish(records: list[dict[str, Any]], args: argparse.Namespace, area: str, t
 
 def add_common_view_args(parser: argparse.ArgumentParser, count_default: int) -> None:
     parser.add_argument("--task-id", default="")
-    parser.add_argument("--session", default=DEFAULT_SESSION)
-    parser.add_argument("--tab", default=DEFAULT_TAB)
+    add_session_tab_args(parser, default_session=DEFAULT_SESSION)
     parser.add_argument("--output", default="")
     parser.add_argument("--count", default=str(count_default))
 

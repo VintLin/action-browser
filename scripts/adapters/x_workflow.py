@@ -33,13 +33,13 @@ from typing import Any
 from scripts.actionbook_interrupts import install_interrupt_handlers
 from scripts.adapter_runtime import close_temporary_tab, prepare_task_book as prepare_runtime_task_book
 from scripts.actionbook_session import ActionBookSession as ActionBook
+from scripts.script_common import DEFAULT_TAB, add_session_tab_args, log, unwrap_eval
 
 
 HOME_URL = "https://x.com/home"
 BOOKMARKS_URL = "https://x.com/i/bookmarks"
 SEARCH_URL = "https://x.com/search"
 DEFAULT_SESSION = "x-task"
-DEFAULT_TAB = ""
 SKILL_DIR = Path(__file__).resolve().parents[2]
 ASSETS_DIR = SKILL_DIR / "assets" / "x"
 
@@ -68,12 +68,6 @@ class TweetPayload:
     is_bookmarked: bool
     raw_text_lines: list[str]
     extraction_warnings: list[str]
-
-
-def log(message: str) -> None:
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] {message}", flush=True)
-
-
 def sanitize_name(value: str, fallback: str = "item", max_length: int = 64) -> str:
     cleaned = re.sub(r"[^\w\u4e00-\u9fff.-]+", "", value or "").strip("._-")
     return (cleaned or fallback)[:max_length]
@@ -97,14 +91,6 @@ def default_action_output_dir(source: str, action: str) -> Path:
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     action_dir = "downloads" if action == "download" else "views"
     return ASSETS_DIR / action_dir / source / stamp
-
-
-def unwrap_eval(value: Any) -> Any:
-    if isinstance(value, dict) and "value" in value:
-        return value["value"]
-    return value
-
-
 EXTRACT_VISIBLE_TWEETS_JS = r"""
 (() => {
   const normalize = value => String(value || '')
@@ -1439,8 +1425,7 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="area", required=True)
 
     def add_common(target: argparse.ArgumentParser, default_count: int = 30, default_max_scrolls: int = 18) -> None:
-        target.add_argument("--session", default=DEFAULT_SESSION, help="ActionBook session id")
-        target.add_argument("--tab", default=DEFAULT_TAB, help="ActionBook tab id; auto-detect when omitted")
+        add_session_tab_args(target, default_session=DEFAULT_SESSION)
         target.add_argument("--count", type=int, default=default_count, help="Number of posts to process")
         target.add_argument("--max-scrolls", type=int, default=default_max_scrolls, help="Maximum scroll rounds")
         target.add_argument("--output-dir", help="Output directory")

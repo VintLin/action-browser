@@ -11,7 +11,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -22,10 +21,10 @@ from typing import Any
 
 from actionbook_interrupts import install_interrupt_handlers
 from actionbook_session import ActionBookSession as ActionBook
+from script_common import DEFAULT_TAB, add_session_tab_args, log, run_command
 
 
 DEFAULT_SESSION = "markdown-task"
-DEFAULT_TAB = ""
 SKILL_DIR = Path(__file__).resolve().parent.parent
 ASSETS_DIR = SKILL_DIR / "assets" / "markdown"
 DEFAULT_NODE_PREFIX = Path(
@@ -185,27 +184,6 @@ const result = {
 
 process.stdout.write(JSON.stringify(result));
 """
-
-
-def log(message: str) -> None:
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] {message}", flush=True)
-
-
-def run_command(command: list[str], timeout: float = 60.0, check: bool = True, cwd: Path | None = None) -> str:
-    result = subprocess.run(command, capture_output=True, text=True, timeout=timeout, cwd=str(cwd) if cwd else None)
-    output = ((result.stdout or "") + (result.stderr or "")).strip()
-    if check and result.returncode != 0:
-        raise RuntimeError(output or f"command failed: {' '.join(command)}")
-    return output
-
-
-def safe_slug(value: str, fallback: str = "page", max_len: int = 72) -> str:
-    value = re.sub(r"[/\\?%*:|\"<>]+", "-", value or "")
-    value = re.sub(r"\s+", " ", value).strip().strip(".")
-    value = value[:max_len].strip()
-    return value or fallback
-
-
 def default_output_dir() -> Path:
     return ASSETS_DIR / "pages" / datetime.now().strftime("%Y%m%d-%H%M%S")
 
@@ -271,7 +249,7 @@ def capture_current_page(session: str, tab: str) -> dict[str, Any]:
 
 
 def capture_url(url: str, session: str, tab: str = "") -> dict[str, Any]:
-    book = ActionBook(session, tab, allow_adopt=True)
+    book = ActionBook(session, tab, allow_adopt=False)
     book.start(url)
     book.goto(url)
     time.sleep(1.0)
@@ -431,8 +409,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     capture_parser = subparsers.add_parser("capture", help="Open a URL with ActionBook and extract it to Markdown")
     capture_parser.add_argument("--url", required=True)
-    capture_parser.add_argument("--session", default=DEFAULT_SESSION)
-    capture_parser.add_argument("--tab", default=DEFAULT_TAB)
+    add_session_tab_args(capture_parser, default_session=DEFAULT_SESSION)
     add_common_output_args(capture_parser)
 
     current_parser = subparsers.add_parser("current", help="Extract the current ActionBook tab to Markdown")

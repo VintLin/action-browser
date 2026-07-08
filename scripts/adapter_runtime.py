@@ -2,15 +2,9 @@ from __future__ import annotations
 
 import argparse
 import time
-from typing import Any
 
 from scripts.actionbook_session import ActionBookSession
-
-
-def unwrap_eval(value: Any) -> Any:
-    if isinstance(value, dict) and "value" in value:
-        return value["value"]
-    return value
+from scripts.script_common import unwrap_eval
 
 
 def prepare_task_book(
@@ -18,7 +12,8 @@ def prepare_task_book(
     url: str,
     action_book_cls: type[ActionBookSession] = ActionBookSession,
 ) -> ActionBookSession:
-    book = action_book_cls(args.session, args.tab, allow_adopt=True)
+    allow_adopt = getattr(args, "adopt_running_session", False)
+    book = action_book_cls(args.session, args.tab, allow_adopt=allow_adopt)
     if args.tab:
         book.use_tab(args.tab)
         return book

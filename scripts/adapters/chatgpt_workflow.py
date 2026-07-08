@@ -31,11 +31,11 @@ from typing import Any
 from scripts.actionbook_interrupts import install_interrupt_handlers
 from scripts.adapter_runtime import prepare_task_book, wait_for_page_settle
 from scripts.actionbook_session import ActionBookSession as ActionBook
+from scripts.script_common import DEFAULT_TAB, add_session_tab_args, log, unwrap_eval
 
 
 CHATGPT_URL = "https://chatgpt.com/"
 DEFAULT_SESSION = "chatgpt-qx"
-DEFAULT_TAB = ""
 DEFAULT_PREFIXES = ""
 DEFAULT_TITLE_PATTERN = r"^Q\d+[：:]"
 SKILL_DIR = Path(__file__).resolve().parents[2]
@@ -47,12 +47,6 @@ class ChatGptTask:
     title: str
     question: str
     output_name: str = ""
-
-
-def log(message: str) -> None:
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] {message}", flush=True)
-
-
 def sanitize_name(value: str, fallback: str = "conversation", max_length: int = 90) -> str:
     cleaned = re.sub(r"[^\w\u4e00-\u9fff.-]+", "-", value or "").strip("._-")
     cleaned = re.sub(r"-{2,}", "-", cleaned)
@@ -64,14 +58,6 @@ def normalize_text(value: Any) -> str:
     text = re.sub(r"[ \t]+\n", "\n", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
-
-
-def unwrap_eval(value: Any) -> Any:
-    if isinstance(value, dict) and "value" in value:
-        return value["value"]
-    return value
-
-
 def api_eval(book: ActionBook, script: str, label: str, timeout: float = 45.0) -> Any:
     value = unwrap_eval(book.eval(script, timeout=timeout))
     if isinstance(value, dict) and value.get("error"):
@@ -1208,7 +1194,6 @@ def run_list(args: argparse.Namespace) -> int:
 
 
 def run_export(args: argparse.Namespace) -> int:
-    install_interrupt_handlers()
     output_dir = Path(args.output_dir).expanduser() if args.output_dir else default_output_dir()
     book = start_book(args)
     ensure_chatgpt_ready(book)
@@ -1282,7 +1267,6 @@ def run_export(args: argparse.Namespace) -> int:
 
 
 def run_ask(args: argparse.Namespace) -> int:
-    install_interrupt_handlers()
     task = parse_task_record({"title": args.title, "question": args.question}, "ask")
     output_dir = Path(args.output_dir).expanduser() if args.output_dir else default_run_output_dir()
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -1318,7 +1302,6 @@ def run_ask(args: argparse.Namespace) -> int:
 
 
 def run_batch_ask(args: argparse.Namespace) -> int:
-    install_interrupt_handlers()
     tasks = load_tasks_file(Path(args.tasks_file))
     output_dir = Path(args.output_dir).expanduser() if args.output_dir else default_run_output_dir()
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -1435,8 +1418,7 @@ def positive_int(value: str) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Submit ChatGPT questions or export conversations.")
-    parser.add_argument("--session", default=DEFAULT_SESSION, help="ActionBook session id")
-    parser.add_argument("--tab", default=DEFAULT_TAB, help="ActionBook tab id; auto-detect when omitted")
+    add_session_tab_args(parser, default_session=DEFAULT_SESSION)
     parser.add_argument("--prefix", default=DEFAULT_PREFIXES, help="Comma-separated title prefixes")
     parser.add_argument("--title-pattern", default=DEFAULT_TITLE_PATTERN, help="Regex for matching conversation titles")
     parser.add_argument("--limit", type=positive_int, default=20, help="Maximum conversations to export")
@@ -1507,6 +1489,7 @@ def main(argv: list[str] | None = None) -> int:
         args.limit = args.limit_override
     if getattr(args, "max_scrolls_override", 0):
         args.max_scrolls = args.max_scrolls_override
+    install_interrupt_handlers()
     try:
         return int(args.func(args))
     except KeyboardInterrupt:

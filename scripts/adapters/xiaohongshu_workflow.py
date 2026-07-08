@@ -35,12 +35,12 @@ from typing import Any
 from scripts.actionbook_interrupts import check_interrupt, install_interrupt_handlers, is_interrupted
 from scripts.adapter_runtime import prepare_task_book
 from scripts.actionbook_session import ActionBookSession as ActionBook
+from scripts.script_common import DEFAULT_TAB, add_session_tab_args, log
 
 
 XHS_HOME = "https://www.xiaohongshu.com"
 XHS_EXPLORE = "https://www.xiaohongshu.com/explore"
 DEFAULT_SESSION = "xhs-task"
-DEFAULT_TAB = ""
 SKILL_DIR = Path(__file__).resolve().parents[2]
 ASSETS_DIR = SKILL_DIR / "assets" / "xiaohongshu"
 AI_SEARCH_SOURCE = "web_explore_feed"
@@ -122,12 +122,6 @@ class ProfileCard:
     left: float
     viewport_top: float
     key: str
-
-
-def log(message: str) -> None:
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] {message}", flush=True)
-
-
 def sleep_between(low: float = 0.8, high: float = 1.8) -> None:
     check_interrupt()
     time.sleep(random.uniform(low, high))
@@ -2439,8 +2433,7 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="area", required=True)
 
     def add_common(target: argparse.ArgumentParser) -> None:
-        target.add_argument("--session", default=DEFAULT_SESSION, help="ActionBook session id")
-        target.add_argument("--tab", default=DEFAULT_TAB, help="ActionBook tab id; auto-detect when omitted")
+        add_session_tab_args(target, default_session=DEFAULT_SESSION)
         target.add_argument("--output-dir", help="Output directory")
         target.add_argument(
             "--folder-template",

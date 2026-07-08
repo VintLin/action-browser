@@ -30,34 +30,20 @@ from typing import Any
 from scripts.actionbook_interrupts import install_interrupt_handlers
 from scripts.adapter_runtime import prepare_task_book, wait_for_page_settle
 from scripts.actionbook_session import ActionBookSession as ActionBook
+from scripts.script_common import DEFAULT_TAB, add_session_tab_args, log, unwrap_eval
 
 
 DOUYIN_CREATOR_URL = "https://creator.douyin.com"
 DOUYIN_HOME_URL = "https://www.douyin.com"
 DEFAULT_SESSION = "douyin-task"
-DEFAULT_TAB = ""
 SKILL_DIR = Path(__file__).resolve().parents[2]
 ASSETS_DIR = SKILL_DIR / "assets" / "douyin"
 
 
 class LoginRequiredError(RuntimeError):
     """Raised when Douyin asks for login, CAPTCHA, or security verification."""
-
-
-def log(message: str) -> None:
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] {message}", flush=True)
-
-
 def normalize_text(value: Any) -> str:
     return re.sub(r"\s+", " ", str(value or "")).strip()
-
-
-def unwrap_eval(value: Any) -> Any:
-    if isinstance(value, dict) and "value" in value:
-        return value["value"]
-    return value
-
-
 def read_count(value: Any, default: int = 20, max_value: int = 100) -> int:
     try:
         count = int(value)
@@ -553,8 +539,7 @@ def run_user_videos(args: argparse.Namespace) -> int:
 def add_common(parser: argparse.ArgumentParser, default_count: int = 20) -> None:
     parser.add_argument("--count", type=int, default=default_count, help="Number of records")
     parser.add_argument("--output", default="", help="Output directory")
-    parser.add_argument("--session", default=DEFAULT_SESSION, help="ActionBook session id")
-    parser.add_argument("--tab", default=DEFAULT_TAB, help="ActionBook tab id")
+    add_session_tab_args(parser, default_session=DEFAULT_SESSION, tab_help="ActionBook tab id")
 
 
 def build_parser() -> argparse.ArgumentParser:

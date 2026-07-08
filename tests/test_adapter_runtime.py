@@ -43,7 +43,7 @@ class FakeBook:
 
 
 def test_prepare_task_book_uses_explicit_tab_without_adopt() -> None:
-    args = Namespace(session="s1", tab="leased-tab")
+    args = Namespace(session="s1", tab="leased-tab", adopt_running_session=False)
 
     book = prepare_task_book(args, "https://example.com", FakeBook)
 
@@ -52,12 +52,29 @@ def test_prepare_task_book_uses_explicit_tab_without_adopt() -> None:
 
 
 def test_prepare_task_book_opens_fresh_tab_without_adopt_when_missing_tab() -> None:
-    args = Namespace(session="s1", tab="")
+    args = Namespace(session="s1", tab="", adopt_running_session=False)
 
     book = prepare_task_book(args, "https://example.com", FakeBook)
 
     assert book.events == [("start", "https://example.com|force=True|adopt=False")]
     assert args.tab == "fresh-tab"
+
+
+def test_prepare_task_book_adopts_when_flag_set() -> None:
+    args = Namespace(session="s1", tab="", adopt_running_session=True)
+
+    book = prepare_task_book(args, "https://example.com", FakeBook)
+
+    assert book.events == [("start", "https://example.com|force=True|adopt=True")]
+    assert book.allow_adopt is True
+
+
+def test_prepare_task_book_defaults_to_no_adopt_when_flag_missing() -> None:
+    args = Namespace(session="s1", tab="")
+
+    book = prepare_task_book(args, "https://example.com", FakeBook)
+
+    assert book.allow_adopt is False
 
 
 def test_wait_for_page_settle_polls_until_state_stabilizes() -> None:

@@ -30,11 +30,11 @@ from typing import Any
 from scripts.actionbook_interrupts import install_interrupt_handlers
 from scripts.adapter_runtime import prepare_task_book, wait_for_page_settle
 from scripts.actionbook_session import ActionBookSession as ActionBook
+from scripts.script_common import DEFAULT_TAB, add_session_tab_args, log, unwrap_eval
 
 
 ZHIPIN_HOME_URL = "https://www.zhipin.com"
 DEFAULT_SESSION = "zhipin-task"
-DEFAULT_TAB = ""
 SKILL_DIR = Path(__file__).resolve().parents[2]
 ASSETS_DIR = SKILL_DIR / "assets" / "zhipin"
 CITY_NAMES = {
@@ -46,7 +46,6 @@ CITY_NAMES = {
     "101210100": "杭州",
     "101230100": "福州",
 }
-CITY_CODES = {name: code for code, name in CITY_NAMES.items()}
 IDENTITY_MISMATCH_CODE = 24
 TYPE_MAP = {
     1: "文本",
@@ -77,12 +76,6 @@ TARGET_TERMS = ["ai", "人工智能", "大模型", "llm", "agent", "智能体", 
 DEFAULT_EXCLUDE_TERMS = ["兼职", "实习", "实习生", "实习可转正", "应届", "应届生", "校招", "校园招聘", "在校", "在校生", "26届", "27届"]
 DEFAULT_TITLE_NOISE_TERMS = ["销售", "产品经理", "运营", "商务", "市场", "客服", "课程", "顾问", "招生", "主播", "讲师", "培训", "导演"]
 DEFAULT_MIN_DESCRIPTION_LENGTH = 50
-
-
-def log(message: str) -> None:
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] {message}", flush=True)
-
-
 def normalize_text(value: Any) -> str:
     text = str(value or "").translate(SALARY_FONT_MAP)
     return re.sub(r"\s+", " ", text).strip()
@@ -103,7 +96,7 @@ def build_jobs_url(args: argparse.Namespace, city_code: str, query: str) -> str:
     ):
         if value:
             params[key] = value
-    return f"{ZHIPIN_HOME_URL}/web/geek/jobs?{urllib.parse.urlencode(params)}"
+    return f"{ZHIPIN_HOME_URL}/web/geek/jobs?{urllib.parse.urlencode(params, quote_via=urllib.parse.quote)}"
 
 
 def slugify(value: str, fallback: str = "zhipin") -> str:
@@ -162,12 +155,6 @@ def write_summary_md(path: Path, title: str, jobs: list[dict[str, Any]], meta: d
         )
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
-
-
-def unwrap_eval(value: Any) -> Any:
-    if isinstance(value, dict) and "value" in value:
-        return value["value"]
-    return value
 
 
 def api_eval(book: ActionBook, script: str, label: str, timeout: float = 45.0) -> Any:
@@ -1333,8 +1320,7 @@ def write_records_outputs(
 
 
 def add_common_browser_args(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--session", default=DEFAULT_SESSION, help="ActionBook session id")
-    parser.add_argument("--tab", default=DEFAULT_TAB, help="ActionBook tab id")
+    add_session_tab_args(parser, default_session=DEFAULT_SESSION, tab_help="ActionBook tab id")
     parser.add_argument(
         "--adopt-running-session",
         action="store_true",

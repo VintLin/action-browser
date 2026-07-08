@@ -30,17 +30,13 @@ from typing import Any
 from scripts.actionbook_interrupts import install_interrupt_handlers
 from scripts.adapter_runtime import prepare_task_book, wait_for_page_settle
 from scripts.actionbook_session import ActionBookSession as ActionBook
+from scripts.script_common import DEFAULT_TAB, add_session_tab_args, log, unwrap_eval
 
 
 YOUTUBE_HOME_URL = "https://www.youtube.com"
 DEFAULT_SESSION = "youtube-task"
-DEFAULT_TAB = ""
 SKILL_DIR = Path(__file__).resolve().parents[2]
 ASSETS_DIR = SKILL_DIR / "assets" / "youtube"
-
-
-def log(message: str) -> None:
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] {message}", flush=True)
 
 
 def normalize_text(value: Any) -> str:
@@ -50,14 +46,6 @@ def normalize_text(value: Any) -> str:
 def sanitize_name(value: str, fallback: str = "item", max_length: int = 80) -> str:
     cleaned = re.sub(r"[^\w\u4e00-\u9fff.-]+", "", value or "").strip("._-")
     return (cleaned or fallback)[:max_length]
-
-
-def unwrap_eval(value: Any) -> Any:
-    if isinstance(value, dict) and "value" in value:
-        return value["value"]
-    return value
-
-
 def read_count(value: Any, default: int = 20, max_value: int = 1000) -> int:
     try:
         count = int(value)
@@ -959,8 +947,7 @@ def run_channel(args: argparse.Namespace) -> int:
 def add_common(parser: argparse.ArgumentParser, default_count: int = 20) -> None:
     parser.add_argument("--count", type=int, default=default_count, help="Number of records")
     parser.add_argument("--output", default="", help="Output directory")
-    parser.add_argument("--session", default=DEFAULT_SESSION, help="ActionBook session id")
-    parser.add_argument("--tab", default=DEFAULT_TAB, help="ActionBook tab id")
+    add_session_tab_args(parser, default_session=DEFAULT_SESSION, tab_help="ActionBook tab id")
 
 
 def build_parser() -> argparse.ArgumentParser:

@@ -5,8 +5,9 @@ Generic ActionBook extension-session bootstrap helper.
 
 With an explicit session id it reuses only that same session, opens a fresh tab
 in that session, and only falls back to creating that named session when reuse
-is not possible. Cross-session adoption is reserved for the default bootstrap
-session only.
+is not possible. Cross-session adoption is off by default; callers opt in by
+passing allow_adopt=True (the standalone CLI does this automatically for the
+default bootstrap session or when --adopt-running-session is set).
 """
 
 from __future__ import annotations
@@ -17,7 +18,6 @@ import random
 import subprocess
 import sys
 import time
-from datetime import datetime
 from typing import Any
 from urllib.parse import urlparse
 
@@ -26,29 +26,19 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - exercised when imported as scripts.actionbook_session in tests
     from scripts.diagnostics.actionbook_chrome_extension_state import chrome_root, inspect_profiles
 
+try:
+    from script_common import DEFAULT_TAB, add_session_tab_args, log, parse_json_output, run_command
+except ModuleNotFoundError:  # pragma: no cover - exercised when imported as scripts.actionbook_session in tests
+    from scripts.script_common import DEFAULT_TAB, add_session_tab_args, log, parse_json_output, run_command
+
 
 DEFAULT_SESSION = "task-1"
-DEFAULT_TAB = ""
 CHROME_APP_NAME = "Google Chrome"
 DEFAULT_ALLOW_VISIBLE_RECOVERY = False
 
 
-def log(message: str) -> None:
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] {message}", flush=True)
-
-
 def sleep_between(low: float = 0.8, high: float = 1.8) -> None:
     time.sleep(random.uniform(low, high))
-
-
-def run_command(args: list[str], timeout: float = 30.0, check: bool = True) -> str:
-    result = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
-    output = ((result.stdout or "") + (result.stderr or "")).strip()
-    if check and result.returncode != 0:
-        raise RuntimeError(output or f"command failed: {' '.join(args)}")
-    return output
-
-
 def is_chrome_running() -> bool:
     result = subprocess.run(
         ["pgrep", "-f", "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"],
@@ -175,12 +165,7 @@ def current_actionbook_extension_hint() -> str:
 
 
 def parse_actionbook_output(output: str) -> Any:
-    if not output:
-        return None
-    try:
-        envelope = json.loads(output)
-    except json.JSONDecodeError:
-        return output
+    envelope = parse_json_output(output)
     return unwrap_actionbook_envelope(envelope)
 
 
@@ -215,6 +200,7 @@ class ActionBookSession:
         ensure_chrome_app_running(allow_launch=self.allow_visible_recovery)
         self._check_extension(require_connected=False)
         last_error = ""
+        adopt_attempted = False
         for attempt in range(3):
             try:
                 if force_new_tab and self._session_exists():
@@ -222,19 +208,17 @@ class ActionBookSession:
                     if not new_tab:
                         raise RuntimeError(f"failed to open new tab: {url}")
                     self.tab = new_tab
-                    self._wait_for_stable_session(target_url=url)
-                    self._ensure_target_url(url)
+                    self._finalize_start(url)
                     return
                 self._recover_or_attach(url)
-                self._wait_for_stable_session(target_url=url)
-                self._ensure_target_url(url)
+                adopt_attempted = True
+                self._finalize_start(url)
                 return
             except Exception as exc:  # noqa: BLE001
                 last_error = str(exc)
                 if attempt < 2 and self._is_recoverable_start_error(last_error):
-                    if self.allow_adopt and self._adopt_running_session(url):
-                        self._wait_for_stable_session(target_url=url)
-                        self._ensure_target_url(url)
+                    if self.allow_adopt and not adopt_attempted and self._adopt_running_session(url):
+                        self._finalize_start(url)
                         return
                     if self._is_extension_connectivity_error(last_error):
                         log("ActionBook extension 冷启动未连上，短时轮询后重试")
@@ -248,6 +232,10 @@ class ActionBookSession:
                     continue
                 break
         raise RuntimeError(last_error or "failed to start ActionBook extension session")
+
+    def _finalize_start(self, url: str) -> None:
+        self._wait_for_stable_session(target_url=url)
+        self._ensure_target_url(url)
 
     def goto(self, url: str) -> None:
         self.browser("goto", url, timeout=45.0)
@@ -407,13 +395,7 @@ class ActionBookSession:
         raise RuntimeError(last_error or "failed to start ActionBook extension session")
 
     def _run_raw_command(self, command: list[str], timeout: float = 30.0) -> Any:
-        output = run_command(command, timeout=timeout, check=False)
-        if not output:
-            return None
-        try:
-            return json.loads(output)
-        except json.JSONDecodeError:
-            return output
+        return parse_json_output(run_command(command, timeout=timeout, check=False))
 
     def _run_browser_command(
         self,
@@ -494,18 +476,13 @@ class ActionBookSession:
         ordered_tab_ids.extend(
             str(tab.get("tab_id") or "").strip()
             for tab in tabs
-            if (
-                isinstance(tab, dict)
-                and str(tab.get("tab_id") or "").strip()
-                and (not target_origin or self._origin_key(str(tab.get("url") or "")) == target_origin)
+            if isinstance(tab, dict)
+            and str(tab.get("tab_id") or "").strip()
+            and (
+                not target_origin
+                or self._origin_key(str(tab.get("url") or "")) == target_origin
             )
         )
-        if not target_origin:
-            ordered_tab_ids.extend(
-                str(tab.get("tab_id") or "").strip()
-                for tab in tabs
-                if isinstance(tab, dict) and str(tab.get("tab_id") or "").strip()
-            )
         seen: set[str] = set()
         for tab_id in ordered_tab_ids:
             if not tab_id or tab_id in seen:
@@ -668,8 +645,7 @@ class ActionBookSession:
         current = self._normalize_url(current_url)
         if current == target:
             return
-        if not current or current.startswith("chrome://") or current != target:
-            self.goto(url)
+        self.goto(url)
 
     def _wait_for_extension_connection(self, timeout_secs: float = 12.0) -> None:
         ensure_chrome_window(timeout_secs=timeout_secs, allow_create=self.allow_visible_recovery)
@@ -759,8 +735,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     ensure = subparsers.add_parser("ensure", help="Ensure a usable session and tab")
     ensure.set_defaults(command="ensure")
-    ensure.add_argument("--session", default=DEFAULT_SESSION, help="Preferred ActionBook session id")
-    ensure.add_argument("--tab", default=DEFAULT_TAB, help="Preferred ActionBook tab id; auto-detect when omitted")
+    add_session_tab_args(
+        ensure,
+        default_session=DEFAULT_SESSION,
+        session_help="Preferred ActionBook session id",
+        tab_help="Preferred ActionBook tab id; auto-detect when omitted",
+    )
     ensure.add_argument("--url", default="about:blank", help="Target URL to open or attach to")
     ensure.add_argument("--force-new-tab", action="store_true", help="Always open a new tab in an existing session")
     ensure.add_argument(
@@ -781,13 +761,21 @@ def build_parser() -> argparse.ArgumentParser:
     ensure.add_argument("--json", action="store_true", help="Print final session state as JSON")
 
     list_tabs = subparsers.add_parser("list-tabs", help="List accessible tabs in a session")
-    list_tabs.add_argument("--session", default=DEFAULT_SESSION, help="ActionBook session id")
-    list_tabs.add_argument("--tab", default=DEFAULT_TAB, help="Current tab id to mark as active")
+    add_session_tab_args(
+        list_tabs,
+        default_session=DEFAULT_SESSION,
+        session_help="ActionBook session id",
+        tab_help="Current tab id to mark as active",
+    )
     list_tabs.add_argument("--json", action="store_true", help="Print tabs as JSON")
 
     new_tab = subparsers.add_parser("new-tab", help="Open a new tab in a session")
-    new_tab.add_argument("--session", default=DEFAULT_SESSION, help="ActionBook session id")
-    new_tab.add_argument("--tab", default=DEFAULT_TAB, help="Current tab id")
+    add_session_tab_args(
+        new_tab,
+        default_session=DEFAULT_SESSION,
+        session_help="ActionBook session id",
+        tab_help="Current tab id",
+    )
     new_tab.add_argument("--url", required=True, help="Target URL for the new tab")
     new_tab.add_argument("--switch", action="store_true", help="Update the current tab pointer to the new tab")
     new_tab.add_argument(
