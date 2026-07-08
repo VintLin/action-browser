@@ -271,7 +271,7 @@ def capture_current_page(session: str, tab: str) -> dict[str, Any]:
 
 
 def capture_url(url: str, session: str, tab: str = "") -> dict[str, Any]:
-    book = ActionBook(session, tab, allow_adopt=False)
+    book = ActionBook(session, tab, allow_adopt=True)
     book.start(url)
     book.goto(url)
     time.sleep(1.0)

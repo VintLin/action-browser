@@ -88,6 +88,24 @@ def normalize_text(value: Any) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+def build_jobs_url(args: argparse.Namespace, city_code: str, query: str) -> str:
+    params = {
+        "city": city_code,
+        "query": query,
+    }
+    for key, value in (
+        ("jobType", getattr(args, "job_type", "")),
+        ("salary", getattr(args, "salary", "")),
+        ("experience", getattr(args, "experience", "")),
+        ("degree", getattr(args, "degree", "")),
+        ("industry", getattr(args, "industry", "")),
+        ("scale", getattr(args, "scale", "")),
+    ):
+        if value:
+            params[key] = value
+    return f"{ZHIPIN_HOME_URL}/web/geek/jobs?{urllib.parse.urlencode(params)}"
+
+
 def slugify(value: str, fallback: str = "zhipin") -> str:
     cleaned = re.sub(r"[^\w\u4e00-\u9fff.-]+", "-", value or "").strip("-._")
     return (cleaned or fallback)[:80]
@@ -724,7 +742,7 @@ def collect_query_jobs(
     page_url: str = "",
     existing_jobs: list[dict[str, Any]] | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], int, str]:
-    source_url = page_url or f"{ZHIPIN_HOME_URL}/web/geek/jobs?city={city_code}&query={urllib.parse.quote(query)}"
+    source_url = page_url or build_jobs_url(args, city_code, query)
     book.goto(source_url)
     wait_for_page_settle(book)
     time.sleep(random.uniform(args.query_delay_min, args.query_delay_max))
@@ -945,7 +963,7 @@ def command_detail(args: argparse.Namespace) -> int:
 
 def command_search(args: argparse.Namespace) -> int:
     city_name = CITY_NAMES.get(args.city_code, args.city_code)
-    book = start_book(args, f"{ZHIPIN_HOME_URL}/web/geek/jobs?city={args.city_code}&query={urllib.parse.quote(args.query)}")
+    book = start_book(args, build_jobs_url(args, args.city_code, args.query))
     output_dir = Path(args.output_dir) if args.output_dir else default_output_dir("views", f"search-{slugify(args.query)}-{args.city_code}")
     output_dir.mkdir(parents=True, exist_ok=True)
     filter_config = filter_config_from_args(args)
@@ -1317,6 +1335,11 @@ def write_records_outputs(
 def add_common_browser_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--session", default=DEFAULT_SESSION, help="ActionBook session id")
     parser.add_argument("--tab", default=DEFAULT_TAB, help="ActionBook tab id")
+    parser.add_argument(
+        "--adopt-running-session",
+        action="store_true",
+        help="Reuse another healthy extension session when the named session cannot be created",
+    )
     parser.add_argument("--output-dir", default="", help="Output directory override")
     parser.add_argument("--delay-min", type=float, default=1.2, help="Minimum delay between pages/scrolls")
     parser.add_argument("--delay-max", type=float, default=2.8, help="Maximum delay between pages/scrolls")

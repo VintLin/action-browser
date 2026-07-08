@@ -18,7 +18,7 @@ def prepare_task_book(
     url: str,
     action_book_cls: type[ActionBookSession] = ActionBookSession,
 ) -> ActionBookSession:
-    book = action_book_cls(args.session, args.tab, allow_adopt=False)
+    book = action_book_cls(args.session, args.tab, allow_adopt=True)
     if args.tab:
         book.use_tab(args.tab)
         return book

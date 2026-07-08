@@ -232,6 +232,10 @@ class ActionBookSession:
             except Exception as exc:  # noqa: BLE001
                 last_error = str(exc)
                 if attempt < 2 and self._is_recoverable_start_error(last_error):
+                    if self.allow_adopt and self._adopt_running_session(url):
+                        self._wait_for_stable_session(target_url=url)
+                        self._ensure_target_url(url)
+                        return
                     if self._is_extension_connectivity_error(last_error):
                         log("ActionBook extension 冷启动未连上，短时轮询后重试")
                         try:
