@@ -192,3 +192,53 @@ def test_reconcile_marks_blocked_when_run_missing_and_no_summary(tmp_path: Path)
 
     assert result["status"] == "blocked"
     assert result["reason_code"] == "run_missing"
+
+
+def test_reconcile_uses_progress_waiting_user_without_summary(tmp_path: Path) -> None:
+    task = {"task_id": "t1", "status": "running"}
+    progress_path = write_summary(
+        tmp_path / "progress.json",
+        {
+            "status": "waiting_user",
+            "reason_code": "needs_login",
+        },
+    )
+
+    result = reconcile_task_state(
+        task,
+        run_state=None,
+        tab_alive=False,
+        summary_path=tmp_path / "summary.json",
+        progress_path=progress_path,
+    )
+
+    assert result["status"] == "waiting_user"
+    assert result["reason_code"] == "needs_login"
+
+
+def test_reconcile_marks_blocked_when_summary_is_invalid(tmp_path: Path) -> None:
+    task = {"task_id": "t1", "status": "running"}
+    summary_path = tmp_path / "summary.json"
+    summary_path.write_text("{not-json}\n", encoding="utf-8")
+
+    result = reconcile_task_state(task, run_state=None, tab_alive=False, summary_path=summary_path)
+
+    assert result["status"] == "blocked"
+    assert result["reason_code"] == "summary_invalid"
+
+
+def test_reconcile_marks_blocked_when_progress_exists_but_summary_missing(tmp_path: Path) -> None:
+    task = {"task_id": "t1", "status": "running"}
+    progress_path = write_summary(tmp_path / "progress.json", {"status": "running"})
+
+    result = reconcile_task_state(
+        task,
+        run_state=None,
+        tab_alive=False,
+        summary_path=tmp_path / "summary.json",
+        progress_path=progress_path,
+        output_dir=tmp_path,
+    )
+
+    assert result["status"] == "blocked"
+    assert result["reason_code"] == "summary_missing"

@@ -81,3 +81,22 @@ def test_create_task_returns_persisted_task_record(tmp_path: Path, monkeypatch: 
     assert task["status"] == persisted["status"]
     assert task["stage"] == persisted["stage"]
     assert task["updated_at"] == persisted["updated_at"]
+
+
+def test_save_task_record_updates_snapshot_and_appends_event(tmp_path: Path) -> None:
+    store = SchedulerStore(tmp_path)
+    task = store.create_task(site="taobao", intent="search", payload={"query": "儿童童书"})
+    task["status"] = "completed"
+    task["stage"] = None
+    task["result_quality"] = "partial"
+
+    persisted = store.save_task_record(task, event_type="task_reconciled")
+
+    snapshot = store.load_snapshot()
+    lines = (tmp_path / "events.jsonl").read_text(encoding="utf-8").strip().splitlines()
+    event = json.loads(lines[-1])
+
+    assert persisted["status"] == "completed"
+    assert snapshot["tasks"][task["task_id"]]["status"] == "completed"
+    assert event["event_type"] == "task_reconciled"
+    assert event["task_id"] == task["task_id"]

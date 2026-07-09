@@ -100,8 +100,48 @@ class SchedulerStore:
         prefix = task_id_prefix(site, intent, payload)
         while True:
             task_id = f"{prefix}_{uuid4().hex[:10]}"
-            if not (self.tasks_dir / f"{task_id}.json").exists():
+            if not self.task_path(task_id).exists():
                 return task_id
+
+    def task_path(self, task_id: str) -> Path:
+        return self.tasks_dir / f"{task_id}.json"
+
+    def has_task_record(self, task_id: str) -> bool:
+        return self.task_path(task_id).exists()
+
+    def load_task_record(self, task_id: str) -> dict[str, Any]:
+        return json.loads(self.task_path(task_id).read_text(encoding="utf-8"))
+
+    def list_task_records(self) -> list[dict[str, Any]]:
+        records: list[dict[str, Any]] = []
+        for path in sorted(self.tasks_dir.glob("*.json")):
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(payload, dict):
+                records.append(payload)
+        return records
+
+    def save_task_record(self, task: dict[str, Any], *, event_type: str) -> dict[str, Any]:
+        task_id = str(task["task_id"])
+        with self.locked():
+            updated_at = utc_now()
+            persisted = self._write_json(self.task_path(task_id), task, updated_at=updated_at)
+            snapshot = self.load_snapshot()
+            snapshot["tasks"][task_id] = build_task_snapshot(persisted)
+            self._append_event(
+                {
+                    "event_type": event_type,
+                    "task_id": task_id,
+                    "status": persisted.get("status"),
+                    "stage": persisted.get("stage"),
+                    "reason_code": persisted.get("reason_code"),
+                    "result_quality": persisted.get("result_quality"),
+                    "run_id": persisted.get("run_id"),
+                    "lease_id": persisted.get("lease_id"),
+                    "at": updated_at,
+                }
+            )
+            self._write_json(self.snapshot_path, snapshot, updated_at=updated_at)
+        return persisted
 
     def create_task(self, *, site: str, intent: str, payload: dict[str, Any]) -> dict[str, Any]:
         with self.locked():
@@ -117,6 +157,6 @@ class SchedulerStore:
             snapshot = self.load_snapshot()
             snapshot["tasks"][task_id] = build_task_snapshot(task)
             self._append_event(build_task_created_event(task=task, at=utc_now()))
-            task = self._write_json(self.tasks_dir / f"{task_id}.json", task, updated_at=task_updated_at)
+            task = self._write_json(self.task_path(task_id), task, updated_at=task_updated_at)
             self._write_json(self.snapshot_path, snapshot)
         return task

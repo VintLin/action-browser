@@ -118,8 +118,8 @@ def test_stop_delegates_to_actionbook_run(tmp_path: Path, monkeypatch) -> None:
         calls.append(args)
         return 0
 
-    monkeypatch.setattr(scheduler, "call_actionbook_run", fake_run)
-    monkeypatch.setattr(scheduler, "has_tracked_run", lambda run_id: True)
+    monkeypatch.setattr(scheduler.actionbook_run, "main", fake_run)
+    monkeypatch.setattr(scheduler, "has_active_run", lambda run_id: True)
     scheduler.main(["submit", "--site", "taobao", "--intent", "search", "--query", "儿童童书"])
     task_id = next(iter(json.loads((tmp_path / "state.json").read_text(encoding="utf-8"))["tasks"].keys()))
 
@@ -136,8 +136,8 @@ def test_stop_prefers_persisted_run_id_over_task_id(tmp_path: Path, monkeypatch)
         calls.append(args)
         return 0
 
-    monkeypatch.setattr(scheduler, "call_actionbook_run", fake_run)
-    monkeypatch.setattr(scheduler, "has_tracked_run", lambda run_id: True)
+    monkeypatch.setattr(scheduler.actionbook_run, "main", fake_run)
+    monkeypatch.setattr(scheduler, "has_active_run", lambda run_id: True)
     scheduler.main(["submit", "--site", "taobao", "--intent", "search", "--query", "儿童童书"])
     task_id = next(iter(json.loads((tmp_path / "state.json").read_text(encoding="utf-8"))["tasks"].keys()))
     task_path = tmp_path / "tasks" / f"{task_id}.json"
@@ -155,8 +155,8 @@ def test_stop_returns_controlled_error_when_run_is_not_tracked(tmp_path: Path, m
     def fail_if_called(_args: list[str]) -> int:
         raise AssertionError("delegated stop should not be called when no tracked run exists")
 
-    monkeypatch.setattr(scheduler, "call_actionbook_run", fail_if_called)
-    monkeypatch.setattr(scheduler, "has_tracked_run", lambda run_id: False)
+    monkeypatch.setattr(scheduler.actionbook_run, "main", fail_if_called)
+    monkeypatch.setattr(scheduler, "has_active_run", lambda run_id: False)
     scheduler.main(["submit", "--site", "taobao", "--intent", "search", "--query", "儿童童书"])
     task_id = next(iter(json.loads((tmp_path / "state.json").read_text(encoding="utf-8"))["tasks"].keys()))
     capsys.readouterr()
@@ -173,8 +173,8 @@ def test_stop_normalizes_missing_run_reported_by_delegate(tmp_path: Path, monkey
         print(json.dumps({"run_id": args[2], "status": "missing"}))
         return 0
 
-    monkeypatch.setattr(scheduler, "call_actionbook_run", fake_run)
-    monkeypatch.setattr(scheduler, "has_tracked_run", lambda run_id: True)
+    monkeypatch.setattr(scheduler.actionbook_run, "main", fake_run)
+    monkeypatch.setattr(scheduler, "has_active_run", lambda run_id: True)
     scheduler.main(["submit", "--site", "taobao", "--intent", "search", "--query", "儿童童书"])
     task_id = next(iter(json.loads((tmp_path / "state.json").read_text(encoding="utf-8"))["tasks"].keys()))
     capsys.readouterr()
@@ -184,9 +184,37 @@ def test_stop_normalizes_missing_run_reported_by_delegate(tmp_path: Path, monkey
     assert payload == {"error": "run_not_found", "task_id": task_id, "run_id": task_id}
 
 
-def test_reconcile_reports_unimplemented(tmp_path: Path, monkeypatch, capsys) -> None:
+def test_reconcile_updates_non_terminal_task_from_summary(tmp_path: Path, monkeypatch, capsys) -> None:
     monkeypatch.setenv("ACTION_BROWSER_SCHEDULER_DIR", str(tmp_path))
+    scheduler.main(["submit", "--site", "taobao", "--intent", "search", "--query", "儿童童书", "--limit", "20"])
+    task_id = next(iter(json.loads((tmp_path / "state.json").read_text(encoding="utf-8"))["tasks"].keys()))
+    task_path = tmp_path / "tasks" / f"{task_id}.json"
+    task = json.loads(task_path.read_text(encoding="utf-8"))
+    output_dir = tmp_path / "run-output"
+    (output_dir / "contract").mkdir(parents=True)
+    (output_dir / "contract" / "summary.json").write_text(
+        json.dumps(
+            {
+                "ok": True,
+                "needs_user_action": False,
+                "requested_count": 20,
+                "collected_count": 8,
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    task.update({"status": "running", "run_id": "run-123", "output_dir": str(output_dir)})
+    task_path.write_text(json.dumps(task, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    capsys.readouterr()
+    monkeypatch.setattr(scheduler, "load_run_state", lambda run_id: None)
+    monkeypatch.setattr(scheduler, "task_tab_is_alive", lambda task, run_state: False)
 
-    assert scheduler.main(["reconcile"]) == 1
+    assert scheduler.main(["reconcile"]) == 0
     reconcile_payload = parse_json_output(capsys.readouterr().out)
-    assert reconcile_payload["error"] == "not_implemented"
+    assert reconcile_payload["count"] == 1
+    assert reconcile_payload["tasks"][0]["task_id"] == task_id
+    assert reconcile_payload["tasks"][0]["status"] == "completed"
+    persisted = json.loads(task_path.read_text(encoding="utf-8"))
+    assert persisted["status"] == "completed"
+    assert persisted["result_quality"] == "partial"

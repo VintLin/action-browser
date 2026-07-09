@@ -1,20 +1,20 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 
+from scripts.scheduler_lib.state import SchedulerStore
 
 def task_path(root: Path, task_id: str) -> Path:
-    return Path(root) / "tasks" / f"{task_id}.json"
+    return SchedulerStore(root).task_path(task_id)
 
 
 def load_task_record(root: Path, task_id: str) -> dict[str, Any]:
-    return json.loads(task_path(root, task_id).read_text(encoding="utf-8"))
+    return SchedulerStore(root).load_task_record(task_id)
 
 
 def has_task_record(root: Path, task_id: str) -> bool:
-    return task_path(root, task_id).exists()
+    return SchedulerStore(root).has_task_record(task_id)
 
 
 def task_run_id(task: dict[str, object]) -> str:
