@@ -94,7 +94,7 @@ def test_shared_schema_artifacts_are_versioned_json() -> None:
 
 
 def test_adapter_contract_schema_is_strict_and_declares_shared_fields() -> None:
-    path = Path(__file__).resolve().parents[1] / "schemas" / "contracts" / "adapter-contract.schema.json"
+    path = Path(__file__).resolve().parents[3] / "schemas" / "contracts" / "adapter-contract.schema.json"
     schema = json.loads(path.read_text(encoding="utf-8"))
     assert schema["additionalProperties"] is False
     assert set(schema["properties"]) == set(valid_adapter_contract())

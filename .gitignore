@@ -15,3 +15,6 @@ build/
 /diagnostics/
 /.superpowers/
 /.skill-updates/
+
+# Skill workflows write site data here; keep durable programme evidence in catalog/evidence/.
+/skills/action-browser/assets/

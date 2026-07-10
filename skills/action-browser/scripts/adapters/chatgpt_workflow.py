@@ -32,6 +32,7 @@ from scripts.actionbook_interrupts import install_interrupt_handlers
 from scripts.workflow_runtime import add_workflow_args, attach_workflow, evaluate, wait_until_stable, write_json
 from scripts.actionbook_session import ActionBookSession as ActionBook
 from scripts.script_common import log
+from scripts.write_safety import WriteSafetyError, preview_hash, require_preview_hash
 
 
 CHATGPT_URL = "https://chatgpt.com/"
@@ -39,6 +40,8 @@ DEFAULT_PREFIXES = ""
 DEFAULT_TITLE_PATTERN = r"^Q\d+[：:]"
 SKILL_DIR = Path(__file__).resolve().parents[2]
 ASSETS_DIR = SKILL_DIR / "assets" / "chatgpt"
+ASK_CAPABILITY_ID = "chatgpt.prompt.message.write"
+BATCH_ASK_CAPABILITY_ID = "chatgpt.prompt-batch.message.write"
 
 
 @dataclass(frozen=True)
@@ -46,6 +49,73 @@ class ChatGptTask:
     title: str
     question: str
     output_name: str = ""
+
+
+def build_write_preview(
+    capability_id: str,
+    tasks: list[ChatGptTask],
+    *,
+    require_web_search: bool,
+    max_actions: int,
+) -> dict[str, object]:
+    if max_actions < len(tasks):
+        raise WriteSafetyError("max_actions_exceeded")
+    payload = {
+        "mode": {"surface": "Chat", "intelligence": "极高", "model": "latest"},
+        "require_web_search": require_web_search,
+        "max_actions": max_actions,
+        "items": [
+            {"position": index, "title": task.title, "question": task.question}
+            for index, task in enumerate(tasks, start=1)
+        ],
+    }
+    return {
+        "capability_id": capability_id,
+        "preview_hash": preview_hash(capability_id, payload),
+        "items": [
+            {"position": item["position"], "title": item["title"], "question": {"length": len(str(item["question"]))}}
+            for item in payload["items"]
+        ],
+        "mode": payload["mode"],
+        "require_web_search": require_web_search,
+        "max_actions": max_actions,
+    }
+
+
+def require_write_approval(execute: bool, supplied_hash: str, expected_hash: str) -> None:
+    require_preview_hash(execute, supplied_hash, expected_hash)
+
+
+def checkpoint_successes(path: Path, expected_hash: str) -> set[str]:
+    if not path.is_file():
+        return set()
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict) or payload.get("preview_hash") != expected_hash:
+        return set()
+    completed = payload.get("completed")
+    return {str(item) for item in completed} if isinstance(completed, list) else set()
+
+
+def write_checkpoint(path: Path, preview_hash_value: str, completed: list[str]) -> None:
+    write_json(path, {"schema_version": 1, "preview_hash": preview_hash_value, "completed": sorted(set(completed))})
+
+
+def read_back_conversation(book: ActionBook, before_url: str) -> str | None:
+    current_url = current_browser_url(book)
+    return current_url if current_url != before_url and "/c/" in current_url else None
+
+
+def require_read_back(conversation_url: str | None) -> str:
+    if not conversation_url:
+        raise WriteSafetyError("uncertain_write_outcome")
+    return conversation_url
+
+
+def emit_preview(preview: dict[str, object], output_dir: Path) -> int:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    write_json(output_dir / "preview.json", preview)
+    print(json.dumps({"status": "preview", "preview_hash": preview["preview_hash"], "preview": preview}, ensure_ascii=False))
+    return 0
 def sanitize_name(value: str, fallback: str = "conversation", max_length: int = 90) -> str:
     cleaned = re.sub(r"[^\w\u4e00-\u9fff.-]+", "-", value or "").strip("._-")
     cleaned = re.sub(r"-{2,}", "-", cleaned)
@@ -1210,12 +1280,18 @@ def submit_one_task(
     attempts: int,
     require_web_search: bool = False,
 ) -> dict[str, Any]:
+    before_url = current_browser_url(book)
     create_new_chat(book)
     web_search_state = configure_default_chat(book)
     require_web_search_enabled(web_search_state, require_web_search)
     fill_prompt(book, task.question)
     send_current_prompt(book)
-    current_url = wait_for_submission_started(book)
+    try:
+        current_url = wait_for_submission_started(book)
+    except RuntimeError as error:
+        if "submission did not start before timeout" not in str(error):
+            raise
+        current_url = require_read_back(read_back_conversation(book, before_url))
     submitted_at = datetime.now().isoformat(timespec="seconds")
     return submission_record(index, task, current_url, attempts, submitted_at, web_search_state)
 
@@ -1305,6 +1381,19 @@ def run_export(args: argparse.Namespace) -> int:
 def run_ask(args: argparse.Namespace) -> int:
     task = parse_task_record({"title": args.title, "question": args.question}, "ask")
     output_dir = Path(args.output_dir).expanduser() if args.output_dir else default_run_output_dir()
+    preview = build_write_preview(
+        ASK_CAPABILITY_ID,
+        [task],
+        require_web_search=args.require_web_search,
+        max_actions=1,
+    )
+    if not args.execute:
+        return emit_preview(preview, output_dir)
+    try:
+        require_write_approval(True, args.preview_hash, str(preview["preview_hash"]))
+    except WriteSafetyError as error:
+        print(json.dumps({"status": "failed", "reason_code": error.reason_code, "preview_hash": preview["preview_hash"]}, ensure_ascii=False))
+        return 1
     output_dir.mkdir(parents=True, exist_ok=True)
     book = attach_workflow(args, CHATGPT_URL, ActionBook)
     submissions: list[dict[str, Any]] = []
@@ -1340,7 +1429,22 @@ def run_ask(args: argparse.Namespace) -> int:
 def run_batch_ask(args: argparse.Namespace) -> int:
     tasks = load_tasks_file(Path(args.tasks_file))
     output_dir = Path(args.output_dir).expanduser() if args.output_dir else default_run_output_dir()
+    preview = build_write_preview(
+        BATCH_ASK_CAPABILITY_ID,
+        tasks,
+        require_web_search=args.require_web_search,
+        max_actions=args.max_actions,
+    )
+    if not args.execute:
+        return emit_preview(preview, output_dir)
+    try:
+        require_write_approval(True, args.preview_hash, str(preview["preview_hash"]))
+    except WriteSafetyError as error:
+        print(json.dumps({"status": "failed", "reason_code": error.reason_code, "preview_hash": preview["preview_hash"]}, ensure_ascii=False))
+        return 1
     output_dir.mkdir(parents=True, exist_ok=True)
+    checkpoint_path = output_dir / "checkpoint.json"
+    completed = checkpoint_successes(checkpoint_path, str(preview["preview_hash"]))
     book = attach_workflow(args, CHATGPT_URL, ActionBook)
     submissions: list[dict[str, Any]] = []
     failures: list[dict[str, Any]] = []
@@ -1358,6 +1462,8 @@ def run_batch_ask(args: argparse.Namespace) -> int:
         return 1
     stop_batch = False
     for index, task in enumerate(tasks, start=1):
+        if str(index) in completed:
+            continue
         if stop_batch:
             break
         log(f"提交 {index}/{len(tasks)}: {task.title}")
@@ -1368,6 +1474,8 @@ def run_batch_ask(args: argparse.Namespace) -> int:
                     submit_one_task(book, task, index, attempts, require_web_search=args.require_web_search)
                 )
                 submitted = True
+                completed.add(str(index))
+                write_checkpoint(checkpoint_path, str(preview["preview_hash"]), sorted(completed))
                 break
             except Exception as exc:  # noqa: BLE001
                 if attempts < 2:
@@ -1463,6 +1571,8 @@ def build_parser() -> argparse.ArgumentParser:
     ask_parser.add_argument("--title", required=True, help="Task title for metadata and filename")
     ask_parser.add_argument("--question", required=True, help="Question text to send to ChatGPT")
     ask_parser.add_argument("--output-dir", default="", help="Output directory")
+    ask_parser.add_argument("--execute", action="store_true", help="Allow the previewed message write")
+    ask_parser.add_argument("--preview-hash", default="", help="Preview Hash required with --execute")
     ask_parser.add_argument(
         "--answer-timeout",
         type=positive_int,
@@ -1479,6 +1589,9 @@ def build_parser() -> argparse.ArgumentParser:
     batch_parser = sub.add_parser("batch-ask", help="Submit multiple ChatGPT questions from JSON/JSONL")
     batch_parser.add_argument("--tasks-file", required=True, help="JSON or JSONL task file")
     batch_parser.add_argument("--output-dir", default="", help="Output directory")
+    batch_parser.add_argument("--execute", action="store_true", help="Allow the previewed message writes")
+    batch_parser.add_argument("--preview-hash", default="", help="Preview Hash required with --execute")
+    batch_parser.add_argument("--max-actions", type=positive_int, required=True, help="Maximum permitted message writes")
     batch_parser.add_argument("--delay", type=float, default=60.0, help="Delay between tasks")
     batch_parser.add_argument(
         "--answer-timeout",
