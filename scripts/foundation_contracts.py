@@ -9,8 +9,12 @@ ADAPTER_CONTRACT_FIELDS = {"schema_version", "run_id", "task_id", "reference_bas
 DOWNLOAD_MANIFEST_FIELDS = {"schema_version", "subject_id", "max_item_bytes", "max_total_bytes", "items"}
 
 
+def _is_int(value: object) -> bool:
+    return type(value) is int
+
+
 def _require(payload: dict[str, object], fields: set[str], name: str) -> None:
-    if not isinstance(payload, dict) or set(payload) != fields or payload.get("schema_version") != 1:
+    if not isinstance(payload, dict) or set(payload) != fields or not _is_int(payload.get("schema_version")) or payload["schema_version"] != 1:
         raise ValueError(f"invalid {name}")
 
 
@@ -26,8 +30,10 @@ def validate_adapter_contract(payload: dict[str, object]) -> None:
     failure = payload["failure"]
     if (
         not all(isinstance(payload[key], str) for key in ("run_id", "task_id", "reference_baseline", "execution_baseline", "capability_id", "site", "status", "stage", "result_quality", "access", "strategy_used", "started_at", "updated_at", "finished_at"))
-        or not isinstance(payload["requested_count"], int)
-        or not isinstance(payload["collected_count"], int)
+        or not _is_int(payload["requested_count"])
+        or payload["requested_count"] < 0
+        or not _is_int(payload["collected_count"])
+        or payload["collected_count"] < 0
         or not isinstance(payload["limits"], dict)
         or not isinstance(payload["artifacts"], list)
         or not all(isinstance(item, str) for item in payload["artifacts"])
@@ -51,7 +57,7 @@ def validate_site_artifact(payload: dict[str, object]) -> None:
 
 def validate_download_manifest(payload: dict[str, object]) -> None:
     _require(payload, DOWNLOAD_MANIFEST_FIELDS, "download manifest")
-    if not isinstance(payload["items"], list) or any(not isinstance(item, dict) or not {"status", "size", "checksum"}.issubset(item) or not isinstance(item["status"], str) or not isinstance(item["size"], int) or not isinstance(item["checksum"], str) for item in payload["items"]):
+    if not isinstance(payload["subject_id"], str) or not _is_int(payload["max_item_bytes"]) or payload["max_item_bytes"] < 1 or not _is_int(payload["max_total_bytes"]) or payload["max_total_bytes"] < 1 or not isinstance(payload["items"], list) or any(not isinstance(item, dict) or not {"status", "size", "checksum"}.issubset(item) or not isinstance(item["status"], str) or not _is_int(item["size"]) or item["size"] < 0 or not isinstance(item["checksum"], str) for item in payload["items"]):
         raise ValueError("invalid download manifest")
 
 

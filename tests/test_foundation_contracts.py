@@ -61,6 +61,25 @@ def test_shared_contract_validators_reject_unknown_and_invalid_nullable_fields()
         validate_adapter_contract(contract)
 
 
+def test_shared_contract_validators_reject_booleans_for_integer_fields() -> None:
+    contract = valid_adapter_contract()
+    for field in ("schema_version", "requested_count", "collected_count"):
+        invalid = dict(contract)
+        invalid[field] = True
+        with pytest.raises(ValueError):
+            validate_adapter_contract(invalid)
+
+    manifest = {"schema_version": 1, "subject_id": "subject", "max_item_bytes": 1, "max_total_bytes": 1, "items": [{"status": "success", "size": 1, "checksum": "checksum"}]}
+    for field in ("schema_version", "max_item_bytes", "max_total_bytes"):
+        invalid = dict(manifest)
+        invalid[field] = True
+        with pytest.raises(ValueError):
+            validate_download_manifest(invalid)
+    invalid = {**manifest, "items": [{**manifest["items"][0], "size": True}]}
+    with pytest.raises(ValueError):
+        validate_download_manifest(invalid)
+
+
 def test_atomic_json_writer_replaces_without_partial_file(tmp_path: Path) -> None:
     path = tmp_path / "contract.json"
     write_json_atomic(path, {"schema_version": 1, "value": "ok"})
