@@ -16,13 +16,30 @@ def _require(payload: dict[str, object], fields: set[str], name: str) -> None:
 
 def validate_result_envelope(payload: dict[str, object]) -> None:
     _require(payload, RESULT_ENVELOPE_FIELDS, "result envelope")
-    if not all(isinstance(payload[key], str) for key in ("run_id", "task_id", "capability_id", "site", "command", "status", "result_quality", "strategy_used", "started_at", "finished_at")) or not isinstance(payload["artifact_refs"], list) or not all(isinstance(item, str) for item in payload["artifact_refs"]):
+    failure = payload["failure"]
+    if not all(isinstance(payload[key], str) for key in ("run_id", "task_id", "capability_id", "site", "command", "status", "result_quality", "strategy_used", "started_at", "finished_at")) or not isinstance(payload["artifact_refs"], list) or not all(isinstance(item, str) for item in payload["artifact_refs"]) or payload["contract_ref"] is not None and not isinstance(payload["contract_ref"], str) or payload["fallback_reason"] is not None and not isinstance(payload["fallback_reason"], str) or failure is not None and (not isinstance(failure, dict) or not isinstance(failure.get("reason_code"), str) or not isinstance(failure.get("message"), str) or not isinstance(failure.get("retryable"), bool)):
         raise ValueError("invalid result envelope")
 
 
 def validate_adapter_contract(payload: dict[str, object]) -> None:
     _require(payload, ADAPTER_CONTRACT_FIELDS, "adapter contract")
-    if not all(isinstance(payload[key], str) for key in ("run_id", "task_id", "capability_id", "site", "status")) or not isinstance(payload["artifacts"], list) or not all(isinstance(item, str) for item in payload["artifacts"]) or not isinstance(payload["ok"], bool):
+    failure = payload["failure"]
+    if (
+        not all(isinstance(payload[key], str) for key in ("run_id", "task_id", "reference_baseline", "execution_baseline", "capability_id", "site", "status", "stage", "result_quality", "access", "strategy_used", "started_at", "updated_at", "finished_at"))
+        or not isinstance(payload["requested_count"], int)
+        or not isinstance(payload["collected_count"], int)
+        or not isinstance(payload["limits"], dict)
+        or not isinstance(payload["artifacts"], list)
+        or not all(isinstance(item, str) for item in payload["artifacts"])
+        or not isinstance(payload["warnings"], list)
+        or not all(isinstance(item, str) for item in payload["warnings"])
+        or not isinstance(payload["progress"], dict)
+        or not isinstance(payload["ok"], bool)
+        or not isinstance(payload["needs_user_action"], bool)
+        or payload["fallback_reason"] is not None and not isinstance(payload["fallback_reason"], str)
+        or payload["reason_code"] is not None and not isinstance(payload["reason_code"], str)
+        or failure is not None and (not isinstance(failure, dict) or set(failure) != {"reason_code", "message", "retryable"} or not isinstance(failure["reason_code"], str) or not isinstance(failure["message"], str) or not isinstance(failure["retryable"], bool))
+    ):
         raise ValueError("invalid adapter contract")
 
 

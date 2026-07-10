@@ -17,7 +17,7 @@ if __package__ in {None, ""}:
 from scripts.adapters.douban_public import CHART_URL, PageStateError, parse_movie_chart
 from scripts.adapters import douban_workflow
 from scripts.adapters import x_workflow
-from scripts.foundation_contracts import validate_adapter_contract as validate_shared_contract, validate_download_manifest, validate_site_artifact, write_json_atomic
+from scripts.foundation_contracts import validate_adapter_contract as validate_shared_contract, validate_download_manifest, validate_result_envelope, validate_site_artifact, write_json_atomic
 from scripts.workflow_runtime import attach_workflow, temporary_tab
 
 
@@ -39,7 +39,9 @@ def write_json(path: Path, value: object) -> None:
 
 def envelope(args: argparse.Namespace, *, status: str, started_at: str, contract_ref: str | None = None, artifact_refs: list[str] | None = None, failure: dict[str, object] | None = None) -> dict[str, object]:
     quality = "empty" if status == "verified_empty" else "full" if status == "completed" else "none"
-    return {"schema_version": 1, "run_id": args.task_id, "task_id": args.task_id, "capability_id": CAPABILITY_ID, "site": args.site, "command": "run", "status": status, "result_quality": quality, "contract_ref": contract_ref, "artifact_refs": artifact_refs or [], "strategy_used": "public_http", "fallback_reason": None, "failure": failure, "started_at": started_at, "finished_at": now()}
+    result = {"schema_version": 1, "run_id": args.task_id, "task_id": args.task_id, "capability_id": CAPABILITY_ID, "site": args.site, "command": "run", "status": status, "result_quality": quality, "contract_ref": contract_ref, "artifact_refs": artifact_refs or [], "strategy_used": "public_http", "fallback_reason": None, "failure": failure, "started_at": started_at, "finished_at": now()}
+    validate_result_envelope(result)
+    return result
 
 
 def validate_artifact(artifact: dict[str, object]) -> None:
@@ -116,6 +118,7 @@ def command_failure(args: argparse.Namespace, started_at: str, reason_code: str,
     contract_ref: str | None = "contract/summary.json"
     try:
         validate_contract(contract)
+        validate_shared_contract(contract)
         write_json(output / "contract" / "summary.json", contract)
         write_json(output / "contract" / "progress.json", progress)
     except (OSError, ValueError) as error:
@@ -159,6 +162,8 @@ def run(args: argparse.Namespace) -> int:
     try:
         validate_artifact(artifact)
         validate_contract(contract)
+        validate_site_artifact(artifact)
+        validate_shared_contract(contract)
         write_json(output / "artifacts" / "movie-ranking.json", artifact)
         write_json(output / "contract" / "summary.json", contract)
         write_json(output / "contract" / "progress.json", progress)
@@ -191,9 +196,13 @@ def run_douban_photo_download(args: argparse.Namespace) -> int:
         write_json(output / "contract" / "progress.json", progress)
     except (OSError, ValueError, RuntimeError, json.JSONDecodeError) as error:
         failure = {"reason_code": "page_not_ready", "message": str(error), "retryable": True}
-        print(json.dumps({"schema_version": 1, "run_id": args.task_id, "task_id": args.task_id, "capability_id": DOUBAN_PHOTO_CAPABILITY_ID, "site": "douban", "command": "run", "status": "failed", "result_quality": "none", "contract_ref": None, "artifact_refs": [], "strategy_used": "dom", "fallback_reason": None, "failure": failure, "started_at": started_at, "finished_at": now()}, ensure_ascii=False))
+        result_envelope = {"schema_version": 1, "run_id": args.task_id, "task_id": args.task_id, "capability_id": DOUBAN_PHOTO_CAPABILITY_ID, "site": "douban", "command": "run", "status": "failed", "result_quality": "none", "contract_ref": None, "artifact_refs": [], "strategy_used": "dom", "fallback_reason": None, "failure": failure, "started_at": started_at, "finished_at": now()}
+        validate_result_envelope(result_envelope)
+        print(json.dumps(result_envelope, ensure_ascii=False))
         return 1
-    print(json.dumps({"schema_version": 1, "run_id": args.task_id, "task_id": args.task_id, "capability_id": DOUBAN_PHOTO_CAPABILITY_ID, "site": "douban", "command": "run", "status": status, "result_quality": "full" if status == "completed" else "partial", "contract_ref": "contract/summary.json", "artifact_refs": ["artifacts/photos.json", "download-manifest.json"], "strategy_used": "dom", "fallback_reason": None, "failure": failure, "started_at": started_at, "finished_at": now()}, ensure_ascii=False))
+    result_envelope = {"schema_version": 1, "run_id": args.task_id, "task_id": args.task_id, "capability_id": DOUBAN_PHOTO_CAPABILITY_ID, "site": "douban", "command": "run", "status": status, "result_quality": "full" if status == "completed" else "partial", "contract_ref": "contract/summary.json", "artifact_refs": ["artifacts/photos.json", "download-manifest.json"], "strategy_used": "dom", "fallback_reason": None, "failure": failure, "started_at": started_at, "finished_at": now()}
+    validate_result_envelope(result_envelope)
+    print(json.dumps(result_envelope, ensure_ascii=False))
     return 0 if status == "completed" else 1
 
 
@@ -206,7 +215,9 @@ def x_capability(args: argparse.Namespace) -> str:
 
 
 def x_envelope(args: argparse.Namespace, capability_id: str, started_at: str, *, status: str, contract_ref: str | None = None, artifact_refs: list[str] | None = None, failure: dict[str, object] | None = None) -> dict[str, object]:
-    return {"schema_version": 1, "run_id": args.task_id, "task_id": args.task_id, "capability_id": capability_id, "site": "x", "command": "run", "status": status, "result_quality": "full" if status == "completed" else "none", "contract_ref": contract_ref, "artifact_refs": artifact_refs or [], "strategy_used": "dom", "fallback_reason": None, "failure": failure, "started_at": started_at, "finished_at": now()}
+    result = {"schema_version": 1, "run_id": args.task_id, "task_id": args.task_id, "capability_id": capability_id, "site": "x", "command": "run", "status": status, "result_quality": "full" if status == "completed" else "none", "contract_ref": contract_ref, "artifact_refs": artifact_refs or [], "strategy_used": "dom", "fallback_reason": None, "failure": failure, "started_at": started_at, "finished_at": now()}
+    validate_result_envelope(result)
+    return result
 
 
 def x_failure_reason(error: Exception) -> str:
@@ -246,6 +257,7 @@ def write_x_failure(args: argparse.Namespace, capability_id: str, started_at: st
     contract_ref: str | None = "contract/summary.json"
     try:
         contract = x_contract(args, capability_id, started_at, status=status, requested=int(args.limit) if str(args.limit).isdigit() else 0, records=[], artifact=None, last_url=x_workflow.HOME_URL, last_title="", failure=failure)
+        validate_shared_contract(contract)
         write_json(Path(args.output_root) / "contract" / "summary.json", contract)
         write_json(Path(args.output_root) / "contract" / "progress.json", contract["progress"])
     except OSError as write_error:
