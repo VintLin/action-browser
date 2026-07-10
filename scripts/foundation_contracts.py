@@ -12,15 +12,25 @@ def _require(payload: dict[str, object], fields: set[str], name: str) -> None:
 
 def validate_result_envelope(payload: dict[str, object]) -> None:
     _require(payload, {"schema_version", "run_id", "task_id", "capability_id", "site", "command", "status", "result_quality", "contract_ref", "artifact_refs", "strategy_used", "fallback_reason", "failure", "started_at", "finished_at"}, "result envelope")
+    if not all(isinstance(payload[key], str) for key in ("run_id", "task_id", "capability_id", "site", "command", "status", "result_quality", "strategy_used", "started_at", "finished_at")) or not isinstance(payload["artifact_refs"], list) or not all(isinstance(item, str) for item in payload["artifact_refs"]):
+        raise ValueError("invalid result envelope")
 
 
 def validate_adapter_contract(payload: dict[str, object]) -> None:
     _require(payload, {"schema_version", "run_id", "task_id", "capability_id", "site", "status", "artifacts", "failure", "ok", "reason_code"}, "adapter contract")
+    if not all(isinstance(payload[key], str) for key in ("run_id", "task_id", "capability_id", "site", "status")) or not isinstance(payload["artifacts"], list) or not all(isinstance(item, str) for item in payload["artifacts"]) or not isinstance(payload["ok"], bool):
+        raise ValueError("invalid adapter contract")
+
+
+def validate_site_artifact(payload: dict[str, object]) -> None:
+    _require(payload, {"schema_version", "capability_id", "items"}, "site artifact")
+    if not isinstance(payload["capability_id"], str) or not isinstance(payload["items"], list):
+        raise ValueError("invalid site artifact")
 
 
 def validate_download_manifest(payload: dict[str, object]) -> None:
     _require(payload, {"schema_version", "items"}, "download manifest")
-    if not isinstance(payload["items"], list) or any(not isinstance(item, dict) or not {"status", "size", "checksum"}.issubset(item) for item in payload["items"]):
+    if not isinstance(payload["items"], list) or any(not isinstance(item, dict) or not {"status", "size", "checksum"}.issubset(item) or not isinstance(item["status"], str) or not isinstance(item["size"], int) or not isinstance(item["checksum"], str) for item in payload["items"]):
         raise ValueError("invalid download manifest")
 
 

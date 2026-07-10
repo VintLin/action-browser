@@ -1,1 +1,1 @@
-{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","required":["schema_version","items"]}
+{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","required":["schema_version","items"],"properties":{"schema_version":{"const":1},"items":{"type":"array","items":{"type":"object","required":["status","size","checksum"],"properties":{"status":{"type":"string"},"size":{"type":"integer","minimum":0},"checksum":{"type":"string"}}}}}}

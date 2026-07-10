@@ -117,7 +117,7 @@ EXTRACT_VISIBLE_TWEETS_JS = r"""
     if (!node) return false;
     const rect = node.getBoundingClientRect();
     const style = getComputedStyle(node);
-    return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
+    return rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.top < window.innerHeight && style.display !== 'none' && style.visibility !== 'hidden';
   };
   const extractStatusId = value => {
     const match = String(value || '').match(/\/status\/(\d+)/);

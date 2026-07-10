@@ -1,1 +1,1 @@
-{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","required":["schema_version","capability_id","items"]}
+{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","additionalProperties":false,"required":["schema_version","capability_id","items"],"properties":{"schema_version":{"const":1},"capability_id":{"type":"string"},"items":{"type":"array"}}}

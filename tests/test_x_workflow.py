@@ -154,6 +154,10 @@ def test_x_page_ready_state_rejects_user_gates() -> None:
     assert not x_workflow.is_x_page_ready_state(
         {"href": "https://x.com/login", "body": "Log in", "articles": 1, "primary_articles": 1}
     )
+
+
+def test_tweet_extractor_excludes_virtualized_offscreen_articles() -> None:
+    assert "rect.bottom > 0 && rect.top < window.innerHeight" in x_workflow.EXTRACT_VISIBLE_TWEETS_JS
     assert not x_workflow.is_x_page_ready_state(
         {"href": "https://x.com/account/access", "body": "Verify your account", "articles": 1, "primary_articles": 1}
     )
