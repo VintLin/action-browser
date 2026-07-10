@@ -1,7 +1,7 @@
 # Foundation Verification
 
 - Integration branch: `codex/opencli-capability-integration`
-- Foundation input commit: `1a8a776586fc200785ec3b8efdcb3f8957801a07`
+- Foundation implementation commit: `31bb182016a01655d55be091daafc6dd9ecf3190`
 - Reference baseline: `6129bb3953d5eebd8dd67f96802b320c723f50ca`
 - Scope: T1 through T4 atomic commits; no released-branch cutover.
 
