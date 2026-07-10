@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "verification_commit": "3707d7f43328daa100e78f00c9501c3a9f005695",
+  "observed_at": "2026-07-10T06:38:48Z",
+  "verifier": "independent_read_only",
+  "deterministic_suite": {"command": "python3 -m pytest -q", "result": "148 passed"},
+  "public_smoke": {
+    "capability_id": "douban.movie-ranking.trending.read",
+    "exit_code": 0,
+    "stdout_result_envelope_count": 1,
+    "shared_result_envelope_validation": true,
+    "shared_adapter_contract_validation": true,
+    "shared_site_artifact_validation": true,
+    "status": "completed"
+  },
+  "strict_integer_assertions": {
+    "schema_version_boolean_rejected": true,
+    "counts_boolean_rejected": true,
+    "byte_limits_boolean_rejected": true,
+    "item_size_boolean_rejected": true
+  },
+  "result": "passed"
+}

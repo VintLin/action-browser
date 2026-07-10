@@ -39,4 +39,6 @@ The independent verifier ran focused named-commit checks (`42 passed`) and revie
 
 ## Pending Independent Verification
 
-A fresh verifier must rerun the full deterministic suite, one real public canonical smoke, and a read-only review of `fab0324` and `9716cac` before T5 can be marked passed. T6 and T7 remain blocked until that review signs off.
+Completed by an independent read-only verifier at `3707d7f`. It reran `python3 -m pytest -q` with `148 passed`, confirmed exact integer checks reject booleans, and performed one real public Douban canonical smoke. The smoke exited `0`, emitted exactly one shared-validated Result Envelope, and persisted shared-validated Adapter Contract and Site Artifact with `completed` status. See `catalog/evidence/t5/independent-verifier-20260710T063848Z.json`.
+
+T5 is passed. T6 and T7 may begin from the recorded Foundation implementation and verification commits, subject to their own ticket constraints.
