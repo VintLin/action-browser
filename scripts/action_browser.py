@@ -17,6 +17,7 @@ if __package__ in {None, ""}:
 from scripts.adapters.douban_public import CHART_URL, PageStateError, parse_movie_chart
 from scripts.adapters import douban_workflow
 from scripts.adapters import x_workflow
+from scripts.foundation_contracts import validate_adapter_contract as validate_shared_contract, validate_download_manifest, validate_site_artifact, write_json_atomic
 from scripts.workflow_runtime import attach_workflow, temporary_tab
 
 
@@ -33,8 +34,7 @@ def now() -> str:
 
 
 def write_json(path: Path, value: object) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    write_json_atomic(path, value)
 
 
 def envelope(args: argparse.Namespace, *, status: str, started_at: str, contract_ref: str | None = None, artifact_refs: list[str] | None = None, failure: dict[str, object] | None = None) -> dict[str, object]:
@@ -178,6 +178,7 @@ def run_douban_photo_download(args: argparse.Namespace) -> int:
         with redirect_stdout(sys.stderr):
             result = douban_workflow.run_photos_download(args)
         manifest = json.loads((output / "download-manifest.json").read_text(encoding="utf-8"))
+        validate_download_manifest(manifest)
         items = manifest.get("items") if isinstance(manifest.get("items"), list) else []
         successful = [item for item in items if isinstance(item, dict) and item.get("status") in {"success", "skipped"}]
         failed = [item for item in items if isinstance(item, dict) and item.get("status") == "failed"]
@@ -185,6 +186,7 @@ def run_douban_photo_download(args: argparse.Namespace) -> int:
         failure = None if not failed else {"reason_code": "media_failed", "message": f"{len(failed)} media item(s) failed", "retryable": True}
         progress = {"schema_version": 1, "task_id": args.task_id, "status": status, "stage": "completed", "completed": len(successful), "requested": args.count, "last_url": "https://movie.douban.com", "last_title": ""}
         contract = {"schema_version": 1, "run_id": args.task_id, "task_id": args.task_id, "reference_baseline": REFERENCE_BASELINE, "execution_baseline": EXECUTION_BASELINE, "capability_id": DOUBAN_PHOTO_CAPABILITY_ID, "site": "douban", "status": status, "stage": "completed", "result_quality": "full" if status == "completed" else "partial", "requested_count": args.count, "collected_count": len(successful), "access": "browser", "strategy_used": "dom", "fallback_reason": None, "limits": {"max_items": args.count, "max_item_bytes": args.max_item_bytes, "max_total_bytes": args.max_total_bytes}, "artifacts": ["artifacts/photos.json", "download-manifest.json"], "warnings": [], "failure": failure, "progress": progress, "started_at": started_at, "updated_at": now(), "finished_at": now(), "ok": status == "completed", "needs_user_action": False, "reason_code": None if status == "completed" else "media_failed"}
+        validate_shared_contract(contract)
         write_json(output / "contract" / "summary.json", contract)
         write_json(output / "contract" / "progress.json", progress)
     except (OSError, ValueError, RuntimeError, json.JSONDecodeError) as error:
@@ -303,6 +305,8 @@ def run_x(args: argparse.Namespace) -> int:
             artifact_path = "artifacts/article.json"
         artifact = {"schema_version": 1, "capability_id": capability_id, "items": records}
         contract = x_contract(args, capability_id, started_at, status="completed", requested=args.limit, records=records, artifact=artifact_path, last_url=str(records[-1]["url"]), last_title=str(records[-1].get("title") or ""))
+        validate_site_artifact(artifact)
+        validate_shared_contract(contract)
         output = Path(args.output_root)
         write_json(output / artifact_path, artifact)
         write_json(output / "contract" / "summary.json", contract)
