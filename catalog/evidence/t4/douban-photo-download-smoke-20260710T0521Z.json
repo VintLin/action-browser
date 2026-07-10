@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "capability_id": "douban.photo.download.read",
+  "reference_baseline": "6129bb3953d5eebd8dd67f96802b320c723f50ca",
+  "observed_at": "2026-07-10T05:21:45Z",
+  "strategy_used": "dom",
+  "redacted_url": "https://movie.douban.com/subject/<redacted>/photos",
+  "result": "completed",
+  "downloaded_items": 2,
+  "max_item_bytes": 1048576,
+  "max_total_bytes": 2097152,
+  "assertions": {
+    "one_result_envelope_on_stdout": true,
+    "image_content_type": true,
+    "checksums_present": true,
+    "second_run_skipped_verified_items": true
+  }
+}

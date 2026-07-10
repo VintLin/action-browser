@@ -15,6 +15,7 @@ if __package__ in {None, ""}:
         sys.path.insert(0, str(root))
 
 from scripts.adapters.douban_public import CHART_URL, PageStateError, parse_movie_chart
+from scripts.adapters import douban_workflow
 from scripts.adapters import x_workflow
 from scripts.workflow_runtime import attach_workflow, temporary_tab
 
@@ -22,6 +23,7 @@ from scripts.workflow_runtime import attach_workflow, temporary_tab
 CAPABILITY_ID = "douban.movie-ranking.trending.read"
 X_TIMELINE_CAPABILITY_ID = "x.timeline.list.read"
 X_ARTICLE_CAPABILITY_ID = "x.article.detail.read"
+DOUBAN_PHOTO_CAPABILITY_ID = "douban.photo.download.read"
 REFERENCE_BASELINE = "6129bb3953d5eebd8dd67f96802b320c723f50ca"
 EXECUTION_BASELINE = "6027d703c86d1e8e3798212bf1841422a41903fc"
 
@@ -126,6 +128,8 @@ def command_failure(args: argparse.Namespace, started_at: str, reason_code: str,
 def run(args: argparse.Namespace) -> int:
     if args.site == "x":
         return run_x(args)
+    if (args.site, args.resource, args.intent) == ("douban", "photo", "download"):
+        return run_douban_photo_download(args)
     started_at = now()
     try:
         args.limit = int(args.limit)
@@ -162,6 +166,33 @@ def run(args: argparse.Namespace) -> int:
         return command_failure(args, started_at, "storage_failed", str(error))
     print(json.dumps(envelope(args, status=status, started_at=started_at, contract_ref="contract/summary.json", artifact_refs=["artifacts/movie-ranking.json"]), ensure_ascii=False))
     return 0
+
+
+def run_douban_photo_download(args: argparse.Namespace) -> int:
+    started_at = now()
+    output = Path(args.output_root)
+    try:
+        args.count = int(args.limit)
+        args.output = str(output)
+        args.output_root = str(output)
+        with redirect_stdout(sys.stderr):
+            result = douban_workflow.run_photos_download(args)
+        manifest = json.loads((output / "download-manifest.json").read_text(encoding="utf-8"))
+        items = manifest.get("items") if isinstance(manifest.get("items"), list) else []
+        successful = [item for item in items if isinstance(item, dict) and item.get("status") in {"success", "skipped"}]
+        failed = [item for item in items if isinstance(item, dict) and item.get("status") == "failed"]
+        status = "completed" if result == 0 and not failed else "failed"
+        failure = None if not failed else {"reason_code": "media_failed", "message": f"{len(failed)} media item(s) failed", "retryable": True}
+        progress = {"schema_version": 1, "task_id": args.task_id, "status": status, "stage": "completed", "completed": len(successful), "requested": args.count, "last_url": "https://movie.douban.com", "last_title": ""}
+        contract = {"schema_version": 1, "run_id": args.task_id, "task_id": args.task_id, "reference_baseline": REFERENCE_BASELINE, "execution_baseline": EXECUTION_BASELINE, "capability_id": DOUBAN_PHOTO_CAPABILITY_ID, "site": "douban", "status": status, "stage": "completed", "result_quality": "full" if status == "completed" else "partial", "requested_count": args.count, "collected_count": len(successful), "access": "browser", "strategy_used": "dom", "fallback_reason": None, "limits": {"max_items": args.count, "max_item_bytes": args.max_item_bytes, "max_total_bytes": args.max_total_bytes}, "artifacts": ["artifacts/photos.json", "download-manifest.json"], "warnings": [], "failure": failure, "progress": progress, "started_at": started_at, "updated_at": now(), "finished_at": now(), "ok": status == "completed", "needs_user_action": False, "reason_code": None if status == "completed" else "media_failed"}
+        write_json(output / "contract" / "summary.json", contract)
+        write_json(output / "contract" / "progress.json", progress)
+    except (OSError, ValueError, RuntimeError, json.JSONDecodeError) as error:
+        failure = {"reason_code": "page_not_ready", "message": str(error), "retryable": True}
+        print(json.dumps({"schema_version": 1, "run_id": args.task_id, "task_id": args.task_id, "capability_id": DOUBAN_PHOTO_CAPABILITY_ID, "site": "douban", "command": "run", "status": "failed", "result_quality": "none", "contract_ref": None, "artifact_refs": [], "strategy_used": "dom", "fallback_reason": None, "failure": failure, "started_at": started_at, "finished_at": now()}, ensure_ascii=False))
+        return 1
+    print(json.dumps({"schema_version": 1, "run_id": args.task_id, "task_id": args.task_id, "capability_id": DOUBAN_PHOTO_CAPABILITY_ID, "site": "douban", "command": "run", "status": status, "result_quality": "full" if status == "completed" else "partial", "contract_ref": "contract/summary.json", "artifact_refs": ["artifacts/photos.json", "download-manifest.json"], "strategy_used": "dom", "fallback_reason": None, "failure": failure, "started_at": started_at, "finished_at": now()}, ensure_ascii=False))
+    return 0 if status == "completed" else 1
 
 
 def x_capability(args: argparse.Namespace) -> str:
@@ -297,6 +328,11 @@ def main(argv: list[str] | None = None) -> int:
     command.add_argument("--tab", default="")
     command.add_argument("--item-id", default="")
     command.add_argument("--max-scrolls", type=int, default=5)
+    command.add_argument("--id", default="")
+    command.add_argument("--type", default="Rb")
+    command.add_argument("--photo-id", default="")
+    command.add_argument("--max-item-bytes", type=int, default=10 * 1024 * 1024)
+    command.add_argument("--max-total-bytes", type=int, default=20 * 1024 * 1024)
     args = parser.parse_args(argv)
     return run(args)
 

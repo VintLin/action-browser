@@ -24,6 +24,18 @@ the available chart metadata. A list is `verified_empty` only when the page
 contains an explicit empty marker; a missing chart container is
 `page_not_ready` and a missing required field is `field_gap`.
 
+## Canonical Photo Download
+
+`douban.photo.download.read` requires explicit output and byte limits:
+
+```bash
+python3 scripts/action_browser.py run --site douban --resource photo --intent download \
+  --id <subject-id> --limit 2 --max-item-bytes 1048576 --max-total-bytes 2097152 \
+  --task-id <task> --session <session> --tab <owned-tab> --output-root <root>
+```
+
+It writes `artifacts/photos.json`, `download-manifest.json`, and the versioned Adapter Contract. A second run skips only checksum-verified files.
+
 ## 支持范围
 
 当前对齐 OpenCLI 豆瓣只读能力：

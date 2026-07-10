@@ -31,6 +31,7 @@ from typing import Any
 from scripts.actionbook_interrupts import install_interrupt_handlers
 from scripts.workflow_runtime import add_workflow_args, attach_workflow, evaluate, wait_until_stable, write_json
 from scripts.actionbook_session import ActionBookSession as ActionBook
+from scripts.download_primitive import download_image
 from scripts.script_common import log
 
 
@@ -566,21 +567,35 @@ def run_photos_view(args: argparse.Namespace) -> int:
 def run_photos_download(args: argparse.Namespace) -> int:
     subject_id = normalize_subject_id(args.id)
     count = read_count(args.count, default=120, max_value=500)
-    output_dir = Path(args.output) if args.output else default_action_output_dir("photos", "download")
+    output_dir = Path(args.output_root or args.output) if args.output_root or args.output else default_action_output_dir("photos", "download")
     book = attach_workflow(args, f"{MOVIE_HOME_URL}/subject/{subject_id}/photos", ActionBook)
     data = load_photos(book, subject_id, args.type, count, args.photo_id)
     photos = data.get("photos") if isinstance(data.get("photos"), list) else []
     if args.photo_id:
         photos = [photo for photo in photos if str(photo.get("photo_id") or "") == args.photo_id]
+    artifact_dir = output_dir / "artifacts"
+    write_json(artifact_dir / "photos.json", {"schema_version": 1, "subject_id": subject_id, "photos": photos})
+    manifest_path = output_dir / "download-manifest.json"
+    try:
+        prior_rows = json.loads(manifest_path.read_text(encoding="utf-8")).get("items") or []
+    except (OSError, ValueError, AttributeError):
+        prior_rows = []
+    previous = {str(item.get("photo_id") or ""): item for item in prior_rows if isinstance(item, dict)}
     records = []
+    consumed = 0
     media_dir = output_dir / sanitize_name(subject_id, "subject") / "media"
     for photo in photos[:count]:
         base = media_dir / f"{int(photo.get('index') or len(records) + 1):03d}_{sanitize_name(str(photo.get('photo_id') or 'photo'), 'photo')}_{sanitize_name(str(photo.get('title') or 'image'), 'image')}"
-        result = download_file(str(photo.get("image_url") or ""), base, str(photo.get("detail_url") or ""))
-        row = {**photo, **result}
+        suffix = media_extension(str(photo.get("image_url") or ""))
+        target = base.with_suffix(suffix)
+        result = download_image(str(photo.get("image_url") or ""), target, max_item_bytes=args.max_item_bytes, max_total_bytes=args.max_total_bytes, consumed_bytes=consumed, previous=previous.get(str(photo.get("photo_id") or "")), referer=str(photo.get("detail_url") or ""))
+        if result["status"] in {"success", "skipped"}:
+            consumed += int(result["size"])
+        row = {**photo, **result, "photo_id": str(photo.get("photo_id") or "")}
         records.append(row)
     write_records(records, output_dir, f"豆瓣图片下载: {data.get('subjectTitle') or subject_id}")
     write_json(output_dir / sanitize_name(subject_id, "subject") / "metadata.json", {"subject_id": subject_id, "type": args.type, "photos": records})
+    write_json(manifest_path, {"schema_version": 1, "subject_id": subject_id, "max_item_bytes": args.max_item_bytes, "max_total_bytes": args.max_total_bytes, "items": records})
     log(f"下载 {sum(1 for row in records if row.get('status') == 'success')}/{len(records)} 张图片: {output_dir}")
     return 0
 
@@ -757,6 +772,9 @@ def build_parser() -> argparse.ArgumentParser:
     photos_download.add_argument("--id", required=True, help="Movie subject ID or URL")
     photos_download.add_argument("--type", default="Rb", help="Douban photos type parameter, default Rb")
     photos_download.add_argument("--photo-id", default="", help="Only download one photo id")
+    photos_download.add_argument("--output-root", default="")
+    photos_download.add_argument("--max-item-bytes", type=int, default=10 * 1024 * 1024)
+    photos_download.add_argument("--max-total-bytes", type=int, default=20 * 1024 * 1024)
     add_common(photos_download, default_count=120)
     photos_download.set_defaults(func=run_photos_download)
 
@@ -764,6 +782,9 @@ def build_parser() -> argparse.ArgumentParser:
     download.add_argument("--id", required=True, help="Movie subject ID or URL")
     download.add_argument("--type", default="Rb", help="Douban photos type parameter, default Rb")
     download.add_argument("--photo-id", default="", help="Only download one photo id")
+    download.add_argument("--output-root", default="")
+    download.add_argument("--max-item-bytes", type=int, default=10 * 1024 * 1024)
+    download.add_argument("--max-total-bytes", type=int, default=20 * 1024 * 1024)
     add_common(download, default_count=120)
     download.set_defaults(func=run_photos_download)
 

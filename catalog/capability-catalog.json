@@ -2636,13 +2636,13 @@
       "access_requirement": "browser",
       "conflict_reason": null,
       "description": "下载电影海报/剧照图片",
-      "docs": [],
+      "docs": ["references/adapters/douban.md", "docs/tickets/opencli-programme/T4-download-tracer.md"],
       "effect": "read",
       "equivalence_classes": [],
-      "evidence": [],
+      "evidence": ["catalog/evidence/t4/douban-photo-download-smoke-20260710T0521Z.json"],
       "exclusion_reason": null,
       "fallbacks": [],
-      "id": "douban.download.download.read",
+      "id": "douban.photo.download.read",
       "idempotency": "not_applicable",
       "identity": {
         "field": "id"
@@ -2659,7 +2659,7 @@
       "reference_aliases": [
         "douban"
       ],
-      "resource": "download",
+      "resource": "photo",
       "risk_tier": "read",
       "semantic_fields": [
         {
@@ -2668,7 +2668,7 @@
           ],
           "required": true,
           "semantic": "index",
-          "target_field": ""
+          "target_field": "items[].index"
         },
         {
           "reference_fields": [
@@ -2676,7 +2676,7 @@
           ],
           "required": true,
           "semantic": "title",
-          "target_field": ""
+          "target_field": "items[].title"
         },
         {
           "reference_fields": [
@@ -2684,7 +2684,7 @@
           ],
           "required": true,
           "semantic": "status",
-          "target_field": ""
+          "target_field": "items[].status"
         },
         {
           "reference_fields": [
@@ -2692,15 +2692,15 @@
           ],
           "required": true,
           "semantic": "size",
-          "target_field": ""
+          "target_field": "items[].size"
         }
       ],
       "site": "douban",
       "source_commands": [
         "douban download"
       ],
-      "status": "discovered",
-      "tests": []
+      "status": "verified",
+      "tests": ["tests/test_download_primitive.py"]
     },
     {
       "access_requirement": "browser",
