@@ -1,0 +1,1 @@
+{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","required":["schema_version","run_id","task_id","capability_id","site","command","status","result_quality","contract_ref","artifact_refs","strategy_used","fallback_reason","failure","started_at","finished_at"]}

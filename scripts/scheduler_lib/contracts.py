@@ -119,6 +119,9 @@ def apply_summary_result(task: dict[str, Any], summary: dict[str, Any]) -> dict[
         )
 
     if not summary.get("ok"):
+        failure = summary.get("failure")
+        if isinstance(failure, dict) and failure.get("retryable"):
+            return set_task_status(task, status=STATUS_RUNNING, stage=STAGE_RETRYING, reason_code=summary.get("reason_code"))
         return set_task_status(
             task,
             status=STATUS_BLOCKED if summary.get("status") == STATUS_BLOCKED else STATUS_FAILED,

@@ -5,7 +5,7 @@
 
 ## Blockers and ownership
 
-- Blocked by: T1 #3, T2 #4, T3 #5, T4 #6.
+- Blocked by: T1 #3, T2 #4, T3 #5, T4 #6, T5a #10.
 - Owner role: Catalog Integrator；Verifier 必须是未实现 T1–T4 的独立模型。
 - File Ownership: Foundation integration tests，canary configuration/template，generated catalog view，programme verification report。
 - Prohibited: 新 site capability、general writes、legacy cutover/removal、dependency 新增。
