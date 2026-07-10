@@ -31,14 +31,13 @@ if __package__ in {None, ""}:
 from typing import Any
 
 from scripts.actionbook_interrupts import install_interrupt_handlers
-from scripts.adapter_runtime import prepare_task_book, wait_for_page_settle
+from scripts.workflow_runtime import add_workflow_args, attach_workflow, evaluate, wait_until_stable
 from scripts.actionbook_session import ActionBookSession as ActionBook
-from scripts.script_common import DEFAULT_TAB, add_session_tab_args, log, unwrap_eval
+from scripts.script_common import log, unwrap_eval
 
 
 WEIBO_HOME_URL = "https://weibo.com"
 WEIBO_SEARCH_URL = "https://s.weibo.com/weibo"
-DEFAULT_SESSION = "weibo-task"
 SKILL_DIR = Path(__file__).resolve().parents[2]
 ASSETS_DIR = SKILL_DIR / "assets" / "weibo"
 
@@ -138,14 +137,7 @@ def read_count(value: Any, default: int = 30, max_value: int = 50) -> int:
 
 
 def prepare_weibo_book(args: argparse.Namespace, url: str = WEIBO_HOME_URL) -> ActionBook:
-    return prepare_task_book(args, url, ActionBook)
-
-
-def api_eval(book: ActionBook, script: str, label: str, timeout: float = 45.0) -> Any:
-    value = unwrap_eval(book.eval(script, timeout=timeout))
-    if isinstance(value, dict) and value.get("error"):
-        raise RuntimeError(f"{label}: {value.get('error')}")
-    return value
+    return attach_workflow(args, url, ActionBook)
 
 
 def ensure_api_context(book: ActionBook) -> None:
@@ -640,7 +632,7 @@ def collect_weibos(book: ActionBook, source: str, count: int, max_scrolls: int) 
         if idle_rounds >= 4:
             break
         before = scroll_page(book)
-        wait_for_page_settle(book)
+        wait_until_stable(book)
         after = scroll_page(book)
         if after <= before + 5 and added == 0:
             idle_rounds += 1
@@ -891,7 +883,7 @@ def run_hot_view(args: argparse.Namespace) -> int:
     count = read_count(args.count, default=30, max_value=50)
     book = prepare_weibo_book(args)
     ensure_api_context(book)
-    rows = api_eval(book, f"""
+    rows = evaluate(book, f"""
         (async () => {{
           const resp = await fetch('/ajax/statuses/hot_band', {{ credentials: 'include' }});
           if (!resp.ok) return {{ error: 'HTTP ' + resp.status }};
@@ -923,7 +915,7 @@ def run_feed_api(args: argparse.Namespace, action: str) -> int:
     endpoint = "friendstimeline" if feed_type == "following" else "unreadfriendstimeline"
     book = prepare_weibo_book(args)
     ensure_api_context(book)
-    statuses = api_eval(book, f"""
+    statuses = evaluate(book, f"""
         (async () => {{
           const readUid = async () => {{
             {self_uid_js()}
@@ -968,7 +960,7 @@ def run_user_view(args: argparse.Namespace) -> int:
     user_id = resolve_profile_id_from_url(args.id or args.profile_url)
     book = prepare_weibo_book(args)
     ensure_api_context(book)
-    data = api_eval(book, f"""
+    data = evaluate(book, f"""
         (async () => {{
           const id = {json.dumps(user_id, ensure_ascii=False)};
           const isUid = /^\\d+$/.test(id);
@@ -1013,7 +1005,7 @@ def run_me_view(args: argparse.Namespace) -> int:
     output_dir = Path(args.output_dir).expanduser() if args.output_dir else default_action_output_dir("me", "view")
     book = prepare_weibo_book(args)
     ensure_api_context(book)
-    data = api_eval(book, """
+    data = evaluate(book, """
         (async () => {
           const readUid = async () => {
             const app = document.querySelector('#app')?.__vue_app__;
@@ -1062,7 +1054,7 @@ def run_post_api(args: argparse.Namespace, action: str) -> int:
         raise argparse.ArgumentTypeError("post requires --id or --url")
     book = prepare_weibo_book(args)
     ensure_api_context(book)
-    status = api_eval(book, f"""
+    status = evaluate(book, f"""
         (async () => {{
           const strip = html => String(html || '').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&').trim();
           const id = {json.dumps(post_id, ensure_ascii=False)};
@@ -1105,7 +1097,7 @@ def run_comments_view(args: argparse.Namespace) -> int:
         raise argparse.ArgumentTypeError("comments requires --id or --url")
     book = prepare_weibo_book(args)
     ensure_api_context(book)
-    rows = api_eval(book, f"""
+    rows = evaluate(book, f"""
         (async () => {{
           const strip = html => String(html || '').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&').trim();
           const id = {json.dumps(post_id, ensure_ascii=False)};
@@ -1140,7 +1132,7 @@ def run_user_posts(args: argparse.Namespace, action: str) -> int:
         raise argparse.ArgumentTypeError("user-posts requires --id or --profile-url")
     book = prepare_weibo_book(args)
     ensure_api_context(book)
-    statuses = api_eval(book, f"""
+    statuses = evaluate(book, f"""
         (async () => {{
           const rawId = {json.dumps(user_id, ensure_ascii=False)};
           const includeRetweets = {str(bool(args.include_retweets)).lower()};
@@ -1202,7 +1194,7 @@ def run_action(args: argparse.Namespace, source: str, url: str, action: str) -> 
     book.goto(url)
     wait_page_ready(book, source)
     book.eval("window.scrollTo(0, 0); window.dispatchEvent(new Event('scroll')); true", timeout=10.0)
-    wait_for_page_settle(book)
+    wait_until_stable(book)
     payloads = collect_weibos(book, source, args.count, args.max_scrolls)
     output_dir.mkdir(parents=True, exist_ok=True)
     if action == "download":
@@ -1275,7 +1267,7 @@ def run_user_posts_download(args: argparse.Namespace) -> int:
 
 
 def get_self_uid(book: ActionBook) -> str:
-    uid = api_eval(book, f"""
+    uid = evaluate(book, f"""
         (async () => {{
           const readUid = async () => {{
             {self_uid_js()}
@@ -1297,7 +1289,7 @@ def run_favorites(args: argparse.Namespace, action: str) -> int:
     book.goto(fav_url)
     wait_page_ready(book, "favorites", timeout_secs=30.0)
     book.eval("window.scrollTo(0, 0); window.dispatchEvent(new Event('scroll')); true", timeout=10.0)
-    wait_for_page_settle(book)
+    wait_until_stable(book)
     payloads = collect_weibos(book, "favorites", args.count, args.max_scrolls)
     output_dir.mkdir(parents=True, exist_ok=True)
     if action == "download":
@@ -1322,7 +1314,7 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="area", required=True)
 
     def add_common(target: argparse.ArgumentParser, default_count: int = 30, default_max_scrolls: int = 18) -> None:
-        add_session_tab_args(target, default_session=DEFAULT_SESSION)
+        add_workflow_args(target)
         target.add_argument("--count", type=int, default=default_count, help="Number of posts to process")
         target.add_argument("--max-scrolls", type=int, default=default_max_scrolls, help="Maximum scroll rounds")
         target.add_argument("--output-dir", help="Output directory")

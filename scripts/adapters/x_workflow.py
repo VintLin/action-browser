@@ -31,15 +31,14 @@ if __package__ in {None, ""}:
 from typing import Any
 
 from scripts.actionbook_interrupts import install_interrupt_handlers
-from scripts.adapter_runtime import close_temporary_tab, prepare_task_book as prepare_runtime_task_book
+from scripts.workflow_runtime import add_workflow_args, attach_workflow, temporary_tab
 from scripts.actionbook_session import ActionBookSession as ActionBook
-from scripts.script_common import DEFAULT_TAB, add_session_tab_args, log, unwrap_eval
+from scripts.script_common import log, unwrap_eval
 
 
 HOME_URL = "https://x.com/home"
 BOOKMARKS_URL = "https://x.com/i/bookmarks"
 SEARCH_URL = "https://x.com/search"
-DEFAULT_SESSION = "x-task"
 SKILL_DIR = Path(__file__).resolve().parents[2]
 ASSETS_DIR = SKILL_DIR / "assets" / "x"
 
@@ -771,10 +770,6 @@ def wait_article_detail(book: ActionBook, tab_id: str, timeout_secs: float = 18.
     return final_detail
 
 
-def close_article_tab(book: ActionBook, tab_id: str) -> None:
-    close_temporary_tab(book, tab_id)
-
-
 def enrich_article_payloads(book: ActionBook, payloads: list[TweetPayload]) -> None:
     for index, payload in enumerate(payloads, start=1):
         if payload.tweet_type != "article" and not payload.article:
@@ -784,44 +779,40 @@ def enrich_article_payloads(book: ActionBook, payloads: list[TweetPayload]) -> N
             payload.extraction_warnings.append("article_missing_url")
             continue
         log(f"打开文章详情: {index}/{len(payloads)} {article_url}")
-        tab_id = ""
         try:
-            tab_id = book.open_new_tab(article_url)
-            detail = wait_article_detail(book, tab_id)
-            if not detail:
-                payload.extraction_warnings.append("article_detail_empty")
-                continue
-            article = dict(payload.article or {})
-            article.update(
-                {
-                    "url": article_url,
-                    "detail_url": str(detail.get("detail_url") or article_url),
-                    "title": str(detail.get("title") or article.get("title") or ""),
-                    "body_text": str(detail.get("body_text") or ""),
-                    "body_lines": [str(line) for line in detail.get("body_lines") or []],
-                    "markdown_blocks": [
-                        block for block in detail.get("markdown_blocks") or [] if isinstance(block, dict)
-                    ],
-                    "article_images": [
-                        image for image in detail.get("article_images") or [] if isinstance(image, dict)
-                    ],
-                    "links": [link for link in detail.get("links") or [] if isinstance(link, dict)],
-                    "created_at_iso": str(detail.get("created_at_iso") or payload.created_at_iso or ""),
-                    "raw_text_lines": [str(line) for line in detail.get("raw_text_lines") or []],
-                }
-            )
-            payload.article = article
-            if len(str(article.get("body_text") or "")) < 120:
-                payload.extraction_warnings.append("article_detail_too_short")
-            if article.get("body_text") and len(str(article.get("body_text") or "")) >= 120 and (not payload.text or len(payload.text) < 80):
-                payload.text = str(article.get("body_text"))
-            log(f"文章详情已补全: chars={len(str(article.get('body_text') or ''))}")
+            with temporary_tab(book, article_url) as tab_id:
+                detail = wait_article_detail(book, tab_id)
+                if not detail:
+                    payload.extraction_warnings.append("article_detail_empty")
+                    continue
+                article = dict(payload.article or {})
+                article.update(
+                    {
+                        "url": article_url,
+                        "detail_url": str(detail.get("detail_url") or article_url),
+                        "title": str(detail.get("title") or article.get("title") or ""),
+                        "body_text": str(detail.get("body_text") or ""),
+                        "body_lines": [str(line) for line in detail.get("body_lines") or []],
+                        "markdown_blocks": [
+                            block for block in detail.get("markdown_blocks") or [] if isinstance(block, dict)
+                        ],
+                        "article_images": [
+                            image for image in detail.get("article_images") or [] if isinstance(image, dict)
+                        ],
+                        "links": [link for link in detail.get("links") or [] if isinstance(link, dict)],
+                        "created_at_iso": str(detail.get("created_at_iso") or payload.created_at_iso or ""),
+                        "raw_text_lines": [str(line) for line in detail.get("raw_text_lines") or []],
+                    }
+                )
+                payload.article = article
+                if len(str(article.get("body_text") or "")) < 120:
+                    payload.extraction_warnings.append("article_detail_too_short")
+                if article.get("body_text") and len(str(article.get("body_text") or "")) >= 120 and (not payload.text or len(payload.text) < 80):
+                    payload.text = str(article.get("body_text"))
+                log(f"文章详情已补全: chars={len(str(article.get('body_text') or ''))}")
         except Exception as exc:  # noqa: BLE001
             payload.extraction_warnings.append(f"article_detail_failed: {exc}")
             log(f"文章详情抓取失败: {article_url} reason={exc}")
-        finally:
-            if tab_id:
-                close_article_tab(book, tab_id)
 
 
 def needs_show_more_expansion(payload: TweetPayload) -> bool:
@@ -863,28 +854,24 @@ def expand_show_more_payloads(book: ActionBook, payloads: list[TweetPayload]) ->
             payload.extraction_warnings.append("show_more_unexpanded")
             continue
         log(f"展开显示更多: {index}/{len(payloads)} {payload.source_url}")
-        tab_id = ""
         try:
-            tab_id = book.open_new_tab(payload.source_url)
-            wait_tab_articles(book, tab_id)
-            clicked = click_show_more_in_tab(book, tab_id)
-            expanded = wait_for_expanded_payload(book, payload, tab_id) if clicked else None
-            if expanded is None:
-                candidates = extract_visible_tweets(book, payload.source_page, tab_id=tab_id)
-                expanded = next((item for item in candidates if item.tweet_id and item.tweet_id == payload.tweet_id), None)
-                if expanded is None and candidates:
-                    expanded = candidates[0]
-            if expanded is None:
-                payload.extraction_warnings.append("show_more_unexpanded")
-                continue
-            merge_expanded_payload(payload, expanded)
-            log(f"显示更多已展开: clicked={clicked} chars={len(payload.text)}")
+            with temporary_tab(book, payload.source_url) as tab_id:
+                wait_tab_articles(book, tab_id)
+                clicked = click_show_more_in_tab(book, tab_id)
+                expanded = wait_for_expanded_payload(book, payload, tab_id) if clicked else None
+                if expanded is None:
+                    candidates = extract_visible_tweets(book, payload.source_page, tab_id=tab_id)
+                    expanded = next((item for item in candidates if item.tweet_id and item.tweet_id == payload.tweet_id), None)
+                    if expanded is None and candidates:
+                        expanded = candidates[0]
+                if expanded is None:
+                    payload.extraction_warnings.append("show_more_unexpanded")
+                    continue
+                merge_expanded_payload(payload, expanded)
+                log(f"显示更多已展开: clicked={clicked} chars={len(payload.text)}")
         except Exception as exc:  # noqa: BLE001
             payload.extraction_warnings.append(f"show_more_unexpanded: {exc}")
             log(f"显示更多展开失败: {payload.source_url} reason={exc}")
-        finally:
-            if tab_id:
-                close_article_tab(book, tab_id)
 
 
 def collect_tweets(book: ActionBook, source: str, count: int, max_scrolls: int) -> list[TweetPayload]:
@@ -1236,10 +1223,6 @@ def write_summary(payloads: list[TweetPayload], output_dir: Path, source: str, a
     (output_dir / "summary.md").write_text("\n".join(lines).strip() + "\n", encoding="utf-8")
 
 
-def prepare_task_book(args: argparse.Namespace, url: str) -> ActionBook:
-    return prepare_runtime_task_book(args, url, ActionBook)
-
-
 def wait_for_visible_tweets(book: ActionBook, source: str, timeout_secs: float = 3.0) -> None:
     deadline = time.time() + timeout_secs
     while time.time() < deadline:
@@ -1250,7 +1233,7 @@ def wait_for_visible_tweets(book: ActionBook, source: str, timeout_secs: float =
 
 def run_download(args: argparse.Namespace, source: str, url: str) -> int:
     output_dir = Path(args.output_dir).expanduser() if args.output_dir else default_action_output_dir(source, "download")
-    book = prepare_task_book(args, url)
+    book = attach_workflow(args, url, ActionBook)
     book.goto(url)
     wait_page_ready(book, source)
     book.eval("window.scrollTo(0, 0); window.dispatchEvent(new Event('scroll')); true", timeout=10.0)
@@ -1278,7 +1261,7 @@ def run_download(args: argparse.Namespace, source: str, url: str) -> int:
 
 def run_view(args: argparse.Namespace, source: str, url: str) -> int:
     output_dir = Path(args.output_dir).expanduser() if args.output_dir else default_action_output_dir(source, "view")
-    book = prepare_task_book(args, url)
+    book = attach_workflow(args, url, ActionBook)
     book.goto(url)
     wait_page_ready(book, source)
     book.eval("window.scrollTo(0, 0); window.dispatchEvent(new Event('scroll')); true", timeout=10.0)
@@ -1399,7 +1382,7 @@ def run_profile_view(args: argparse.Namespace) -> int:
 
 
 def resolve_current_x_profile_url(args: argparse.Namespace) -> str:
-    book = prepare_task_book(args, HOME_URL)
+    book = attach_workflow(args, HOME_URL, ActionBook)
     book.goto(HOME_URL)
     wait_page_ready(book, "me")
     profile_url = get_current_x_profile_url(book)
@@ -1425,7 +1408,7 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="area", required=True)
 
     def add_common(target: argparse.ArgumentParser, default_count: int = 30, default_max_scrolls: int = 18) -> None:
-        add_session_tab_args(target, default_session=DEFAULT_SESSION)
+        add_workflow_args(target)
         target.add_argument("--count", type=int, default=default_count, help="Number of posts to process")
         target.add_argument("--max-scrolls", type=int, default=default_max_scrolls, help="Maximum scroll rounds")
         target.add_argument("--output-dir", help="Output directory")

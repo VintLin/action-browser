@@ -28,13 +28,12 @@ if __package__ in {None, ""}:
 from typing import Any
 
 from scripts.actionbook_interrupts import install_interrupt_handlers
-from scripts.adapter_runtime import prepare_task_book, wait_for_page_settle
+from scripts.workflow_runtime import add_workflow_args, attach_workflow, evaluate, wait_until_stable, write_json
 from scripts.actionbook_session import ActionBookSession as ActionBook
-from scripts.script_common import DEFAULT_TAB, add_session_tab_args, log, unwrap_eval
+from scripts.script_common import log
 
 
 YOUTUBE_HOME_URL = "https://www.youtube.com"
-DEFAULT_SESSION = "youtube-task"
 SKILL_DIR = Path(__file__).resolve().parents[2]
 ASSETS_DIR = SKILL_DIR / "assets" / "youtube"
 
@@ -60,11 +59,6 @@ def default_action_output_dir(source: str, action: str) -> Path:
     return ASSETS_DIR / action_dir / source / stamp
 
 
-def write_json(path: Path, data: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-
-
 def write_records(records: list[dict[str, Any]], output_dir: Path, title: str) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     write_json(output_dir / "summary.json", records)
@@ -83,19 +77,12 @@ def write_records(records: list[dict[str, Any]], output_dir: Path, title: str) -
     write_json(output_dir / "failures.json", [])
 
 
-def api_eval(book: ActionBook, script: str, label: str, timeout: float = 45.0) -> Any:
-    value = unwrap_eval(book.eval(script, timeout=timeout))
-    if isinstance(value, dict) and value.get("error"):
-        raise RuntimeError(f"{label}: {value.get('error')}")
-    return value
-
-
 def start_book(args: argparse.Namespace, url: str) -> ActionBook:
-    return prepare_task_book(args, url, ActionBook)
+    return attach_workflow(args, url, ActionBook)
 
 
 def ensure_youtube_ready(book: ActionBook) -> None:
-    state = api_eval(book, """
+    state = evaluate(book, """
     (() => ({
       href: location.href,
       title: document.title || '',
@@ -289,9 +276,9 @@ def run_search(args: argparse.Namespace) -> int:
         url += "&sp=" + urllib.parse.quote(sp)
     book = start_book(args, url)
     book.goto(url)
-    wait_for_page_settle(book)
+    wait_until_stable(book)
     ensure_youtube_ready(book)
-    data = api_eval(book, f"""
+    data = evaluate(book, f"""
     (() => {{
       {JS_HELPERS}
       const limit = {count};
@@ -367,9 +354,9 @@ def run_video(args: argparse.Namespace) -> int:
     output_dir = Path(args.output) if args.output else default_action_output_dir("video", "view")
     book = start_book(args, YOUTUBE_HOME_URL)
     book.goto(YOUTUBE_HOME_URL)
-    wait_for_page_settle(book)
+    wait_until_stable(book)
     ensure_youtube_ready(book)
-    data = api_eval(book, f"""
+    data = evaluate(book, f"""
     (async () => {{
       {JS_HELPERS}
       const response = await fetch('/watch?v=' + encodeURIComponent({json.dumps(vid)}), {{ credentials: 'include' }});
@@ -415,9 +402,9 @@ def run_video(args: argparse.Namespace) -> int:
 
 def load_transcript(book: ActionBook, video_id: str, lang: str) -> dict[str, Any]:
     book.goto(video_url(video_id))
-    wait_for_page_settle(book)
+    wait_until_stable(book)
     ensure_youtube_ready(book)
-    data = api_eval(book, f"""
+    data = evaluate(book, f"""
     (async () => {{
       {JS_HELPERS}
       const videoId = {json.dumps(video_id)};
@@ -617,9 +604,9 @@ def run_comments(args: argparse.Namespace) -> int:
     output_dir = Path(args.output) if args.output else default_action_output_dir("comments", "view")
     book = start_book(args, video_url(vid))
     book.goto(video_url(vid))
-    wait_for_page_settle(book)
+    wait_until_stable(book)
     ensure_youtube_ready(book)
-    data = api_eval(book, f"""
+    data = evaluate(book, f"""
     (async () => {{
       {JS_HELPERS}
       const videoId = {json.dumps(vid)};
@@ -673,9 +660,9 @@ def run_feed(args: argparse.Namespace) -> int:
     output_dir = Path(args.output) if args.output else default_action_output_dir("feed", "view")
     book = start_book(args, YOUTUBE_HOME_URL)
     book.goto(YOUTUBE_HOME_URL)
-    wait_for_page_settle(book)
+    wait_until_stable(book)
     ensure_youtube_ready(book)
-    data = api_eval(book, f"""
+    data = evaluate(book, f"""
     (() => {{
       {JS_HELPERS}
       const limit = {count};
@@ -737,9 +724,9 @@ def run_playlist_like(args: argparse.Namespace, source: str, url: str, playlist_
         current_url = str(book.browser("url", timeout=10.0) or "")
         if urllib.parse.urlparse(url).path not in urllib.parse.urlparse(current_url).path and (playlist_id or "") not in current_url:
             raise exc
-    wait_for_page_settle(book)
+    wait_until_stable(book)
     ensure_youtube_ready(book)
-    data = api_eval(book, f"""
+    data = evaluate(book, f"""
     (async () => {{
       {JS_HELPERS}
       const limit = {count};
@@ -792,12 +779,12 @@ def run_history(args: argparse.Namespace) -> int:
     output_dir = Path(args.output) if args.output else default_action_output_dir("history", "view")
     book = start_book(args, f"{YOUTUBE_HOME_URL}/feed/history")
     book.goto(f"{YOUTUBE_HOME_URL}/feed/history")
-    wait_for_page_settle(book)
+    wait_until_stable(book)
     ensure_youtube_ready(book)
     for _ in range(min(max((count // 20) + 1, 1), 8)):
         book.eval("window.scrollBy(0, Math.max(800, window.innerHeight)); true", timeout=5.0)
         time.sleep(0.8)
-    data = api_eval(book, f"""
+    data = evaluate(book, f"""
     (() => {{
       {JS_HELPERS}
       const limit = {count};
@@ -839,9 +826,9 @@ def run_subscriptions(args: argparse.Namespace) -> int:
     output_dir = Path(args.output) if args.output else default_action_output_dir("subscriptions", "view")
     book = start_book(args, f"{YOUTUBE_HOME_URL}/feed/channels")
     book.goto(f"{YOUTUBE_HOME_URL}/feed/channels")
-    wait_for_page_settle(book)
+    wait_until_stable(book)
     ensure_youtube_ready(book)
-    data = api_eval(book, f"""
+    data = evaluate(book, f"""
     (() => {{
       {JS_HELPERS}
       const limit = {count};
@@ -884,9 +871,9 @@ def run_channel(args: argparse.Namespace) -> int:
     start_url = f"{YOUTUBE_HOME_URL}/{channel_input}" if channel_input.startswith("@") else f"{YOUTUBE_HOME_URL}/channel/{channel_input}"
     book = start_book(args, YOUTUBE_HOME_URL)
     book.goto(YOUTUBE_HOME_URL)
-    wait_for_page_settle(book)
+    wait_until_stable(book)
     ensure_youtube_ready(book)
-    data = api_eval(book, f"""
+    data = evaluate(book, f"""
     (async () => {{
       {JS_HELPERS}
       const input = {json.dumps(channel_input)};
@@ -947,7 +934,7 @@ def run_channel(args: argparse.Namespace) -> int:
 def add_common(parser: argparse.ArgumentParser, default_count: int = 20) -> None:
     parser.add_argument("--count", type=int, default=default_count, help="Number of records")
     parser.add_argument("--output", default="", help="Output directory")
-    add_session_tab_args(parser, default_session=DEFAULT_SESSION, tab_help="ActionBook tab id")
+    add_workflow_args(parser)
 
 
 def build_parser() -> argparse.ArgumentParser:

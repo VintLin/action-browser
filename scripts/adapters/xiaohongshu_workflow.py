@@ -33,14 +33,13 @@ if __package__ in {None, ""}:
 from typing import Any
 
 from scripts.actionbook_interrupts import check_interrupt, install_interrupt_handlers, is_interrupted
-from scripts.adapter_runtime import prepare_task_book
+from scripts.workflow_runtime import add_workflow_args, attach_workflow
 from scripts.actionbook_session import ActionBookSession as ActionBook
-from scripts.script_common import DEFAULT_TAB, add_session_tab_args, log
+from scripts.script_common import log
 
 
 XHS_HOME = "https://www.xiaohongshu.com"
 XHS_EXPLORE = "https://www.xiaohongshu.com/explore"
-DEFAULT_SESSION = "xhs-task"
 SKILL_DIR = Path(__file__).resolve().parents[2]
 ASSETS_DIR = SKILL_DIR / "assets" / "xiaohongshu"
 AI_SEARCH_SOURCE = "web_explore_feed"
@@ -2225,7 +2224,7 @@ def default_action_output_dir(source: str, action: str, name: str = "") -> Path:
 
 
 def prepare_xhs_book(args: argparse.Namespace, url: str) -> ActionBook:
-    return prepare_task_book(args, url, ActionBook)
+    return attach_workflow(args, url, ActionBook)
 
 
 def run_note(args: argparse.Namespace) -> int:
@@ -2433,7 +2432,7 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="area", required=True)
 
     def add_common(target: argparse.ArgumentParser) -> None:
-        add_session_tab_args(target, default_session=DEFAULT_SESSION)
+        add_workflow_args(target)
         target.add_argument("--output-dir", help="Output directory")
         target.add_argument(
             "--folder-template",

@@ -31,14 +31,13 @@ if __package__ in {None, ""}:
 from typing import Any
 
 from scripts.actionbook_interrupts import install_interrupt_handlers
-from scripts.adapter_runtime import prepare_task_book, wait_for_page_settle
+from scripts.workflow_runtime import add_workflow_args, attach_workflow, evaluate, wait_until_stable, write_json
 from scripts.actionbook_session import ActionBookSession as ActionBook
-from scripts.script_common import DEFAULT_TAB, add_session_tab_args, log, unwrap_eval
+from scripts.script_common import log
 
 
 ZHIHU_HOME_URL = "https://www.zhihu.com"
 ZHIHU_ZHUANLAN_URL = "https://zhuanlan.zhihu.com"
-DEFAULT_SESSION = "zhihu-task"
 SKILL_DIR = Path(__file__).resolve().parents[2]
 ASSETS_DIR = SKILL_DIR / "assets" / "zhihu"
 
@@ -77,15 +76,8 @@ def default_action_output_dir(source: str, action: str) -> Path:
     return ASSETS_DIR / action_dir / source / stamp
 
 
-def api_eval(book: ActionBook, script: str, label: str, timeout: float = 45.0) -> Any:
-    value = unwrap_eval(book.eval(script, timeout=timeout))
-    if isinstance(value, dict) and value.get("error"):
-        raise RuntimeError(f"{label}: {value.get('error')}")
-    return value
-
-
 def get_page_state(book: ActionBook) -> dict[str, str]:
-    value = api_eval(book, """
+    value = evaluate(book, """
     (() => ({
       href: location.href,
       title: document.title || '',
@@ -110,12 +102,7 @@ def ensure_zhihu_ready(book: ActionBook) -> None:
 
 
 def start_book(args: argparse.Namespace, url: str) -> ActionBook:
-    return prepare_task_book(args, url, ActionBook)
-
-
-def write_json(path: Path, data: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return attach_workflow(args, url, ActionBook)
 
 
 def write_records(records: list[dict[str, Any]], output_dir: Path, title: str) -> None:
@@ -268,9 +255,9 @@ def run_hot(args: argparse.Namespace) -> int:
     output_dir = Path(args.output) if args.output else default_action_output_dir("hot", "view")
     book = start_book(args, ZHIHU_HOME_URL)
     book.goto(ZHIHU_HOME_URL)
-    wait_for_page_settle(book)
+    wait_until_stable(book)
     ensure_zhihu_ready(book)
-    data = require_api_payload(api_eval(
+    data = require_api_payload(evaluate(
         book,
         fetch_json_js(f"{ZHIHU_HOME_URL}/api/v3/feed/topstory/hot-lists/total?limit={max(count, 50)}"),
         "zhihu hot",
@@ -304,7 +291,7 @@ def run_recommend(args: argparse.Namespace) -> int:
     output_dir = Path(args.output) if args.output else default_action_output_dir("recommend", "view")
     book = start_book(args, ZHIHU_HOME_URL)
     book.goto(ZHIHU_HOME_URL)
-    wait_for_page_settle(book)
+    wait_until_stable(book)
     ensure_zhihu_ready(book)
     rows: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -312,7 +299,7 @@ def run_recommend(args: argparse.Namespace) -> int:
     url = f"{ZHIHU_HOME_URL}/api/v3/feed/topstory/recommend?limit=10&desktop=true"
     while url and len(rows) < count and url not in visited:
         visited.add(url)
-        data = require_api_payload(api_eval(book, fetch_json_js(url), "zhihu recommend", timeout=30.0), "zhihu recommend")
+        data = require_api_payload(evaluate(book, fetch_json_js(url), "zhihu recommend", timeout=30.0), "zhihu recommend")
         for item in data.get("data") or []:
             if not isinstance(item, dict):
                 continue
@@ -379,7 +366,7 @@ def run_search(args: argparse.Namespace) -> int:
     output_dir = Path(args.output) if args.output else default_action_output_dir("search", "view")
     book = start_book(args, ZHIHU_HOME_URL)
     book.goto(ZHIHU_HOME_URL)
-    wait_for_page_settle(book)
+    wait_until_stable(book)
     ensure_zhihu_ready(book)
     query = normalize_text(args.query)
     rows: list[dict[str, Any]] = []
@@ -388,7 +375,7 @@ def run_search(args: argparse.Namespace) -> int:
     url = f"{ZHIHU_HOME_URL}/api/v4/search_v3?q={urllib.parse.quote(query)}&t=general&offset=0&limit=20"
     while url and len(rows) < count and url not in visited:
         visited.add(url)
-        data = require_api_payload(api_eval(book, fetch_json_js(url), "zhihu search", timeout=30.0), "zhihu search")
+        data = require_api_payload(evaluate(book, fetch_json_js(url), "zhihu search", timeout=30.0), "zhihu search")
         for item in data.get("data") or []:
             if not isinstance(item, dict):
                 continue
@@ -425,18 +412,18 @@ def run_question(args: argparse.Namespace) -> int:
     page_url = f"{ZHIHU_HOME_URL}/question/{question_id}/answers/updated" if sort == "created" else f"{ZHIHU_HOME_URL}/question/{question_id}"
     book = start_book(args, page_url)
     book.goto(page_url)
-    wait_for_page_settle(book)
+    wait_until_stable(book)
     ensure_zhihu_ready(book)
     rows: list[dict[str, Any]] = []
     seen: set[str] = set()
     visited: set[str] = set()
     url = f"{ZHIHU_HOME_URL}/api/v4/questions/{question_id}/answers?limit=20&offset=0&sort_by={sort}&include=data%5B*%5D.content,voteup_count,comment_count,author,created_time,updated_time"
-    question_title = normalize_text(api_eval(book, """
+    question_title = normalize_text(evaluate(book, """
     (() => document.querySelector('h1.QuestionHeader-title, .QuestionHeader-title')?.textContent || document.title || '')()
     """, "zhihu question title", timeout=10.0))
     while url and len(rows) < count and url not in visited:
         visited.add(url)
-        data = require_api_payload(api_eval(book, fetch_json_js(url), "zhihu question", timeout=30.0), "zhihu question")
+        data = require_api_payload(evaluate(book, fetch_json_js(url), "zhihu question", timeout=30.0), "zhihu question")
         for item in data.get("data") or []:
             if not isinstance(item, dict):
                 continue
@@ -489,13 +476,13 @@ def run_answer_detail(args: argparse.Namespace) -> int:
     output_dir = Path(args.output) if args.output else default_action_output_dir("answer-detail", "view")
     book = start_book(args, target["url"])
     book.goto(target["url"])
-    wait_for_page_settle(book)
+    wait_until_stable(book)
     ensure_zhihu_ready(book)
     current_url = str(book.browser("url", timeout=10.0) or "")
     current_qid = (re.search(r"/question/(\d+)/answer/", current_url) or [None, ""])[1]
     answer_id = target["answer_id"]
     api_url = f"{ZHIHU_HOME_URL}/api/v4/answers/{answer_id}?include=content,voteup_count,comment_count,author,created_time,updated_time,question"
-    data = require_api_payload(api_eval(book, fetch_json_js(api_url), "zhihu answer-detail", timeout=30.0), "zhihu answer-detail")
+    data = require_api_payload(evaluate(book, fetch_json_js(api_url), "zhihu answer-detail", timeout=30.0), "zhihu answer-detail")
     question = data.get("question") if isinstance(data.get("question"), dict) else {}
     qid = target["question_id"] or current_qid or str(question.get("id") or "")
     content = strip_html(str(data.get("content") or ""))
@@ -520,7 +507,7 @@ def run_answer_detail(args: argparse.Namespace) -> int:
 
 
 def get_me_url_token(book: ActionBook) -> str:
-    data = require_api_payload(api_eval(
+    data = require_api_payload(evaluate(
         book,
         fetch_json_js(f"{ZHIHU_HOME_URL}/api/v4/me?include=url_token"),
         "zhihu me",
@@ -537,7 +524,7 @@ def run_collections(args: argparse.Namespace) -> int:
     output_dir = Path(args.output) if args.output else default_action_output_dir("collections", "view")
     book = start_book(args, ZHIHU_HOME_URL)
     book.goto(ZHIHU_HOME_URL)
-    wait_for_page_settle(book)
+    wait_until_stable(book)
     ensure_zhihu_ready(book)
     url_token = get_me_url_token(book)
     rows: list[dict[str, Any]] = []
@@ -546,7 +533,7 @@ def run_collections(args: argparse.Namespace) -> int:
     while len(rows) < count:
         page_limit = min(20, count - len(rows))
         url = f"{ZHIHU_HOME_URL}/api/v4/people/{urllib.parse.quote(url_token)}/collections?include=data%5B*%5D.updated_time&offset={offset}&limit={page_limit}"
-        data = require_api_payload(api_eval(book, fetch_json_js(url), "zhihu collections", timeout=30.0), "zhihu collections")
+        data = require_api_payload(evaluate(book, fetch_json_js(url), "zhihu collections", timeout=30.0), "zhihu collections")
         items = data.get("data") if isinstance(data.get("data"), list) else []
         if not items:
             break
@@ -630,7 +617,7 @@ def run_collection(args: argparse.Namespace) -> int:
     output_dir = Path(args.output) if args.output else default_action_output_dir("collection", "view")
     book = start_book(args, ZHIHU_HOME_URL)
     book.goto(ZHIHU_HOME_URL)
-    wait_for_page_settle(book)
+    wait_until_stable(book)
     ensure_zhihu_ready(book)
     rows: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -638,7 +625,7 @@ def run_collection(args: argparse.Namespace) -> int:
     while len(rows) < count:
         page_limit = min(20, count - len(rows))
         url = f"{ZHIHU_HOME_URL}/api/v4/collections/{args.id}/items?offset={next_offset}&limit={page_limit}"
-        data = require_api_payload(api_eval(book, fetch_json_js(url), "zhihu collection", timeout=30.0), "zhihu collection")
+        data = require_api_payload(evaluate(book, fetch_json_js(url), "zhihu collection", timeout=30.0), "zhihu collection")
         items = data.get("data") if isinstance(data.get("data"), list) else []
         if not items:
             break
@@ -743,9 +730,9 @@ def run_download(args: argparse.Namespace) -> int:
     output_dir = Path(args.output) if args.output else default_action_output_dir("download", "download")
     book = start_book(args, article_url)
     book.goto(article_url)
-    wait_for_page_settle(book)
+    wait_until_stable(book)
     ensure_zhihu_ready(book)
-    data = api_eval(book, """
+    data = evaluate(book, """
     (() => {
       const normalize = value => String(value || '').replace(/\\s+/g, ' ').trim();
       const abs = value => {
@@ -807,7 +794,7 @@ def run_download(args: argparse.Namespace) -> int:
 def add_common(parser: argparse.ArgumentParser, default_count: int = 20) -> None:
     parser.add_argument("--count", type=int, default=default_count, help="Number of records")
     parser.add_argument("--output", default="", help="Output directory")
-    add_session_tab_args(parser, default_session=DEFAULT_SESSION, tab_help="ActionBook tab id")
+    add_workflow_args(parser)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -869,7 +856,7 @@ def build_parser() -> argparse.ArgumentParser:
     download.add_argument("--url", required=True, help="Article URL or article:<id>")
     download.add_argument("--download-images", action="store_true", help="Download images locally")
     download.add_argument("--output", default="", help="Output directory")
-    add_session_tab_args(download, default_session=DEFAULT_SESSION, tab_help="ActionBook tab id")
+    add_workflow_args(download)
     download.set_defaults(func=run_download)
 
     return parser

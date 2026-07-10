@@ -20,14 +20,13 @@ from typing import Any
 from urllib.parse import quote
 
 from scripts.actionbook_interrupts import install_interrupt_handlers
-from scripts.adapter_runtime import prepare_task_book
+from scripts.workflow_runtime import add_workflow_args, attach_workflow, evaluate, write_json
 from scripts.actionbook_session import ActionBookSession as ActionBook
-from scripts.script_common import DEFAULT_TAB, add_session_tab_args, log, unwrap_eval
+from scripts.script_common import log
 
 
 TAOBAO_HOME_URL = "https://www.taobao.com"
 TAOBAO_SEARCH_URL = "https://s.taobao.com/search"
-DEFAULT_SESSION = "taobao-task"
 HOME_WARMUP_SECONDS = 2.0
 SEARCH_SETTLE_SECONDS = 8.0
 PAGE_SETTLE_SECONDS = 6.0
@@ -62,30 +61,6 @@ def normalize_numeric_id(value: Any, label: str, example: str) -> str:
     if re.fullmatch(r"\d+", raw):
         return raw
     raise argparse.ArgumentTypeError(f"{label} must include a numeric id, for example {example}")
-def api_eval(book: ActionBook, script: str, label: str, timeout: float = 45.0) -> Any:
-    last_error = ""
-    for attempt in range(3):
-        try:
-            data = unwrap_eval(book.eval(script, timeout=timeout))
-            if isinstance(data, dict) and data.get("error"):
-                raise RuntimeError(f"{label}: {data.get('error')}")
-            return data
-        except RuntimeError as exc:
-            last_error = str(exc)
-            transient = (
-                "Detached while handling command" in last_error
-                or "Execution context was destroyed" in last_error
-                or "Cannot find context" in last_error
-            )
-            if transient and attempt < 2:
-                time.sleep(0.4 * (attempt + 1))
-                continue
-            if last_error.startswith(label):
-                raise
-            raise RuntimeError(f"{label}: {last_error}") from exc
-    raise RuntimeError(f"{label}: {last_error or 'unknown eval failure'}")
-
-
 def require_list_payload(value: Any, label: str) -> list[dict[str, Any]]:
     if isinstance(value, list):
         for index, item in enumerate(value, start=1):
@@ -120,7 +95,7 @@ def require_cart_payload(value: Any, label: str) -> list[dict[str, Any]]:
 
 
 def get_page_state(book: ActionBook) -> dict[str, str]:
-    data = api_eval(
+    data = evaluate(
         book,
         """
         (() => ({
@@ -172,12 +147,7 @@ def ensure_ready(book: ActionBook) -> None:
 
 
 def start_book(args: argparse.Namespace, url: str) -> ActionBook:
-    return prepare_task_book(args, url, ActionBook)
-
-
-def write_json(path: Path, data: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return attach_workflow(args, url, ActionBook)
 
 
 def default_output_dir(area: str) -> Path:
@@ -276,7 +246,7 @@ def finish(records: list[dict[str, Any]], args: argparse.Namespace, area: str, t
 
 def add_common_view_args(parser: argparse.ArgumentParser, count_default: int) -> None:
     parser.add_argument("--task-id", default="")
-    add_session_tab_args(parser, default_session=DEFAULT_SESSION)
+    add_workflow_args(parser)
     parser.add_argument("--output", default="")
     parser.add_argument("--count", default=str(count_default))
 
@@ -680,7 +650,7 @@ WHOAMI_SCRIPT = """
 def navigate_from_home(args: argparse.Namespace, target_url: str, settle_seconds: float) -> ActionBook:
     book = start_book(args, TAOBAO_HOME_URL)
     time.sleep(HOME_WARMUP_SECONDS)
-    api_eval(book, f"location.href = {json.dumps(target_url)}; true", "打开淘宝页面失败")
+    evaluate(book, f"location.href = {json.dumps(target_url)}; true", "打开淘宝页面失败")
     time.sleep(settle_seconds)
     return book
 
@@ -696,7 +666,7 @@ def run_search(args: argparse.Namespace) -> int:
     book = navigate_from_home(args, url, SEARCH_SETTLE_SECONDS)
     ensure_ready(book)
     records = require_list_payload(
-        api_eval(book, SEARCH_SCRIPT.replace("LIMIT_PLACEHOLDER", str(count)), "读取淘宝搜索结果失败", timeout=60.0),
+        evaluate(book, SEARCH_SCRIPT.replace("LIMIT_PLACEHOLDER", str(count)), "读取淘宝搜索结果失败", timeout=60.0),
         "taobao search",
     )
     return finish(records[:count], args, "search", f"淘宝搜索: {query}")
@@ -708,7 +678,7 @@ def run_detail(args: argparse.Namespace) -> int:
     book = navigate_from_home(args, url, PAGE_SETTLE_SECONDS)
     ensure_ready(book)
     records = require_list_payload(
-        api_eval(book, DETAIL_SCRIPT.replace("ITEM_ID_PLACEHOLDER", json.dumps(item_id)), "读取淘宝商品详情失败"),
+        evaluate(book, DETAIL_SCRIPT.replace("ITEM_ID_PLACEHOLDER", json.dumps(item_id)), "读取淘宝商品详情失败"),
         "taobao detail",
     )
     return finish(records, args, "detail", f"淘宝商品详情: {item_id}")
@@ -721,7 +691,7 @@ def run_reviews(args: argparse.Namespace) -> int:
     book = navigate_from_home(args, url, PAGE_SETTLE_SECONDS)
     ensure_ready(book)
     records = require_list_payload(
-        api_eval(
+        evaluate(
             book,
             REVIEWS_SCRIPT.replace("ITEM_ID_PLACEHOLDER", json.dumps(item_id)).replace("LIMIT_PLACEHOLDER", str(count)),
             "读取淘宝商品评价失败",
@@ -736,7 +706,7 @@ def run_cart(args: argparse.Namespace) -> int:
     count = read_count(args.count, default=20, max_value=50)
     book = navigate_from_home(args, "https://cart.taobao.com/cart.htm", PAGE_SETTLE_SECONDS)
     ensure_ready(book)
-    data = api_eval(book, CART_SCRIPT.replace("LIMIT_PLACEHOLDER", str(count)), "读取淘宝购物车失败", timeout=60.0)
+    data = evaluate(book, CART_SCRIPT.replace("LIMIT_PLACEHOLDER", str(count)), "读取淘宝购物车失败", timeout=60.0)
     if isinstance(data, dict) and data.get("auth_required"):
         raise LoginRequiredError(
             "LOGIN_REQUIRED: 淘宝购物车需要已登录会话；请在 ActionBook 连接的 Chrome 窗口登录后重试。"
@@ -748,7 +718,7 @@ def run_cart(args: argparse.Namespace) -> int:
 def run_whoami(args: argparse.Namespace) -> int:
     book = navigate_from_home(args, "https://i.taobao.com/my_itaobao", WHOAMI_SETTLE_SECONDS)
     ensure_ready(book)
-    record = require_dict_payload(api_eval(book, WHOAMI_SCRIPT, "读取淘宝当前账号失败"), "taobao whoami")
+    record = require_dict_payload(evaluate(book, WHOAMI_SCRIPT, "读取淘宝当前账号失败"), "taobao whoami")
     if record.get("auth_required"):
         raise LoginRequiredError(
             "LOGIN_REQUIRED: 未检测到淘宝登录态；请在 ActionBook 连接的 Chrome 窗口登录后重试。"

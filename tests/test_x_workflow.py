@@ -59,7 +59,7 @@ class FakeBook:
 def base_args(**overrides):
     values = {
         "session": "s1",
-        "tab": "",
+        "tab": "leased-tab",
         "count": 5,
         "max_scrolls": 3,
         "output_dir": "",
@@ -68,7 +68,7 @@ def base_args(**overrides):
     return Namespace(**values)
 
 
-def test_run_view_without_tab_opens_fresh_task_tab(monkeypatch, tmp_path) -> None:
+def test_run_view_without_owned_tab_is_rejected(monkeypatch, tmp_path) -> None:
     FakeBook.instances = []
     monkeypatch.setattr(x_workflow, "ActionBook", FakeBook)
     monkeypatch.setattr(x_workflow, "wait_page_ready", lambda book, source: None)
@@ -76,13 +76,8 @@ def test_run_view_without_tab_opens_fresh_task_tab(monkeypatch, tmp_path) -> Non
     monkeypatch.setattr(x_workflow, "collect_tweets", lambda book, source, count, max_scrolls: [])
     monkeypatch.setattr(x_workflow, "expand_show_more_payloads", lambda book, payloads: None)
 
-    result = x_workflow.run_view(base_args(output_dir=str(tmp_path)), "home", x_workflow.HOME_URL)
-
-    assert result == 0
-    assert FakeBook.instances[0].events[:2] == [
-        ("start", f"{x_workflow.HOME_URL}|force=True"),
-        ("goto", f"fresh-tab:{x_workflow.HOME_URL}"),
-    ]
+    with pytest.raises(ValueError, match="require --session and --tab"):
+        x_workflow.run_view(base_args(tab="", output_dir=str(tmp_path)), "home", x_workflow.HOME_URL)
 
 
 def test_run_view_with_tab_uses_explicit_tab_without_start(monkeypatch, tmp_path) -> None:
@@ -102,30 +97,6 @@ def test_run_view_with_tab_uses_explicit_tab_without_start(monkeypatch, tmp_path
     ]
 
 
-def test_close_article_tab_uses_helper_and_verifies_absence() -> None:
-    book = FakeBook("s1", "main-tab")
-    book.tabs.append({"tab_id": "detail-tab", "url": "https://x.com/a/status/1", "title": "X"})
-
-    x_workflow.close_article_tab(book, "detail-tab")
-
-    assert ("close-tab", "detail-tab") in book.events
-    assert ("list-tabs", "main-tab") in book.events
-    assert all(tab.get("tab_id") != "detail-tab" for tab in book.tabs)
-
-
-def test_close_article_tab_raises_when_tab_remains() -> None:
-    class StickyBook(FakeBook):
-        def close_tab(self, tab_id: str) -> dict[str, str]:
-            self.events.append(("close-tab", tab_id))
-            return {"session_id": self.session, "tab_id": tab_id, "status": "closed"}
-
-    book = StickyBook("s1", "main-tab")
-    book.tabs.append({"tab_id": "detail-tab", "url": "https://x.com/a/status/1", "title": "X"})
-
-    with pytest.raises(RuntimeError, match="tab still open"):
-        x_workflow.close_article_tab(book, "detail-tab")
-
-
 def test_me_flow_reuses_profile_resolution_tab(monkeypatch, tmp_path) -> None:
     FakeBook.instances = []
     monkeypatch.setattr(x_workflow, "ActionBook", FakeBook)
@@ -140,8 +111,8 @@ def test_me_flow_reuses_profile_resolution_tab(monkeypatch, tmp_path) -> None:
     assert result == 0
     assert len(FakeBook.instances) == 2
     assert FakeBook.instances[1].events[:2] == [
-        ("use-tab", "fresh-tab"),
-        ("goto", "fresh-tab:https://x.com/me"),
+        ("use-tab", "leased-tab"),
+        ("goto", "leased-tab:https://x.com/me"),
     ]
 
 

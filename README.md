@@ -37,13 +37,18 @@ Full setup and repair details live in [references/initialization.md](references/
 
 ## Daily Commands
 
-Open or reuse a browser task tab:
+Connect the extension and give each task its own tracked tab:
 
 ```bash
-python3 scripts/actionbook_session.py ensure --session task-browser --url "https://example.com" --json
-python3 scripts/actionbook_session.py list-tabs --session task-browser --json
-actionbook browser snapshot --session task-browser --tab <real-tab-id>
+python3 scripts/actionbook_session.py acquire-tab --task task-a --session task-browser --url "https://example.com" --adopt-running-session --json
+python3 scripts/actionbook_session.py acquire-tab --task task-b --session task-browser --url "https://example.org" --adopt-running-session --json
+python3 scripts/actionbook_session.py list-task-tabs --json
+actionbook browser snapshot --session task-browser --tab <task-a-tab-id>
+python3 scripts/actionbook_session.py release-tab --task task-a --json
+python3 scripts/actionbook_session.py release-tab --task task-b --json
 ```
+
+`acquire-tab` reuses a live tab already owned by the same task and opens a fresh tab for a different task. `--adopt-running-session` explicitly allows the task to use another healthy extension session when the requested name cannot be created. `release-tab` requires the tab count to decrease and keeps ownership when close verification fails, so cleanup can be retried safely.
 
 Run a long workflow so it can be stopped later:
 
@@ -87,6 +92,12 @@ Workflow outputs stay under the requested `--output-dir` or the adapter default.
 
 ```text
 ~/.action-browser/runs/
+```
+
+Tracked task/tab ownership also lives outside the repo:
+
+```text
+~/.action-browser/task-tabs.json
 ```
 
 Scheduler-managed adapter contracts use:

@@ -187,6 +187,20 @@ def test_start_force_new_tab_does_not_fall_back_to_existing_tab(monkeypatch) -> 
     assert recover_called is False
 
 
+def test_adopt_running_session_opens_fresh_tab_when_task_requires_ownership() -> None:
+    book = ActionBookSession("requested", allow_adopt=True)
+    book._list_sessions = lambda: [  # type: ignore[method-assign]
+        {"session_id": "healthy", "mode": "extension", "status": "running"}
+    ]
+    book._find_accessible_tab = lambda **kwargs: (_ for _ in ()).throw(  # type: ignore[method-assign]
+        AssertionError("owned task tab must not reuse an existing tab")
+    )
+    book._open_new_tab = lambda url: "fresh-tab"  # type: ignore[method-assign]
+
+    assert book._adopt_running_session("https://example.com", force_new_tab=True) is True
+    assert (book.session, book.tab) == ("healthy", "fresh-tab")
+
+
 def test_start_no_adopt_does_not_try_other_running_sessions(monkeypatch) -> None:
     book = ActionBookSession("s1", allow_adopt=False)
 
@@ -289,6 +303,21 @@ def test_wait_for_stable_session_times_out_when_tab_never_becomes_accessible(mon
 
     with pytest.raises(RuntimeError, match="no accessible tab is ready"):
         book._wait_for_stable_session(target_url="https://example.com", timeout_secs=0.01)
+
+
+def test_wait_for_stable_session_preserves_required_owned_tab(monkeypatch) -> None:
+    book = ActionBookSession("s1", "owned-tab")
+    monkeypatch.setattr(actionbook_session, "sleep_between", lambda *args, **kwargs: None)
+    book._check_extension = lambda **kwargs: None  # type: ignore[method-assign]
+    book._session_is_reachable = lambda: True  # type: ignore[method-assign]
+    book._is_tab_accessible = lambda tab_id: tab_id == "owned-tab"  # type: ignore[method-assign]
+    book._find_accessible_tab = lambda **kwargs: (_ for _ in ()).throw(  # type: ignore[method-assign]
+        AssertionError("required owned tab must not switch to another matching tab")
+    )
+
+    book._wait_for_stable_session(required_tab="owned-tab")
+
+    assert book.tab == "owned-tab"
 
 
 def test_start_new_session_requires_registered_session_after_start(monkeypatch) -> None:
@@ -530,3 +559,130 @@ def test_main_close_tab_surfaces_missing_session_without_bootstrap(monkeypatch) 
         actionbook_session.main(["close-tab", "--session", "s1", "--tab", "tab-9"])
 
     assert events == [("close", "tab-9")]
+
+
+def test_task_tab_lifecycle_supports_parallel_ownership_and_verified_release(tmp_path: Path, monkeypatch, capsys) -> None:
+    registry_path = tmp_path / "task-tabs.json"
+    opened_tabs = iter(["tab-a", "tab-b"])
+    live_tabs: set[str] = set()
+
+    class FakeSession:
+        def __init__(self, session: str, tab: str = "", **_kwargs) -> None:
+            self.session = session
+            self.tab = tab
+
+        def start(self, url: str, force_new_tab: bool = False) -> None:
+            assert force_new_tab is True
+            self.tab = next(opened_tabs)
+            live_tabs.add(self.tab)
+
+        def describe(self, tab: str | None = None) -> dict[str, str]:
+            return {"session_id": self.session, "tab_id": tab or self.tab, "url": "https://example.com", "title": "Example"}
+
+        def use_tab(self, tab_id: str) -> dict[str, str]:
+            assert tab_id in live_tabs
+            self.tab = tab_id
+            return self.describe()
+
+        def close_tab(self, tab_id: str) -> dict[str, str]:
+            live_tabs.remove(tab_id)
+            return {"status": "closed"}
+
+        def list_tabs(self) -> list[dict[str, str]]:
+            return [{"tab_id": tab_id} for tab_id in live_tabs]
+
+    monkeypatch.setattr(actionbook_session, "ActionBookSession", FakeSession)
+    monkeypatch.setenv("ACTION_BROWSER_TASK_TABS_FILE", str(registry_path))
+
+    for task_id in ("task-a", "task-b"):
+        assert actionbook_session.main(["acquire-tab", "--task", task_id, "--session", "shared", "--json"]) == 0
+        capsys.readouterr()
+    assert actionbook_session.main(["acquire-tab", "--task", "task-a", "--session", "shared", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["status"] == "reused"
+    assert actionbook_session.main(["list-task-tabs", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["count"] == 2
+    assert actionbook_session.main(["release-tab", "--task", "task-a", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["status"] == "released"
+
+    records = json.loads(registry_path.read_text(encoding="utf-8"))["tasks"]
+    assert set(records) == {"task-b"}
+    assert live_tabs == {"tab-b"}
+
+
+def test_task_tab_failures_do_not_leave_untracked_or_unverified_tabs(tmp_path: Path, monkeypatch) -> None:
+    registry_path = tmp_path / "task-tabs.json"
+    events: list[tuple[str, str]] = []
+    cleanup_snapshots = iter([[{"tab_id": "orphan-candidate"}], []])
+
+    class FailedAcquireSession:
+        def __init__(self, session: str, tab: str = "", **_kwargs) -> None:
+            self.session = session
+            self.tab = tab
+
+        def start(self, url: str, force_new_tab: bool = False) -> None:
+            self.tab = "orphan-candidate"
+
+        def describe(self) -> dict[str, str]:
+            raise RuntimeError("verification failed")
+
+        def close_tab(self, tab_id: str) -> dict[str, str]:
+            events.append(("close", tab_id))
+            return {"status": "closed"}
+
+        def list_tabs(self) -> list[dict[str, str]]:
+            events.append(("list", self.tab))
+            return next(cleanup_snapshots)
+
+    monkeypatch.setattr(actionbook_session, "ActionBookSession", FailedAcquireSession)
+    monkeypatch.setenv("ACTION_BROWSER_TASK_TABS_FILE", str(registry_path))
+    with pytest.raises(RuntimeError, match="verification failed"):
+        actionbook_session.main(["acquire-tab", "--task", "task-a", "--session", "shared"])
+    assert events == [("list", "orphan-candidate"), ("close", "orphan-candidate"), ("list", "orphan-candidate")]
+
+    registry_path.write_text(
+        json.dumps({"schema_version": 1, "tasks": {"task-a": {"task_id": "task-a", "session_id": "shared", "tab_id": "tab-a"}}}),
+        encoding="utf-8",
+    )
+    FailedAcquireSession.close_tab = lambda self, tab_id: {"status": "closed"}  # type: ignore[method-assign]
+    FailedAcquireSession.list_tabs = lambda self: [{"tab_id": "tab-a"}]  # type: ignore[method-assign]
+    with pytest.raises(RuntimeError, match="tab still open after close-tab"):
+        actionbook_session.main(["release-tab", "--task", "task-a"])
+    assert "task-a" in json.loads(registry_path.read_text(encoding="utf-8"))["tasks"]
+
+
+def test_release_tab_drops_stale_record_when_actionbook_reports_tab_not_found(tmp_path: Path, monkeypatch) -> None:
+    registry_path = tmp_path / "task-tabs.json"
+    registry_path.write_text(
+        json.dumps({"schema_version": 1, "tasks": {"task-a": {"task_id": "task-a", "session_id": "shared", "tab_id": "gone"}}}),
+        encoding="utf-8",
+    )
+
+    class MissingTabSession:
+        def __init__(self, session: str, tab: str = "", **_kwargs) -> None:
+            self.session = session
+            self.tab = tab
+
+        def list_tabs(self) -> list[dict[str, str]]:
+            return []
+
+    monkeypatch.setattr(actionbook_session, "ActionBookSession", MissingTabSession)
+    monkeypatch.setenv("ACTION_BROWSER_TASK_TABS_FILE", str(registry_path))
+
+    assert actionbook_session.main(["release-tab", "--task", "task-a", "--json"]) == 0
+    assert json.loads(registry_path.read_text(encoding="utf-8"))["tasks"] == {}
+
+
+def test_close_verification_rejects_replacement_tab_with_new_id() -> None:
+    snapshots = iter([[{"tab_id": "owned"}], [{"tab_id": "replacement"}]])
+
+    class ReplacingSession:
+        session = "shared"
+
+        def list_tabs(self) -> list[dict[str, str]]:
+            return next(snapshots)
+
+        def close_tab(self, tab_id: str) -> dict[str, str]:
+            return {"status": "closed"}
+
+    with pytest.raises(RuntimeError, match="tab count did not decrease"):
+        actionbook_session.close_and_verify_tab(ReplacingSession(), "owned")

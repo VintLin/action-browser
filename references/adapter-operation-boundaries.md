@@ -4,7 +4,7 @@
 
 ## 能做什么
 
-- 复用调用方给定的 `--session` / `--tab`，或在非 scheduler 场景下通过 `scripts/actionbook_session.py` 获取可用 tab 后继续。
+- 复用调用方通过 `acquire-tab` 领取的 `--session` / `--tab`；不同并行任务必须使用不同 task id 和不同 owned tab。
 - 在当前任务 tab 内做读取、滚动、抽取、导出、验证等站点文档已声明的业务动作。
 - 在确有必要的站点流程里临时打开详情 tab、预览 tab 或下载辅助 tab，但必须把它们视为当前任务的临时资源，而不是新的长期运行上下文。
 - 遇到登录、验证码、MFA、风险控制或账号校验时暂停，把当前 Chrome 窗口留给用户手动处理。
@@ -30,6 +30,7 @@
   4. 复查 tab 已消失后再处理下一项
 - 如果 workflow 作为共享 session 的一个子任务运行，只能关闭自己打开的临时 tab，不能顺手关闭整个 session。
 - 如果 workflow 通过 `actionbook_run.py` 以独占任务方式启动，任务结束后是否关闭 session 由调用方决定；业务流程默认不要擅自关闭用户可能还要复用的主 session。
+- 正常完成或失败退出后，由调用方执行 `release-tab --task <task-id>`；只有当前 tab 正等待登录、验证码、MFA 或风险控制人工处理时才保留 ownership。
 - 如果适配脚本面向 scheduler 合约运行，应严格绑定调用方给定的 `--session` / `--tab`，不得在运行中偷偷 rebuild session、adopt 别的 session、或迁移到未租赁的新 tab。
 
 ## 等待与校验约束

@@ -14,8 +14,8 @@ Use ActionBook for real browser pages. Prefer `extension` mode when the task nee
 - Do not steal foreground focus by default. Never `activate` Chrome, `open -a` Chrome repeatedly, or create/raise a visible Chrome window unless the task explicitly requires user-visible interaction or the user confirms it. Session repair must prefer background-safe checks first.
 - If a supported site or capability is named, read `references/adapters/<site>.md` before running commands.
 - If a supported site's UI drift breaks the documented workflow, or an unsupported site is likely to be reused, the agent may update this skill's adapter script and reference docs. Read `references/adapter-authoring.md` first and keep the patch scoped to observed site behavior.
-- Treat `session` as the browser container and `tab` as the task page. Use one explicit tab id per subtask; do not share a mutable current tab pointer.
-- Use `scripts/actionbook_session.py` for `ensure`, `list-tabs`, `new-tab`, `select-tab`, and `close-tab`. Keep raw `actionbook browser start/new-tab/list-tabs/close-tab` for diagnostics only.
+- Treat `session` as the browser container and `tab` as the task page. Give every independent task a stable task id and acquire one owned tab with `acquire-tab`; tasks may run concurrently in separate tabs of the same healthy session.
+- Use `scripts/actionbook_session.py` for `acquire-tab`, `list-task-tabs`, and `release-tab`. `release-tab` requires both the owned tab id to disappear and the session tab count to decrease before removing ownership. If ActionBook only reattaches the page under a new id, keep the record and use `chrome:control-chrome` to close that exact owned Chrome tab, then rerun `release-tab` to clear the stale record. Keep `ensure`, raw tab commands, and raw `actionbook browser start/new-tab/list-tabs/close-tab` for one-off work or diagnostics.
 - If `ensure` cannot create the named extension session but another running extension session is healthy, opt in with `--adopt-running-session` before falling back to raw browser commands.
 - Continue only after a second CLI command proves the session and selected tab are still accessible.
 - For page operations, take a fresh `snapshot` after structure changes, use current refs, and verify URL/title/key elements after each click, fill, press, navigation, or list/detail transition.
@@ -26,9 +26,9 @@ Use ActionBook for real browser pages. Prefer `extension` mode when the task nee
 ## Default Loop
 
 1. Route: read only the setup, status, site, or authoring reference needed for the task; first decide whether this task truly needs a live browser or can be completed by static fetch/extraction without touching foreground Chrome.
-2. Bootstrap: if a live browser is required, use `scripts/actionbook_session.py ensure` and a second session/tab command; done when the same session is reachable and the real tab id is known. Avoid foreground activation unless the user must interact.
+2. Bootstrap: if a live browser is required, use `scripts/actionbook_session.py acquire-tab --task <task-id>`; done when the returned session/tab is reachable and recorded. Reuse that explicit tab for the whole task. Avoid foreground activation unless the user must interact.
 3. Operate: refresh `snapshot` after page structure changes and use current refs; done when URL, title, or key page elements prove each interaction landed.
-4. Finish: stop for user gates, track long runs with `scripts/actionbook_run.py`, and preserve outputs; for archival tasks, save one durable local file per page plus a manifest/index so the run can resume without reopening pages.
+4. Finish: stop for user gates, track long runs with `scripts/actionbook_run.py`, and preserve outputs; then call `release-tab --task <task-id>` unless the user must continue in that exact tab. For archival tasks, save one durable local file per page plus a manifest/index so the run can resume without reopening pages.
 
 ## Reference Routing
 
@@ -37,7 +37,7 @@ Use ActionBook for real browser pages. Prefer `extension` mode when the task nee
 | Setup, missing extension/CLI, unknown session state | `references/initialization.md`, `references/status-check.md` |
 | Generic webpage to Markdown | `references/webpage-markdown.md`, `scripts/webpage_markdown.py` |
 | Public page archival without login/clicking | static HTTP fetch plus local extraction first; only escalate to ActionBook if the fetched content is incomplete or blocked |
-| Generic session/tab commands | `scripts/actionbook_session.py`, `references/status-check.md` |
+| Connect plugin; acquire, list, or release task tabs | `scripts/actionbook_session.py`, `references/status-check.md` |
 | Page operations, waits, list/detail transitions | `references/adapter-operation-boundaries.md`, `references/status-check.md` |
 | Long run tracking and stopping | `scripts/actionbook_run.py`, `references/task-lifecycle.md` |
 | Adapter creation, UI drift, new reusable site support | `references/adapter-authoring.md`, `references/adapter-operation-boundaries.md` |
@@ -52,9 +52,12 @@ Keep this file site-neutral. Put site command catalogs, payload schemas, DOM det
 ## Minimal Commands
 
 ```bash
-python3 scripts/actionbook_session.py ensure --session s1 --url "https://example.com" --json
-python3 scripts/actionbook_session.py list-tabs --session s1 --json
-actionbook browser snapshot --session s1 --tab <real-tab-id>
+python3 scripts/actionbook_session.py acquire-tab --task task-a --session shared --url "https://example.com" --adopt-running-session --json
+python3 scripts/actionbook_session.py acquire-tab --task task-b --session shared --url "https://example.org" --adopt-running-session --json
+python3 scripts/actionbook_session.py list-task-tabs --json
+actionbook browser snapshot --session shared --tab <task-a-tab-id>
+python3 scripts/actionbook_session.py release-tab --task task-a --json
+python3 scripts/actionbook_session.py release-tab --task task-b --json
 ```
 
 For long runs:

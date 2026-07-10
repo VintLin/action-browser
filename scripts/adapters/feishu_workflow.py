@@ -33,12 +33,11 @@ from urllib.parse import quote, urlparse
 import requests
 
 from scripts.actionbook_interrupts import install_interrupt_handlers
-from scripts.adapter_runtime import close_temporary_tab, prepare_task_book, wait_for_page_settle
+from scripts.workflow_runtime import add_workflow_args, attach_workflow, temporary_tab, wait_until_stable, write_json
 from scripts.actionbook_session import ActionBookSession as ActionBook
-from scripts.script_common import DEFAULT_TAB, add_session_tab_args, log, unwrap_eval
+from scripts.script_common import log, unwrap_eval
 
 
-DEFAULT_SESSION = "feishu-drive"
 DEFAULT_TENANT = "https://www.feishu.cn"
 INVALID_CHARS = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
 EXPORT_CONFIGS = {
@@ -64,11 +63,6 @@ MENU_EXPORT_KIND_HINTS = {
 MENU_EXPORT_CONFIGS = {
     "mindnotes": {"menu_text": "FreeMind", "extension": "mm"},
 }
-def write_json(path: Path, data: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-
-
 def append_jsonl(path: Path, record: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as handle:
@@ -132,7 +126,7 @@ def parse_root(value: str) -> tuple[str, str]:
 
 
 def start_book(args: argparse.Namespace, url: str) -> ActionBook:
-    return prepare_task_book(args, url, ActionBook)
+    return attach_workflow(args, url, ActionBook)
 
 
 def chrome_download_dir() -> Path:
@@ -662,51 +656,45 @@ def ui_menu_export_one(book: ActionBook, item: dict[str, Any], output_dir: Path,
     target.parent.mkdir(parents=True, exist_ok=True)
     before = stable_download_files(download_dir)
     previous_tab = book.tab
-    tab = ""
     try:
-        tab = book.open_new_tab(item["url"])
-        book.use_tab(tab)
-        wait_for_page_settle(book)
-        if not open_download_submenu(book.session, tab, config["menu_text"]):
-            raise RuntimeError("could not open 下载为 submenu")
-        time.sleep(0.4)
-        clear_network_requests(book.session, tab)
-        if not click_text_menu_item(book.session, tab, config["menu_text"]):
-            raise RuntimeError(f"could not click menu item {config['menu_text']}")
-        candidate = wait_network_download_candidate(book.session, tab, item)
-        if candidate and candidate.get("download_url"):
-            download_url_to_path(candidate["download_url"], item["url"], target, headers)
+        with temporary_tab(book, item["url"]) as tab:
+            book.use_tab(tab)
+            wait_until_stable(book)
+            if not open_download_submenu(book.session, tab, config["menu_text"]):
+                raise RuntimeError("could not open 下载为 submenu")
+            time.sleep(0.4)
+            clear_network_requests(book.session, tab)
+            if not click_text_menu_item(book.session, tab, config["menu_text"]):
+                raise RuntimeError(f"could not click menu item {config['menu_text']}")
+            candidate = wait_network_download_candidate(book.session, tab, item)
+            if candidate and candidate.get("download_url"):
+                download_url_to_path(candidate["download_url"], item["url"], target, headers)
+                return {
+                    "status": "ui_exported_via_network",
+                    "kind": kind,
+                    "path": item["path"],
+                    "url": item["url"],
+                    "local_path": str(target),
+                    "size": target.stat().st_size,
+                    "network": candidate,
+                }
+            downloaded = wait_new_download(download_dir, before)
+            if downloaded.suffix.lower() != "." + config["extension"]:
+                target = target.with_suffix(downloaded.suffix)
+            downloaded.replace(target)
             return {
-                "status": "ui_exported_via_network",
+                "status": "ui_exported",
                 "kind": kind,
                 "path": item["path"],
                 "url": item["url"],
                 "local_path": str(target),
                 "size": target.stat().st_size,
-                "network": candidate,
+                "download_dir": str(download_dir),
+                "network_capture": "no_download_url_or_file_token",
             }
-        downloaded = wait_new_download(download_dir, before)
-        if downloaded.suffix.lower() != "." + config["extension"]:
-            target = target.with_suffix(downloaded.suffix)
-        downloaded.replace(target)
-        return {
-            "status": "ui_exported",
-            "kind": kind,
-            "path": item["path"],
-            "url": item["url"],
-            "local_path": str(target),
-            "size": target.stat().st_size,
-            "download_dir": str(download_dir),
-            "network_capture": "no_download_url_or_file_token",
-        }
     except Exception as exc:
         return {"status": "failed", "kind": kind, "path": item["path"], "url": item["url"], "local_path": str(target), "error": str(exc), "download_dir": str(download_dir)}
     finally:
-        if tab:
-            try:
-                close_temporary_tab(book, tab)
-            except Exception as exc:  # noqa: BLE001
-                log(f"temporary tab close failed: tab={tab} reason={exc}")
         book.tab = previous_tab
 
 
@@ -839,7 +827,7 @@ def command_verify(args: argparse.Namespace) -> None:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Feishu Drive inventory, download, export, and verification workflow.")
-    add_session_tab_args(parser, default_session=DEFAULT_SESSION)
+    add_workflow_args(parser)
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     inventory = subparsers.add_parser("inventory", help="Collect recursive Drive folder inventory through the Feishu children-list API.")

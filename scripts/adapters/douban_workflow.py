@@ -29,15 +29,14 @@ if __package__ in {None, ""}:
 from typing import Any
 
 from scripts.actionbook_interrupts import install_interrupt_handlers
-from scripts.adapter_runtime import prepare_task_book, wait_for_page_settle
+from scripts.workflow_runtime import add_workflow_args, attach_workflow, evaluate, wait_until_stable, write_json
 from scripts.actionbook_session import ActionBookSession as ActionBook
-from scripts.script_common import DEFAULT_TAB, add_session_tab_args, log, unwrap_eval
+from scripts.script_common import log
 
 
 DOUBAN_HOME_URL = "https://www.douban.com"
 MOVIE_HOME_URL = "https://movie.douban.com"
 BOOK_HOME_URL = "https://book.douban.com"
-DEFAULT_SESSION = "douban-task"
 SKILL_DIR = Path(__file__).resolve().parents[2]
 ASSETS_DIR = SKILL_DIR / "assets" / "douban"
 
@@ -73,15 +72,8 @@ def default_action_output_dir(source: str, action: str) -> Path:
     return ASSETS_DIR / action_dir / source / stamp
 
 
-def api_eval(book: ActionBook, script: str, label: str, timeout: float = 45.0) -> Any:
-    value = unwrap_eval(book.eval(script, timeout=timeout))
-    if isinstance(value, dict) and value.get("error"):
-        raise RuntimeError(f"{label}: {value.get('error')}")
-    return value
-
-
 def get_page_state(book: ActionBook) -> dict[str, str]:
-    value = api_eval(book, """
+    value = evaluate(book, """
     (() => ({
       href: location.href,
       title: document.title || '',
@@ -101,12 +93,7 @@ def ensure_douban_ready(book: ActionBook) -> None:
 
 
 def start_book(args: argparse.Namespace, url: str) -> ActionBook:
-    return prepare_task_book(args, url, ActionBook)
-
-
-def write_json(path: Path, data: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return attach_workflow(args, url, ActionBook)
 
 
 def write_records(records: list[dict[str, Any]], output_dir: Path, title: str) -> None:
@@ -166,9 +153,9 @@ def download_file(url: str, dest_base: Path, referer: str) -> dict[str, Any]:
 
 def get_self_uid(book: ActionBook) -> str:
     book.goto(MOVIE_HOME_URL + "/mine")
-    wait_for_page_settle(book)
+    wait_until_stable(book)
     ensure_douban_ready(book)
-    uid = api_eval(book, r"""
+    uid = evaluate(book, r"""
     (() => {
       if (window.__DATA__?.uid) return String(window.__DATA__.uid);
       const links = [...document.querySelectorAll('a[href*="/people/"]')];
@@ -198,9 +185,9 @@ def run_search(args: argparse.Namespace) -> int:
     output_dir = Path(args.output) if args.output else default_action_output_dir("search", "view")
     book = start_book(args, search_url(args.type, args.keyword))
     book.goto(search_url(args.type, args.keyword))
-    wait_for_page_settle(book)
+    wait_until_stable(book)
     ensure_douban_ready(book)
-    data = api_eval(book, f"""
+    data = evaluate(book, f"""
     (async () => {{
       const type = {json.dumps(args.type)};
       const limit = {count};
@@ -256,9 +243,9 @@ def run_top250(args: argparse.Namespace) -> int:
     output_dir = Path(args.output) if args.output else default_action_output_dir("top250", "view")
     book = start_book(args, MOVIE_HOME_URL + "/top250")
     book.goto(MOVIE_HOME_URL + "/top250")
-    wait_for_page_settle(book)
+    wait_until_stable(book)
     ensure_douban_ready(book)
-    rows = api_eval(book, f"""
+    rows = evaluate(book, f"""
     (async () => {{
       const limit = {count};
       const normalize = value => String(value || '').replace(/\\s+/g, ' ').trim();
@@ -305,9 +292,9 @@ def run_movie_hot(args: argparse.Namespace) -> int:
     output_dir = Path(args.output) if args.output else default_action_output_dir("movie-hot", "view")
     book = start_book(args, MOVIE_HOME_URL + "/chart")
     book.goto(MOVIE_HOME_URL + "/chart")
-    wait_for_page_settle(book)
+    wait_until_stable(book)
     ensure_douban_ready(book)
-    rows = api_eval(book, f"""
+    rows = evaluate(book, f"""
     (() => {{
       const normalize = value => String(value || '').replace(/\\s+/g, ' ').trim();
       const abs = value => value ? new URL(value, location.origin).toString() : '';
@@ -344,9 +331,9 @@ def run_book_hot(args: argparse.Namespace) -> int:
     output_dir = Path(args.output) if args.output else default_action_output_dir("book-hot", "view")
     book = start_book(args, BOOK_HOME_URL + "/chart")
     book.goto(BOOK_HOME_URL + "/chart")
-    wait_for_page_settle(book)
+    wait_until_stable(book)
     ensure_douban_ready(book)
-    rows = api_eval(book, f"""
+    rows = evaluate(book, f"""
     (() => {{
       const normalize = value => String(value || '').replace(/\\s+/g, ' ').trim();
       const abs = value => value ? new URL(value, location.origin).toString() : '';
@@ -432,10 +419,10 @@ def run_subject(args: argparse.Namespace) -> int:
     output_dir = Path(args.output) if args.output else default_action_output_dir("subject", "view")
     book = start_book(args, f"{home}/subject/{subject_id}/")
     book.goto(f"{home}/subject/{subject_id}/")
-    wait_for_page_settle(book)
+    wait_until_stable(book)
     ensure_douban_ready(book)
     if subject_type == "book":
-        raw = api_eval(book, f"""
+        raw = evaluate(book, f"""
         (() => {{
           const normalize = value => String(value || '').replace(/\\s+/g, ' ').trim();
           const nodes = [...document.querySelectorAll('#link-report .intro, .related_info .intro')];
@@ -454,7 +441,7 @@ def run_subject(args: argparse.Namespace) -> int:
         """, "douban book subject", timeout=30.0)
         subject = normalize_book_subject(raw if isinstance(raw, dict) else {})
     else:
-        subject = api_eval(book, f"""
+        subject = evaluate(book, f"""
         (() => {{
           const normalize = value => String(value || '').replace(/\\s+/g, ' ').trim();
           const fullTitle = normalize(document.querySelector('span[property="v:itemreviewed"]')?.textContent || '');
@@ -489,10 +476,10 @@ def run_subject(args: argparse.Namespace) -> int:
 def load_photos(book: ActionBook, subject_id: str, photo_type: str, count: int, photo_id: str = "") -> dict[str, Any]:
     url = f"{MOVIE_HOME_URL}/subject/{subject_id}/photos?type={urllib.parse.quote(photo_type)}"
     book.goto(url)
-    wait_for_page_settle(book)
+    wait_until_stable(book)
     ensure_douban_ready(book)
     safe_limit = 999999 if photo_id else count
-    data = api_eval(book, f"""
+    data = evaluate(book, f"""
     (async () => {{
       const subjectId = {json.dumps(subject_id)};
       const type = {json.dumps(photo_type)};
@@ -612,9 +599,9 @@ def run_marks(args: argparse.Namespace) -> int:
         offset = 0
         while len(rows) < count:
             book.goto(f"{MOVIE_HOME_URL}/people/{urllib.parse.quote(uid)}/{status}?start={offset}&sort=time&rating=all&filter=all&mode=grid")
-            wait_for_page_settle(book)
+            wait_until_stable(book)
             ensure_douban_ready(book)
-            page_rows = api_eval(book, f"""
+            page_rows = evaluate(book, f"""
             (() => {{
               const status = {json.dumps(status)};
               const normalize = value => String(value || '').replace(/\\s+/g, ' ').trim();
@@ -667,9 +654,9 @@ def run_reviews(args: argparse.Namespace) -> int:
     start = 0
     while len(rows) < count:
         book.goto(f"{MOVIE_HOME_URL}/people/{urllib.parse.quote(uid)}/reviews?start={start}&sort=time")
-        wait_for_page_settle(book)
+        wait_until_stable(book)
         ensure_douban_ready(book)
-        page_rows = api_eval(book, r"""
+        page_rows = evaluate(book, r"""
         (() => {
           const normalize = value => String(value || '').replace(/\s+/g, ' ').trim();
           const rows = [];
@@ -709,8 +696,8 @@ def run_reviews(args: argparse.Namespace) -> int:
             if not row.get("url"):
                 continue
             book.goto(str(row["url"]))
-            wait_for_page_settle(book)
-            row["content"] = str(api_eval(book, """
+            wait_until_stable(book)
+            row["content"] = str(evaluate(book, """
             (() => (document.querySelector('.review-content')?.textContent || '').replace(/\\s+/g, ' ').trim())()
             """, "douban full review", timeout=20.0) or "")
     write_records(rows, output_dir, f"豆瓣个人影评: {uid}")
@@ -721,7 +708,7 @@ def run_reviews(args: argparse.Namespace) -> int:
 def add_common(parser: argparse.ArgumentParser, default_count: int = 20) -> None:
     parser.add_argument("--count", type=int, default=default_count, help="Number of records")
     parser.add_argument("--output", default="", help="Output directory")
-    add_session_tab_args(parser, default_session=DEFAULT_SESSION, tab_help="ActionBook tab id")
+    add_workflow_args(parser)
 
 
 def build_parser() -> argparse.ArgumentParser:

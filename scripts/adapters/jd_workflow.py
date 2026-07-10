@@ -20,14 +20,13 @@ from typing import Any
 from urllib.parse import quote
 
 from scripts.actionbook_interrupts import install_interrupt_handlers
-from scripts.adapter_runtime import prepare_task_book, wait_for_page_settle
+from scripts.workflow_runtime import add_workflow_args, attach_workflow, evaluate, wait_until_stable, write_json
 from scripts.actionbook_session import ActionBookSession as ActionBook
-from scripts.script_common import DEFAULT_TAB, add_session_tab_args, log, unwrap_eval
+from scripts.script_common import log
 
 
 JD_HOME_URL = "https://www.jd.com"
 JD_SEARCH_URL = "https://search.jd.com/Search"
-DEFAULT_SESSION = "jd-task"
 SEARCH_SETTLE_SECONDS = 5.0
 ITEM_SETTLE_SECONDS = 5.0
 CART_SETTLE_SECONDS = 5.0
@@ -61,13 +60,6 @@ def normalize_numeric_id(value: Any, label: str, example: str) -> str:
     if re.fullmatch(r"\d+", raw):
         return raw
     raise argparse.ArgumentTypeError(f"{label} must include a numeric id, for example {example}")
-def api_eval(book: ActionBook, script: str, label: str, timeout: float = 45.0) -> Any:
-    data = unwrap_eval(book.eval(script, timeout=timeout))
-    if isinstance(data, dict) and data.get("error"):
-        raise RuntimeError(f"{label}: {data.get('error')}")
-    return data
-
-
 def require_list_payload(value: Any, label: str) -> list[dict[str, Any]]:
     if isinstance(value, list):
         for index, item in enumerate(value, start=1):
@@ -104,7 +96,7 @@ def require_cart_payload(value: Any, label: str) -> list[dict[str, Any]]:
 
 
 def get_page_state(book: ActionBook) -> dict[str, str]:
-    data = api_eval(
+    data = evaluate(
         book,
         """
         (() => ({
@@ -150,15 +142,10 @@ def ensure_ready(book: ActionBook) -> None:
 
 
 def start_book(args: argparse.Namespace, url: str, settle_seconds: float = 0.0) -> ActionBook:
-    book = prepare_task_book(args, url, ActionBook)
+    book = attach_workflow(args, url, ActionBook)
     if settle_seconds > 0:
-        wait_for_page_settle(book, timeout_secs=settle_seconds)
+        wait_until_stable(book, timeout_secs=settle_seconds)
     return book
-
-
-def write_json(path: Path, data: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
 def default_output_dir(area: str) -> Path:
@@ -192,7 +179,7 @@ def finish(records: list[dict[str, Any]], args: argparse.Namespace, area: str, t
 
 
 def add_common_view_args(parser: argparse.ArgumentParser, count_default: int) -> None:
-    add_session_tab_args(parser, default_session=DEFAULT_SESSION)
+    add_workflow_args(parser)
     parser.add_argument("--output", default="")
     parser.add_argument("--count", default=str(count_default))
 
@@ -564,7 +551,7 @@ def run_search(args: argparse.Namespace) -> int:
     book = start_book(args, url, SEARCH_SETTLE_SECONDS)
     ensure_ready(book)
     records = require_list_payload(
-        api_eval(book, SEARCH_SCRIPT.replace("LIMIT_PLACEHOLDER", str(count)), "读取京东搜索结果失败"),
+        evaluate(book, SEARCH_SCRIPT.replace("LIMIT_PLACEHOLDER", str(count)), "读取京东搜索结果失败"),
         "jd search",
     )
     return finish(records[:count], args, "search", f"京东搜索: {args.query}")
@@ -577,7 +564,7 @@ def run_item(args: argparse.Namespace) -> int:
     book = start_book(args, url, ITEM_SETTLE_SECONDS)
     ensure_ready(book)
     record = require_dict_payload(
-        api_eval(
+        evaluate(
             book,
             ITEM_SCRIPT.replace("SKU_PLACEHOLDER", json.dumps(sku)).replace("IMAGE_LIMIT_PLACEHOLDER", str(image_limit)),
             "读取京东商品信息失败",
@@ -595,7 +582,7 @@ def run_detail(args: argparse.Namespace) -> int:
     book = start_book(args, url, ITEM_SETTLE_SECONDS)
     ensure_ready(book)
     records = require_list_payload(
-        api_eval(book, DETAIL_SCRIPT.replace("SKU_PLACEHOLDER", json.dumps(sku)), "读取京东商品详情失败"),
+        evaluate(book, DETAIL_SCRIPT.replace("SKU_PLACEHOLDER", json.dumps(sku)), "读取京东商品详情失败"),
         "jd detail",
     )
     return finish(records, args, "detail", f"京东商品详情: {sku}")
@@ -608,7 +595,7 @@ def run_reviews(args: argparse.Namespace) -> int:
     book = start_book(args, url, ITEM_SETTLE_SECONDS)
     ensure_ready(book)
     records = require_list_payload(
-        api_eval(book, REVIEWS_SCRIPT.replace("LIMIT_PLACEHOLDER", str(count)), "读取京东商品评价失败"),
+        evaluate(book, REVIEWS_SCRIPT.replace("LIMIT_PLACEHOLDER", str(count)), "读取京东商品评价失败"),
         "jd reviews",
     )
     return finish(records[:count], args, "reviews", f"京东商品评价: {sku}")
@@ -618,7 +605,7 @@ def run_cart(args: argparse.Namespace) -> int:
     count = read_count(args.count, default=20, max_value=50)
     book = start_book(args, "https://cart.jd.com/cart_index", CART_SETTLE_SECONDS)
     ensure_ready(book)
-    data = api_eval(book, CART_SCRIPT.replace("LIMIT_PLACEHOLDER", str(count)), "读取京东购物车失败", timeout=60.0)
+    data = evaluate(book, CART_SCRIPT.replace("LIMIT_PLACEHOLDER", str(count)), "读取京东购物车失败", timeout=60.0)
     if isinstance(data, dict) and data.get("auth_required"):
         raise LoginRequiredError(
             "LOGIN_REQUIRED: 京东购物车需要已登录会话；请在 ActionBook 连接的 Chrome 窗口登录后重试。"
@@ -630,7 +617,7 @@ def run_cart(args: argparse.Namespace) -> int:
 def run_whoami(args: argparse.Namespace) -> int:
     book = start_book(args, "https://home.jd.com/", WHOAMI_SETTLE_SECONDS)
     ensure_ready(book)
-    record = api_eval(book, WHOAMI_SCRIPT, "读取京东当前账号失败")
+    record = evaluate(book, WHOAMI_SCRIPT, "读取京东当前账号失败")
     if isinstance(record, dict) and record.get("auth_required"):
         raise LoginRequiredError(
             "LOGIN_REQUIRED: 未检测到京东登录态；请在 ActionBook 连接的 Chrome 窗口登录后重试。"

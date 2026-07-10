@@ -28,13 +28,12 @@ if __package__ in {None, ""}:
 from typing import Any
 
 from scripts.actionbook_interrupts import install_interrupt_handlers
-from scripts.adapter_runtime import prepare_task_book, wait_for_page_settle
+from scripts.workflow_runtime import add_workflow_args, attach_workflow, evaluate, wait_until_stable, write_json
 from scripts.actionbook_session import ActionBookSession as ActionBook
-from scripts.script_common import DEFAULT_TAB, add_session_tab_args, log, unwrap_eval
+from scripts.script_common import log
 
 
 ZHIPIN_HOME_URL = "https://www.zhipin.com"
-DEFAULT_SESSION = "zhipin-task"
 SKILL_DIR = Path(__file__).resolve().parents[2]
 ASSETS_DIR = SKILL_DIR / "assets" / "zhipin"
 CITY_NAMES = {
@@ -117,11 +116,6 @@ def default_output_dir(kind: str, task: str) -> Path:
     return ASSETS_DIR / kind / task / stamp
 
 
-def write_json(path: Path, data: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-
-
 def write_summary_md(path: Path, title: str, jobs: list[dict[str, Any]], meta: dict[str, Any]) -> None:
     lines = [f"# {title}", ""]
     lines.append("## 元数据")
@@ -157,15 +151,8 @@ def write_summary_md(path: Path, title: str, jobs: list[dict[str, Any]], meta: d
     path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
 
 
-def api_eval(book: ActionBook, script: str, label: str, timeout: float = 45.0) -> Any:
-    value = unwrap_eval(book.eval(script, timeout=timeout))
-    if isinstance(value, dict) and value.get("error"):
-        raise RuntimeError(f"{label}: {value.get('error')}")
-    return value
-
-
 def page_state(book: ActionBook) -> dict[str, str]:
-    value = api_eval(book, """
+    value = evaluate(book, """
     (() => ({
       href: location.href,
       title: document.title || '',
@@ -187,7 +174,7 @@ def ensure_ready(book: ActionBook) -> None:
 
 
 def start_book(args: argparse.Namespace, url: str) -> ActionBook:
-    book = prepare_task_book(args, url, ActionBook)
+    book = attach_workflow(args, url, ActionBook)
     ensure_ready(book)
     return book
 
@@ -482,7 +469,7 @@ def fetch_json(
       return {{ status: res.status, url: res.url, data }};
     }})()
     """
-    value = api_eval(book, script, label, timeout=30.0)
+    value = evaluate(book, script, label, timeout=30.0)
     if not isinstance(value, dict):
         raise RuntimeError(f"{label}: unexpected response")
     if value.get("error"):
@@ -515,7 +502,7 @@ def fetch_boss_friend_list(book: ActionBook, page_num: int, job_id: str, allow_n
 
 
 def read_encrypt_system_id(book: ActionBook) -> str:
-    value = api_eval(book, """
+    value = evaluate(book, """
     (() => {
       try {
         const appEl = document.querySelector('#app') || document.querySelector('[data-v-app]');
@@ -626,7 +613,7 @@ def collect_cards(book: ActionBook) -> list[dict[str, Any]]:
       });
     })()
     """
-    value = api_eval(book, script, "collect visible DOM cards", timeout=25.0)
+    value = evaluate(book, script, "collect visible DOM cards", timeout=25.0)
     return value if isinstance(value, list) else []
 
 
@@ -640,7 +627,7 @@ def scroll_more(book: ActionBook) -> dict[str, Any]:
       return {before, after, y: window.scrollY, height: document.body.scrollHeight};
     })()
     """
-    value = api_eval(book, script, "scroll DOM list", timeout=60.0)
+    value = evaluate(book, script, "scroll DOM list", timeout=60.0)
     return value if isinstance(value, dict) else {}
 
 
@@ -690,12 +677,12 @@ def click_and_extract(book: ActionBook, url: str, fallback_index: int) -> dict[s
       };
     })({targetUrl: %s, fallbackIndex: %d})
     """ % (json.dumps(url), fallback_index)
-    value = api_eval(book, script, "click and extract DOM detail", timeout=20.0)
+    value = evaluate(book, script, "click and extract DOM detail", timeout=20.0)
     return value if isinstance(value, dict) else {"ok": False, "error": "unexpected_result"}
 
 
 def extract_detail_from_current_page(book: ActionBook) -> dict[str, Any]:
-    value = api_eval(book, r"""
+    value = evaluate(book, r"""
     (() => {
       const norm = value => String(value || '').replace(/\s+/g, ' ').trim();
       const detail = document.querySelector('.job-detail-container, .job-detail-box, .job-banner, .job-primary');
@@ -731,7 +718,7 @@ def collect_query_jobs(
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], int, str]:
     source_url = page_url or build_jobs_url(args, city_code, query)
     book.goto(source_url)
-    wait_for_page_settle(book)
+    wait_until_stable(book)
     time.sleep(random.uniform(args.query_delay_min, args.query_delay_max))
     jobs: list[dict[str, Any]] = list(existing_jobs or [])
     failures: list[dict[str, Any]] = []
@@ -1098,7 +1085,7 @@ def command_chatlist(args: argparse.Namespace) -> int:
                 records = [map_boss_chat_row(item) for item in boss_result[:args.limit]]
             elif boss_result.get("code") == IDENTITY_MISMATCH_CODE:
                 book.goto(f"{ZHIPIN_HOME_URL}/web/geek/chat")
-                wait_for_page_settle(book)
+                wait_until_stable(book)
                 ensure_ready(book)
                 labels = fetch_geek_friend_label_list(book, read_encrypt_system_id(book))
                 enriched = fetch_geek_friend_info_list(book, [item.get("friendId") for item in labels[:args.limit]])
@@ -1214,7 +1201,7 @@ def command_chatmsg(args: argparse.Namespace) -> int:
                 records = map_boss_chat_messages(fetch_boss_messages(book, friend, args.page), friend)
             else:
                 book.goto(f"{ZHIPIN_HOME_URL}/web/geek/chat")
-                wait_for_page_settle(book)
+                wait_until_stable(book)
                 ensure_ready(book)
                 geek_friend = find_geek_friend_by_uid(book, args.uid)
                 if not geek_friend:
@@ -1320,7 +1307,7 @@ def write_records_outputs(
 
 
 def add_common_browser_args(parser: argparse.ArgumentParser) -> None:
-    add_session_tab_args(parser, default_session=DEFAULT_SESSION, tab_help="ActionBook tab id")
+    add_workflow_args(parser)
     parser.add_argument(
         "--adopt-running-session",
         action="store_true",

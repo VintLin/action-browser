@@ -28,14 +28,13 @@ if __package__ in {None, ""}:
 from typing import Any
 
 from scripts.actionbook_interrupts import install_interrupt_handlers
-from scripts.adapter_runtime import prepare_task_book, wait_for_page_settle
+from scripts.workflow_runtime import add_workflow_args, attach_workflow, evaluate, wait_until_stable, write_json
 from scripts.actionbook_session import ActionBookSession as ActionBook
-from scripts.script_common import DEFAULT_TAB, add_session_tab_args, log, unwrap_eval
+from scripts.script_common import log
 
 
 DOUYIN_CREATOR_URL = "https://creator.douyin.com"
 DOUYIN_HOME_URL = "https://www.douyin.com"
-DEFAULT_SESSION = "douyin-task"
 SKILL_DIR = Path(__file__).resolve().parents[2]
 ASSETS_DIR = SKILL_DIR / "assets" / "douyin"
 
@@ -57,15 +56,8 @@ def default_action_output_dir(source: str) -> Path:
     return ASSETS_DIR / "views" / source / stamp
 
 
-def api_eval(book: ActionBook, script: str, label: str, timeout: float = 45.0) -> Any:
-    value = unwrap_eval(book.eval(script, timeout=timeout))
-    if isinstance(value, dict) and value.get("error"):
-        raise RuntimeError(f"{label}: {value.get('error')}")
-    return value
-
-
 def get_page_state(book: ActionBook) -> dict[str, str]:
-    value = api_eval(book, """
+    value = evaluate(book, """
     (() => ({
       href: location.href,
       title: document.title || '',
@@ -92,12 +84,7 @@ def ensure_douyin_ready(book: ActionBook) -> None:
 
 
 def start_book(args: argparse.Namespace, url: str) -> ActionBook:
-    return prepare_task_book(args, url, ActionBook)
-
-
-def write_json(path: Path, data: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return attach_workflow(args, url, ActionBook)
 
 
 def write_records(records: list[dict[str, Any]], output_dir: Path, title: str) -> None:
@@ -216,7 +203,7 @@ def require_douyin_payload(value: Any, label: str) -> dict[str, Any]:
 
 def creator_fetch(book: ActionBook, method: str, url: str, label: str, body: dict[str, Any] | None = None) -> dict[str, Any]:
     ensure_douyin_ready(book)
-    payload = api_eval(book, browser_fetch_js(method, url, body=body), label, timeout=40.0)
+    payload = evaluate(book, browser_fetch_js(method, url, body=body), label, timeout=40.0)
     return require_douyin_payload(payload, label)
 
 
@@ -463,7 +450,7 @@ def run_user_videos(args: argparse.Namespace) -> int:
     media_dir = output_dir / "media"
     max_media_bytes = max(0, int(float(args.max_media_mb) * 1024 * 1024))
     book = start_book(args, f"{DOUYIN_HOME_URL}/user/{args.sec_uid}")
-    wait_for_page_settle(book)
+    wait_until_stable(book)
     ensure_douyin_ready(book)
     params = urllib.parse.urlencode({"sec_user_id": args.sec_uid, "max_cursor": "0", "count": str(count), "aid": "6383"})
     data = creator_fetch(
@@ -539,7 +526,7 @@ def run_user_videos(args: argparse.Namespace) -> int:
 def add_common(parser: argparse.ArgumentParser, default_count: int = 20) -> None:
     parser.add_argument("--count", type=int, default=default_count, help="Number of records")
     parser.add_argument("--output", default="", help="Output directory")
-    add_session_tab_args(parser, default_session=DEFAULT_SESSION, tab_help="ActionBook tab id")
+    add_workflow_args(parser)
 
 
 def build_parser() -> argparse.ArgumentParser:

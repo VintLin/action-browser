@@ -29,14 +29,13 @@ if __package__ in {None, ""}:
 from typing import Any
 
 from scripts.actionbook_interrupts import install_interrupt_handlers
-from scripts.adapter_runtime import prepare_task_book
+from scripts.workflow_runtime import add_workflow_args, attach_workflow, evaluate, write_json
 from scripts.actionbook_session import ActionBookSession as ActionBook
-from scripts.script_common import DEFAULT_TAB, add_session_tab_args, log, unwrap_eval
+from scripts.script_common import log
 
 
 BILIBILI_HOME_URL = "https://www.bilibili.com"
 BILIBILI_API_URL = "https://api.bilibili.com"
-DEFAULT_SESSION = "bilibili-task"
 SKILL_DIR = Path(__file__).resolve().parents[2]
 ASSETS_DIR = SKILL_DIR / "assets" / "bilibili"
 
@@ -67,11 +66,6 @@ def default_action_output_dir(source: str, action: str = "view") -> Path:
     return ASSETS_DIR / action_dir / source / stamp
 
 
-def write_json(path: Path, data: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-
-
 def write_records(records: list[dict[str, Any]], output_dir: Path, title: str) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     write_json(output_dir / "summary.json", records)
@@ -90,19 +84,12 @@ def write_records(records: list[dict[str, Any]], output_dir: Path, title: str) -
     write_json(output_dir / "failures.json", [])
 
 
-def api_eval(book: ActionBook, script: str, label: str, timeout: float = 45.0) -> Any:
-    value = unwrap_eval(book.eval(script, timeout=timeout))
-    if isinstance(value, dict) and value.get("error"):
-        raise RuntimeError(f"{label}: {value.get('error')}")
-    return value
-
-
 def start_book(args: argparse.Namespace, url: str = BILIBILI_HOME_URL) -> ActionBook:
-    return prepare_task_book(args, url, ActionBook)
+    return attach_workflow(args, url, ActionBook)
 
 
 def get_page_state(book: ActionBook) -> dict[str, str]:
-    value = api_eval(book, """
+    value = evaluate(book, """
     (() => ({
       href: location.href,
       title: document.title || '',
@@ -175,7 +162,7 @@ def get_mixin_key(img_key: str, sub_key: str) -> str:
 
 
 def get_wbi_keys(book: ActionBook) -> tuple[str, str]:
-    payload = api_eval(book, fetch_json_js(f"{BILIBILI_API_URL}/x/web-interface/nav"), "bilibili nav", timeout=20.0)
+    payload = evaluate(book, fetch_json_js(f"{BILIBILI_API_URL}/x/web-interface/nav"), "bilibili nav", timeout=20.0)
     if not isinstance(payload, dict):
         raise RuntimeError("bilibili nav: malformed payload")
     if payload.get("__httpError"):
@@ -213,7 +200,7 @@ def api_get(book: ActionBook, path: str, params: dict[str, Any] | None = None, *
     url = f"{BILIBILI_API_URL}{path}"
     if query:
         url += f"?{query}"
-    return require_api_payload(api_eval(book, fetch_json_js(url), label, timeout=40.0), label)
+    return require_api_payload(evaluate(book, fetch_json_js(url), label, timeout=40.0), label)
 
 
 def resolve_bvid(value: str) -> str:
@@ -666,7 +653,7 @@ def run_subtitle(args: argparse.Namespace) -> int:
     if sub_url.startswith("//"):
         sub_url = "https:" + sub_url
     try:
-        sub_json = require_api_payload(api_eval(book, fetch_json_js(sub_url), "bilibili subtitle file", timeout=30.0), "bilibili subtitle file")
+        sub_json = require_api_payload(evaluate(book, fetch_json_js(sub_url), "bilibili subtitle file", timeout=30.0), "bilibili subtitle file")
     except RuntimeError:
         sub_json = require_api_payload(fetch_json_url(sub_url, referer=f"{BILIBILI_HOME_URL}/video/{bvid}/"), "bilibili subtitle file")
     body = sub_json.get("body") if isinstance(sub_json, dict) else []
@@ -725,7 +712,7 @@ def run_summary(args: argparse.Namespace) -> int:
 
 def add_io(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--output", default="", help="Output directory")
-    add_session_tab_args(parser, default_session=DEFAULT_SESSION, tab_help="ActionBook tab id")
+    add_workflow_args(parser)
 
 
 def add_common(parser: argparse.ArgumentParser, default_count: int = 20) -> None:

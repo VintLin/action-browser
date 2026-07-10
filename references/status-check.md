@@ -2,21 +2,31 @@
 
 本文用于每次使用 Actionbook 前做最小状态检查，避免在浏览器、daemon、插件或 session 状态异常时直接开始任务。
 
-如果任务使用 Chrome 插件模式，优先直接跑通用 bootstrap：
+如果任务使用 Chrome 插件模式，优先为任务领取一个受跟踪的 tab：
 
 ```bash
-python3 scripts/actionbook_session.py ensure \
-  --session task-check \
+python3 scripts/actionbook_session.py acquire-tab \
+  --task task-check \
+  --session shared-browser \
   --url "https://example.com" \
+  --adopt-running-session \
   --json
 ```
 
-这个脚本会优先复用同名健康 session，并返回最终可用的 `session_id` / `tab_id`。显式传入的 `--session` 不会再偷偷 adopt 到别的 session。只有在需要手工排错时，再按下面的细分检查逐步执行。
+这个命令会连接插件、复用同一 task 已拥有的健康 tab，或在健康 session 中为新 task 打开一个独立 tab，并记录最终 `session_id` / `tab_id`。不同 task 可以在同一 session 的不同 tab 并行执行。只有在需要手工排错时，再按下面的细分检查逐步执行。
 
 默认规则：
 
-- 任务流程里的 session/tab 生命周期统一走 `scripts/actionbook_session.py`
+- 任务流程里的 session/tab 生命周期统一走 `acquire-tab` / `list-task-tabs` / `release-tab`
 - 原生 `actionbook browser start/new-tab/list-tabs/close-tab` 只用于诊断、对照实验、或 helper 自己的底层实现排查
+
+任务完成后释放；只有登录、验证码、MFA 等必须保留原 tab 的用户操作可以暂缓：
+
+```bash
+python3 scripts/actionbook_session.py release-tab --task task-check --json
+```
+
+`release-tab` 只有确认目标 id 消失且 session tab 数量减少后才删除 ownership。关闭或复查失败时记录会保留；如果 ActionBook 把同一页面重新挂到新 id，使用 `chrome:control-chrome` 从当前 Chrome tab 清单认领并关闭该 task 的准确页面，再次执行 `release-tab` 清理 stale ownership。不要按模糊 URL 批量关闭用户 tab。
 
 如果怀疑 extension / session 状态存在抖动，先跑一轮诊断脚本，把 `start -> status -> list-tabs` 的真实输出落盘：
 
@@ -221,21 +231,21 @@ unzip -o actionbook-extension-v0.5.0.zip
 
 ## 5. 打开目标站点前检查
 
-建议先通过 helper 获取固定 session 和真实 tab id：
+建议先通过 helper 获取 task-owned session/tab：
 
 ```bash
-export ACTIONBOOK_SESSION_ID="task-1"
-
-python3 scripts/actionbook_session.py ensure \
-  --session "$ACTIONBOOK_SESSION_ID" \
+python3 scripts/actionbook_session.py acquire-tab \
+  --task task-1 \
+  --session shared-browser \
   --url "https://example.com" \
+  --adopt-running-session \
   --json
-python3 scripts/actionbook_session.py list-tabs --session "$ACTIONBOOK_SESSION_ID" --json
+python3 scripts/actionbook_session.py list-task-tabs --json
 ```
 
-这里不要先写死 `ACTIONBOOK_TAB_ID=t1`。先从 `ensure` 返回值或 `list-tabs` 结果里确认真实 tab id，再继续后面的命令。
+这里不要先写死 `ACTIONBOOK_TAB_ID=t1`。从 `acquire-tab` 返回值取得真实 session/tab，并在后续 workflow 显式传入。任务结束后用 task id 释放，不要直接关闭未知 tab。
 
-如果任务需要并发页面，不要默认新建多个 extension session。先验证单个 session 是否健康，再在该 session 内分配多个 tab。
+如果任务需要并发页面，不要默认新建多个 extension session。为每个并行任务使用不同 task id，在同一个健康 session 内分别执行 `acquire-tab`。
 
 如果需要手工复查目标站点状态：
 

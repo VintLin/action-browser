@@ -29,13 +29,12 @@ if __package__ in {None, ""}:
 from typing import Any
 
 from scripts.actionbook_interrupts import install_interrupt_handlers
-from scripts.adapter_runtime import prepare_task_book, wait_for_page_settle
+from scripts.workflow_runtime import add_workflow_args, attach_workflow, evaluate, wait_until_stable, write_json
 from scripts.actionbook_session import ActionBookSession as ActionBook
-from scripts.script_common import DEFAULT_TAB, add_session_tab_args, log, unwrap_eval
+from scripts.script_common import log
 
 
 CHATGPT_URL = "https://chatgpt.com/"
-DEFAULT_SESSION = "chatgpt-qx"
 DEFAULT_PREFIXES = ""
 DEFAULT_TITLE_PATTERN = r"^Q\d+[：:]"
 SKILL_DIR = Path(__file__).resolve().parents[2]
@@ -58,18 +57,6 @@ def normalize_text(value: Any) -> str:
     text = re.sub(r"[ \t]+\n", "\n", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
-def api_eval(book: ActionBook, script: str, label: str, timeout: float = 45.0) -> Any:
-    value = unwrap_eval(book.eval(script, timeout=timeout))
-    if isinstance(value, dict) and value.get("error"):
-        raise RuntimeError(f"{label}: {value.get('error')}")
-    return value
-
-
-def write_json(path: Path, data: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-
-
 def default_output_dir() -> Path:
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     return ASSETS_DIR / "exports" / "qx" / stamp
@@ -169,11 +156,11 @@ def frontmatter_string(data: dict[str, Any]) -> str:
 
 
 def start_book(args: argparse.Namespace, url: str = CHATGPT_URL) -> ActionBook:
-    return prepare_task_book(args, url, ActionBook)
+    return attach_workflow(args, url, ActionBook)
 
 
 def get_page_state(book: ActionBook) -> dict[str, str]:
-    value = api_eval(
+    value = evaluate(
         book,
         """
         (() => ({
@@ -276,13 +263,13 @@ def collect_conversations(
       }}));
     }})()
     """
-    value = api_eval(book, script, "collect ChatGPT conversations", timeout=60.0)
+    value = evaluate(book, script, "collect ChatGPT conversations", timeout=60.0)
     return value if isinstance(value, list) else []
 
 
 def goto_conversation(book: ActionBook, url: str) -> None:
     book.goto(url)
-    api_eval(
+    evaluate(
         book,
         """
         (async () => {
@@ -353,7 +340,7 @@ def scroll_conversation_to_bottom(book: ActionBook) -> dict[str, Any]:
       return { ok: false, rounds: 80, roots: getRoots().length, signature: previousSignature };
     })()
     """
-    value = api_eval(book, script, "scroll ChatGPT conversation to bottom", timeout=35.0)
+    value = evaluate(book, script, "scroll ChatGPT conversation to bottom", timeout=35.0)
     return value if isinstance(value, dict) else {"ok": False, "error": "Malformed scroll result"}
 
 
@@ -412,7 +399,7 @@ def locate_scroll_to_bottom_button(book: ActionBook) -> dict[str, Any]:
       };
     })()
     """
-    value = api_eval(book, script, "locate ChatGPT scroll-to-bottom button", timeout=10.0)
+    value = evaluate(book, script, "locate ChatGPT scroll-to-bottom button", timeout=10.0)
     return value if isinstance(value, dict) else {"ok": False, "error": "Malformed bottom button result"}
 
 
@@ -420,7 +407,7 @@ def go_to_conversation_bottom(book: ActionBook) -> dict[str, Any]:
     button = locate_scroll_to_bottom_button(book)
     if button.get("ok"):
         book.browser("click", f"{int(button['x'])},{int(button['y'])}", timeout=10.0)
-        wait_for_page_settle(book)
+        wait_until_stable(book)
         scroll_state = scroll_conversation_to_bottom(book)
         scroll_state["used_bottom_button"] = True
         scroll_state["bottom_button"] = button
@@ -437,7 +424,7 @@ def click_visible_control(
     selector_script: str,
     timeout: float = 10.0,
 ) -> dict[str, Any]:
-    result = api_eval(book, selector_script, f"locate {label}", timeout=timeout)
+    result = evaluate(book, selector_script, f"locate {label}", timeout=timeout)
     if not isinstance(result, dict) or not result.get("ok"):
         raise RuntimeError(f"{label} control not found: {result}")
     book.browser("click", f"{int(result['x'])},{int(result['y'])}", timeout=timeout)
@@ -451,7 +438,7 @@ def click_control_via_pointer_events(
     click_script: str,
     timeout: float = 10.0,
 ) -> dict[str, Any]:
-    result = api_eval(book, click_script, f"click {label} via pointer events", timeout=timeout)
+    result = evaluate(book, click_script, f"click {label} via pointer events", timeout=timeout)
     if not isinstance(result, dict) or not result.get("ok"):
         raise RuntimeError(f"{label} control not found or did not click: {result}")
     time.sleep(0.4)
@@ -485,8 +472,8 @@ NEW_CHAT_CONTROL_JS = r"""
 
 def create_new_chat(book: ActionBook) -> None:
     click_visible_control(book, "new chat", NEW_CHAT_CONTROL_JS)
-    wait_for_page_settle(book)
-    state = api_eval(
+    wait_until_stable(book)
+    state = evaluate(
         book,
         """
         (() => {
@@ -511,7 +498,7 @@ def create_new_chat(book: ActionBook) -> None:
     )
     if not isinstance(state, dict) or not state.get("ok"):
         raise RuntimeError(f"new chat did not become ready: {state}")
-    api_eval(
+    evaluate(
         book,
         """
         (() => {
@@ -669,7 +656,7 @@ def menu_item_control_pointer_click_js(pattern: str, label: str) -> str:
 
 
 def enable_web_search(book: ActionBook) -> dict[str, Any]:
-    state = api_eval(book, search_mode_state_js(), "check search mode state", timeout=10.0)
+    state = evaluate(book, search_mode_state_js(), "check search mode state", timeout=10.0)
     if isinstance(state, dict) and state.get("search_enabled"):
         log(f"网页搜索已开启: {state.get('search_text') or 'visible control'}")
         return state
@@ -678,7 +665,7 @@ def enable_web_search(book: ActionBook) -> dict[str, Any]:
         click_control_via_pointer_events(book, "composer plus", COMPOSER_PLUS_CONTROL_JS)
         deadline = time.time() + 3.0
         while time.time() < deadline:
-            result = api_eval(
+            result = evaluate(
                 book,
                 menu_item_control_js("网页搜索|web search|search", "web search"),
                 "find web search",
@@ -696,7 +683,7 @@ def enable_web_search(book: ActionBook) -> dict[str, Any]:
             menu_item_control_pointer_click_js("网页搜索|web search|search", "web search"),
         )
         time.sleep(0.5)
-        state = api_eval(book, search_mode_state_js(), "check search mode state", timeout=10.0)
+        state = evaluate(book, search_mode_state_js(), "check search mode state", timeout=10.0)
         if isinstance(state, dict) and state.get("search_enabled"):
             log(f"已开启网页搜索: {state.get('search_text') or 'visible control'}")
             return state
@@ -741,12 +728,12 @@ def search_mode_state_js() -> str:
 
 
 def select_intelligent_mode(book: ActionBook) -> dict[str, Any]:
-    result = api_eval(book, menu_item_control_js("智能|intelligent", "intelligent mode"), "find intelligent mode", timeout=10.0)
+    result = evaluate(book, menu_item_control_js("智能|intelligent", "intelligent mode"), "find intelligent mode", timeout=10.0)
     if isinstance(result, dict) and result.get("ok"):
         book.browser("click", f"{int(result['x'])},{int(result['y'])}", timeout=10.0)
         time.sleep(0.4)
         return {"selected": True, "fallback": False, "text": str(result.get("text") or "")}
-    state = api_eval(book, search_mode_state_js(), "check search mode state", timeout=10.0)
+    state = evaluate(book, search_mode_state_js(), "check search mode state", timeout=10.0)
     if isinstance(state, dict) and state.get("search_enabled"):
         return {
             "selected": False,
@@ -763,7 +750,7 @@ def select_pro_extension(book: ActionBook) -> bool:
         click_control_via_pointer_events(book, "composer plus", COMPOSER_PLUS_CONTROL_JS)
         deadline = time.time() + 3.0
         while time.time() < deadline:
-            result = api_eval(
+            result = evaluate(
                 book,
                 menu_item_control_js("Pro 扩展|Pro extension", "Pro extension"),
                 "find Pro extension",
@@ -806,13 +793,13 @@ def fill_prompt(book: ActionBook, question: str) -> None:
       return {{ ok: true }};
     }})()
     """
-    result = api_eval(book, script, "fill ChatGPT composer", timeout=10.0)
+    result = evaluate(book, script, "fill ChatGPT composer", timeout=10.0)
     if isinstance(result, dict) and result.get("error"):
         raise RuntimeError(f"fill ChatGPT composer: {result.get('error')}")
 
 
 def send_current_prompt(book: ActionBook) -> None:
-    send_result = api_eval(
+    send_result = evaluate(
         book,
         """
         (() => {
@@ -853,7 +840,7 @@ def wait_for_submission_started(book: ActionBook, timeout_seconds: int = 30) -> 
     while time.time() < deadline:
         current_url = str(book.browser("url", timeout=10.0) or "")
         last_url = current_url
-        state = api_eval(
+        state = evaluate(
             book,
             """
             (() => {
@@ -890,7 +877,7 @@ def wait_for_answer_complete(book: ActionBook, timeout_seconds: int) -> None:
     stable_rounds = 0
     saw_assistant = False
     while time.time() < deadline:
-        state = api_eval(
+        state = evaluate(
             book,
             """
             (() => {
@@ -1021,7 +1008,7 @@ def locate_latest_assistant_copy_button(book: ActionBook) -> dict[str, Any]:
       };
     })()
     """
-    value = api_eval(book, script, "locate latest assistant copy button", timeout=45.0)
+    value = evaluate(book, script, "locate latest assistant copy button", timeout=45.0)
     if not isinstance(value, dict):
         return {"ok": False, "error": "Malformed copy button result"}
     return value
@@ -1418,7 +1405,7 @@ def positive_int(value: str) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Submit ChatGPT questions or export conversations.")
-    add_session_tab_args(parser, default_session=DEFAULT_SESSION)
+    add_workflow_args(parser)
     parser.add_argument("--prefix", default=DEFAULT_PREFIXES, help="Comma-separated title prefixes")
     parser.add_argument("--title-pattern", default=DEFAULT_TITLE_PATTERN, help="Regex for matching conversation titles")
     parser.add_argument("--limit", type=positive_int, default=20, help="Maximum conversations to export")
