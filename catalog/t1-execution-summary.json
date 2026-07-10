@@ -1,0 +1,13 @@
+{
+  "ticket": "T1",
+  "reference_baseline": "6129bb3953d5eebd8dd67f96802b320c723f50ca",
+  "execution_baseline": "6027d703c86d1e8e3798212bf1841422a41903fc",
+  "evidence_type": "deterministic",
+  "commands": {
+    "focused_tests": "11 passed",
+    "full_suite": "112 passed",
+    "catalog_validate": "typed field_gap expected; no false parity"
+  },
+  "smoke_evidence": null,
+  "failures": []
+}

@@ -1,0 +1,72 @@
+{
+  "evidence": {
+    "bilibili": {
+      "reference": "references/adapters/bilibili.md",
+      "script": "scripts/adapters/bilibili_workflow.py"
+    },
+    "chatgpt": {
+      "reference": "references/adapters/chatgpt.md",
+      "script": "scripts/adapters/chatgpt_workflow.py"
+    },
+    "douban": {
+      "reference": "references/adapters/douban.md",
+      "script": "scripts/adapters/douban_workflow.py"
+    },
+    "douyin": {
+      "reference": "references/adapters/douyin.md",
+      "script": "scripts/adapters/douyin_workflow.py"
+    },
+    "feishu": {
+      "reference": "references/adapters/feishu.md",
+      "script": "scripts/adapters/feishu_workflow.py"
+    },
+    "jd": {
+      "reference": "references/adapters/jd.md",
+      "script": "scripts/adapters/jd_workflow.py"
+    },
+    "taobao": {
+      "reference": "references/adapters/taobao.md",
+      "script": "scripts/adapters/taobao_workflow.py"
+    },
+    "weibo": {
+      "reference": "references/adapters/weibo.md",
+      "script": "scripts/adapters/weibo_workflow.py"
+    },
+    "x": {
+      "reference": "references/adapters/x.md",
+      "script": "scripts/adapters/x_workflow.py"
+    },
+    "xiaohongshu": {
+      "reference": "references/adapters/xiaohongshu.md",
+      "script": "scripts/adapters/xiaohongshu_workflow.py"
+    },
+    "youtube": {
+      "reference": "references/adapters/youtube.md",
+      "script": "scripts/adapters/youtube_workflow.py"
+    },
+    "zhihu": {
+      "reference": "references/adapters/zhihu.md",
+      "script": "scripts/adapters/zhihu_workflow.py"
+    },
+    "zhipin": {
+      "reference": "references/adapters/zhipin.md",
+      "script": "scripts/adapters/zhipin_workflow.py"
+    }
+  },
+  "execution_baseline": "6027d703c86d1e8e3798212bf1841422a41903fc",
+  "sites": [
+    "bilibili",
+    "chatgpt",
+    "douban",
+    "douyin",
+    "feishu",
+    "jd",
+    "taobao",
+    "weibo",
+    "x",
+    "xiaohongshu",
+    "youtube",
+    "zhihu",
+    "zhipin"
+  ]
+}
