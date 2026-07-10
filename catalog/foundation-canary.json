@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "foundation_commit": "8b75a66988b22d7342a5a62d23c7326601b2c202",
+  "canaries": [
+    {"kind": "public_http", "capability_id": "douban.movie-ranking.trending.read", "status": "passed"},
+    {"kind": "dom", "capability_id": "x.timeline.list.read", "status": "passed"},
+    {"kind": "temporary_tab", "capability_id": "x.article.detail.read", "status": "passed"},
+    {"kind": "download", "capability_id": "douban.photo.download.read", "status": "passed"},
+    {"kind": "authenticated_api", "capability_id": "bilibili.history.read", "status": "not_run"},
+    {"kind": "ui", "capability_id": "chatgpt.history.read", "status": "not_run"},
+    {"kind": "user_gate", "capability_id": "programme.user-gate.read", "status": "not_run"},
+    {"kind": "write_dry_run", "capability_id": "chatgpt.ask.create.remote_write", "status": "not_run"}
+  ]
+}

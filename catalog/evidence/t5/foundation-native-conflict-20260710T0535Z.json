@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "type": "native_conflict",
+  "observed_at": "2026-07-10T05:35:00Z",
+  "ticket": "T5 / GitHub #7",
+  "conflict": "T5 requires shared schemas, retryable-failure mapping, and atomic JSON persistence, but its File Ownership permits only integration tests, canary configuration/template, generated catalog view, and verification report.",
+  "evidence": {
+    "catalog_field_gap_is_expected": "T1 requires unresolved required semantic fields to return typed field_gap rather than fake parity.",
+    "missing_shared_contracts": true,
+    "missing_retryable_reason_mapping": true,
+    "non_atomic_json_writers": true
+  },
+  "result": "T5 is blocked pending an explicit shared-foundation implementation ticket or expanded File Ownership."
+}
