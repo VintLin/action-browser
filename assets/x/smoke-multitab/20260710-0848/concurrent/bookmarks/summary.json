@@ -1,0 +1,279 @@
+[
+  {
+    "tweet_id": "2075047831916929317",
+    "source_url": "https://x.com/i5ting/status/2075047831916929317",
+    "source_page": "bookmarks",
+    "author_name": "i5ting",
+    "author_handle": "@i5ting",
+    "author_profile_url": "https://x.com/i5ting",
+    "author_avatar_url": "https://pbs.twimg.com/profile_images/1817769006746746880/QfKfsYhV_x96.jpg",
+    "text": "学习一下\n\n各位做智能体研发的都可以深度学习一下这一篇文章《Harness Engineering for Self-Improvement》\nhttps://\nlilianweng.github.io/posts/2026-07-\n04-harness/\n…",
+    "created_at_text": "22小时",
+    "created_at_iso": "2026-07-09T02:42:10.000Z",
+    "tweet_type": "quote_tweet",
+    "reply_to": {},
+    "quoted_tweet": {
+      "author_handle": "@astaxie",
+      "author_name": "astaxie",
+      "media": [],
+      "source_url": "",
+      "text": "各位做智能体研发的都可以深度学习一下这一篇文章《Harness Engineering for Self-Improvement》\nhttps://\nlilianweng.github.io/posts/2026-07-\n04-harness/\n…\n上午10:42 · 2026年7月9日\n查看",
+      "tweet_id": ""
+    },
+    "media": [],
+    "links": [],
+    "card": {},
+    "article": {},
+    "metrics": {
+      "bookmarks": "40 书签。已加入书签",
+      "likes": "13 喜欢次数。喜欢",
+      "replies": "1 回复。回复",
+      "reposts": "0 次转帖。转帖"
+    },
+    "social_context": {},
+    "is_bookmarked": true,
+    "raw_text_lines": [
+      "i5ting",
+      "@i5ting",
+      "学习一下",
+      "引用",
+      "astaxie",
+      "@astaxie",
+      "·",
+      "7月8日",
+      "各位做智能体研发的都可以深度学习一下这一篇文章《Harness Engineering for Self-Improvement》",
+      "https://",
+      "lilianweng.github.io/posts/2026-07-",
+      "04-harness/",
+      "…",
+      "上午10:42 · 2026年7月9日",
+      "·",
+      "8,027",
+      "查看",
+      "1",
+      "13",
+      "40"
+    ],
+    "extraction_warnings": [
+      "show_more_unexpanded: new tab ids appeared during the locked close operation: session=zhipin-batch-reuse old_tab=t66 new_tabs=['t68']"
+    ]
+  },
+  {
+    "tweet_id": "2075076376693264449",
+    "source_url": "https://x.com/yangyi/status/2075076376693264449",
+    "source_page": "bookmarks",
+    "author_name": "Yangyi",
+    "author_handle": "@yangyi",
+    "author_profile_url": "https://x.com/yangyi",
+    "author_avatar_url": "https://pbs.twimg.com/profile_images/2006199964930879488/FCF1YJ0u_x96.jpg",
+    "text": "啥叫FDE\n这种针对自己的业务用NewMax搞系统\n就是FDE",
+    "created_at_text": "20小时",
+    "created_at_iso": "2026-07-09T04:35:35.000Z",
+    "tweet_type": "tweet",
+    "reply_to": {},
+    "quoted_tweet": {},
+    "media": [
+      {
+        "alt_text": "图像",
+        "kind": "image",
+        "url": "https://pbs.twimg.com/media/HMwmwqlbYAA19EB?format=jpg&name=900x900"
+      },
+      {
+        "alt_text": "图像",
+        "kind": "image",
+        "url": "https://pbs.twimg.com/media/HMwmxj5asAAhb2i?format=jpg&name=medium"
+      }
+    ],
+    "links": [],
+    "card": {},
+    "article": {},
+    "metrics": {
+      "bookmarks": "已加入书签",
+      "likes": "14 喜欢次数。喜欢",
+      "replies": "1 回复。回复",
+      "reposts": "0 次转帖。转帖",
+      "views": "5113 次查看。查看帖子分析"
+    },
+    "social_context": {},
+    "is_bookmarked": true,
+    "raw_text_lines": [
+      "Yangyi",
+      "@yangyi",
+      "·",
+      "20小时",
+      "啥叫FDE",
+      "这种针对自己的业务用NewMax搞系统",
+      "就是FDE",
+      "1",
+      "14",
+      "5,113"
+    ],
+    "extraction_warnings": []
+  },
+  {
+    "tweet_id": "2075160107823059225",
+    "source_url": "https://x.com/dontbesilent/status/2075160107823059225",
+    "source_page": "bookmarks",
+    "author_name": "dontbesilent",
+    "author_handle": "@dontbesilent",
+    "author_profile_url": "https://x.com/dontbesilent",
+    "author_avatar_url": "https://pbs.twimg.com/profile_images/1840665561287798784/GJCK0iKf_x96.jpg",
+    "text": "群友反馈做了百万播放，我问他用哪个 skill 做的\n\n结果只用了 /dbs 这个主入口",
+    "created_at_text": "14小时",
+    "created_at_iso": "2026-07-09T10:08:18.000Z",
+    "tweet_type": "tweet",
+    "reply_to": {},
+    "quoted_tweet": {},
+    "media": [
+      {
+        "alt_text": "图像",
+        "kind": "image",
+        "url": "https://pbs.twimg.com/media/HMxzHWOa8AEf7Tq?format=jpg&name=large"
+      },
+      {
+        "alt_text": "图像",
+        "kind": "image",
+        "url": "https://pbs.twimg.com/media/HMxzHWPbIAAs2r4?format=jpg&name=medium"
+      }
+    ],
+    "links": [],
+    "card": {},
+    "article": {},
+    "metrics": {
+      "bookmarks": "已加入书签",
+      "likes": "93 喜欢次数。喜欢",
+      "replies": "14 回复。回复",
+      "reposts": "6 次转帖。转帖",
+      "views": "15482 次查看。查看帖子分析"
+    },
+    "social_context": {},
+    "is_bookmarked": true,
+    "raw_text_lines": [
+      "dontbesilent",
+      "@dontbesilent",
+      "·",
+      "14小时",
+      "群友反馈做了百万播放，我问他用哪个 skill 做的",
+      "结果只用了 /dbs 这个主入口",
+      "14",
+      "6",
+      "93",
+      "1.5万"
+    ],
+    "extraction_warnings": []
+  },
+  {
+    "tweet_id": "2075055484533629259",
+    "source_url": "https://x.com/yihui_indie/status/2075055484533629259",
+    "source_page": "bookmarks",
+    "author_name": "Yihui",
+    "author_handle": "@yihui_indie",
+    "author_profile_url": "https://x.com/yihui_indie",
+    "author_avatar_url": "https://pbs.twimg.com/profile_images/1804848821702377472/fSfFlGTf_x96.jpg",
+    "text": "新课预告：如何用AI和SKILL实现好看的落地页？告别AI Slop，这期学完相信你的网站设计会有很大的提高。",
+    "created_at_text": "21小时",
+    "created_at_iso": "2026-07-09T03:12:34.000Z",
+    "tweet_type": "tweet",
+    "reply_to": {},
+    "quoted_tweet": {},
+    "media": [
+      {
+        "alt_text": "",
+        "kind": "image",
+        "url": "https://pbs.twimg.com/amplify_video_thumb/2075054689813680128/img/5Wqz7MNx83CwZnGj.jpg"
+      },
+      {
+        "duration_text": "",
+        "kind": "video",
+        "poster_url": "https://pbs.twimg.com/amplify_video_thumb/2075054689813680128/img/5Wqz7MNx83CwZnGj.jpg",
+        "url": "blob:https://x.com/6579ce33-4004-4e76-a671-ed8810946d50"
+      },
+      {
+        "duration_text": "",
+        "kind": "video",
+        "poster_url": "https://pbs.twimg.com/amplify_video_thumb/2075054689813680128/img/5Wqz7MNx83CwZnGj.jpg",
+        "url": ""
+      }
+    ],
+    "links": [],
+    "card": {},
+    "article": {},
+    "metrics": {
+      "bookmarks": "已加入书签",
+      "likes": "10 喜欢次数。喜欢",
+      "replies": "5 回复。回复",
+      "reposts": "1 次转帖。转帖",
+      "views": "4260 次查看。查看帖子分析"
+    },
+    "social_context": {},
+    "is_bookmarked": true,
+    "raw_text_lines": [
+      "Yihui",
+      "@yihui_indie",
+      "·",
+      "21小时",
+      "新课预告：如何用AI和SKILL实现好看的落地页？告别AI Slop，这期学完相信你的网站设计会有很大的提高。",
+      "5",
+      "1",
+      "10",
+      "4,260"
+    ],
+    "extraction_warnings": []
+  },
+  {
+    "tweet_id": "2074913620203548675",
+    "source_url": "https://x.com/Jackywine/status/2074913620203548675",
+    "source_page": "bookmarks",
+    "author_name": "Jackywine",
+    "author_handle": "@Jackywine",
+    "author_profile_url": "https://x.com/Jackywine",
+    "author_avatar_url": "https://pbs.twimg.com/profile_images/1805875520430915586/x3t_sQdd_x96.jpg",
+    "text": "能把RAG搞清楚的就不多，沉下心来理解这些底层的东西对做工程来说非常重要\n\n如果，我是说如果。\n\n假如我的 followers 里有相对年轻的求职者，正好在找工程方向的工作。\n\n我相信你的简历里一定有一些自己做过或者正在做的项目，不管是不是 vibe 的，当下这个时间节点大概率做的可能靠 agent 方向多一点。\n\n或者是个 workflow，或者是之前的 dify 二开等。\n\n概率比较大。",
+    "created_at_text": "7月9日",
+    "created_at_iso": "2026-07-08T17:48:51.000Z",
+    "tweet_type": "quote_tweet",
+    "reply_to": {},
+    "quoted_tweet": {
+      "author_handle": "@wwwgoubuli",
+      "author_name": "wwwgoubuli",
+      "media": [],
+      "source_url": "",
+      "text": "如果，我是说如果。\n假如我的 followers 里有相对年轻的求职者，正好在找工程方向的工作。\n我相信你的简历里一定有一些自己做过或者正在做的项目，不管是不是 vibe 的，当下这个时间节点大概率做的可能靠 agent 方向多一点。\n或者是个 workflow，或者是之前的 dify 二开等。\n概率比较大。",
+      "tweet_id": ""
+    },
+    "media": [],
+    "links": [],
+    "card": {},
+    "article": {},
+    "metrics": {
+      "bookmarks": "已加入书签",
+      "likes": "4 喜欢次数。喜欢",
+      "replies": "2 回复。回复",
+      "reposts": "0 次转帖。转帖",
+      "views": "3171 次查看。查看帖子分析"
+    },
+    "social_context": {},
+    "is_bookmarked": true,
+    "raw_text_lines": [
+      "Jackywine",
+      "@Jackywine",
+      "·",
+      "7月9日",
+      "能把RAG搞清楚的就不多，沉下心来理解这些底层的东西对做工程来说非常重要",
+      "引用",
+      "wwwgoubuli",
+      "@wwwgoubuli",
+      "·",
+      "7月8日",
+      "如果，我是说如果。",
+      "假如我的 followers 里有相对年轻的求职者，正好在找工程方向的工作。",
+      "我相信你的简历里一定有一些自己做过或者正在做的项目，不管是不是 vibe 的，当下这个时间节点大概率做的可能靠 agent 方向多一点。",
+      "或者是个 workflow，或者是之前的 dify 二开等。",
+      "概率比较大。",
+      "2",
+      "4",
+      "3,171"
+    ],
+    "extraction_warnings": []
+  }
+]

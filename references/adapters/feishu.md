@@ -1,5 +1,7 @@
 # Feishu Drive And Docs Workflow
 
+> 所有 `*_workflow.py` 示例都假定当前 task 已通过 `acquire-tab` 领取 tab，并设置 `ACTIONBOOK_TASK_ID`、`ACTIONBOOK_SESSION_ID`、`ACTIONBOOK_TAB_ID`；也可在命令中显式传入同名参数。并行 task 不得共享同一组环境变量。
+
 This reference is for Feishu/Lark Drive and Feishu Docs tasks that need the user's existing Chrome login state. Prefer ActionBook extension mode and keep all browser/API calls in the same logged-in session.
 
 Common entry rules live in `../../SKILL.md`; adapter runtime boundaries live in
@@ -7,19 +9,21 @@ Common entry rules live in `../../SKILL.md`; adapter runtime boundaries live in
 
 ## Initialization
 
-Use the generic session bootstrap first:
+Acquire the task tab first:
 
 ```bash
-python3 scripts/actionbook_session.py ensure \
-  --session feishu-drive \
+python3 scripts/actionbook_session.py acquire-tab \
+  --task feishu-drive \
+  --session shared \
   --url "https://<tenant>.feishu.cn/drive/" \
+  --adopt-running-session \
   --json
 ```
 
 Then confirm cookies are readable from the same session:
 
 ```bash
-actionbook browser cookies list --session feishu-drive --json
+actionbook browser cookies list --session <returned-session-id> --json
 ```
 
 Stop and ask the user to log in in the same Chrome window if the page shows login, permission approval, CAPTCHA, MFA, or organization risk-control prompts. Do not switch away from extension mode for login-dependent Feishu work.
@@ -71,7 +75,7 @@ In a folder file list, a single click often only selects the row. Double-click t
 After opening a file, run `list-tabs` and choose the newly opened tab whose title or URL matches the target file:
 
 ```bash
-python3 scripts/actionbook_session.py list-tabs --session feishu-drive --json
+python3 scripts/actionbook_session.py list-task-tabs --json
 ```
 
 Common content URL prefixes include:

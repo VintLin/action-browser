@@ -136,9 +136,6 @@ def read_count(value: Any, default: int = 30, max_value: int = 50) -> int:
     return max(1, min(count, max_value))
 
 
-def prepare_weibo_book(args: argparse.Namespace, url: str = WEIBO_HOME_URL) -> ActionBook:
-    return attach_workflow(args, url, ActionBook)
-
 
 def ensure_api_context(book: ActionBook) -> None:
     book.goto(WEIBO_HOME_URL)
@@ -881,7 +878,7 @@ def print_record_result(source: str, action: str, output_dir: Path, count: int) 
 def run_hot_view(args: argparse.Namespace) -> int:
     output_dir = Path(args.output_dir).expanduser() if args.output_dir else default_action_output_dir("hot", "view")
     count = read_count(args.count, default=30, max_value=50)
-    book = prepare_weibo_book(args)
+    book = attach_workflow(args, WEIBO_HOME_URL, ActionBook)
     ensure_api_context(book)
     rows = evaluate(book, f"""
         (async () => {{
@@ -913,7 +910,7 @@ def run_feed_api(args: argparse.Namespace, action: str) -> int:
     output_dir = Path(args.output_dir).expanduser() if args.output_dir else default_action_output_dir(source, action)
     count = read_count(args.count, default=15, max_value=50)
     endpoint = "friendstimeline" if feed_type == "following" else "unreadfriendstimeline"
-    book = prepare_weibo_book(args)
+    book = attach_workflow(args, WEIBO_HOME_URL, ActionBook)
     ensure_api_context(book)
     statuses = evaluate(book, f"""
         (async () => {{
@@ -958,7 +955,7 @@ def resolve_profile_id_from_url(value: str) -> str:
 def run_user_view(args: argparse.Namespace) -> int:
     output_dir = Path(args.output_dir).expanduser() if args.output_dir else default_action_output_dir("user", "view")
     user_id = resolve_profile_id_from_url(args.id or args.profile_url)
-    book = prepare_weibo_book(args)
+    book = attach_workflow(args, WEIBO_HOME_URL, ActionBook)
     ensure_api_context(book)
     data = evaluate(book, f"""
         (async () => {{
@@ -1003,7 +1000,7 @@ def run_user_view(args: argparse.Namespace) -> int:
 
 def run_me_view(args: argparse.Namespace) -> int:
     output_dir = Path(args.output_dir).expanduser() if args.output_dir else default_action_output_dir("me", "view")
-    book = prepare_weibo_book(args)
+    book = attach_workflow(args, WEIBO_HOME_URL, ActionBook)
     ensure_api_context(book)
     data = evaluate(book, """
         (async () => {
@@ -1052,7 +1049,7 @@ def run_post_api(args: argparse.Namespace, action: str) -> int:
     post_id = args.id or extract_weibo_id(args.url)
     if not post_id:
         raise argparse.ArgumentTypeError("post requires --id or --url")
-    book = prepare_weibo_book(args)
+    book = attach_workflow(args, WEIBO_HOME_URL, ActionBook)
     ensure_api_context(book)
     status = evaluate(book, f"""
         (async () => {{
@@ -1095,7 +1092,7 @@ def run_comments_view(args: argparse.Namespace) -> int:
     post_id = args.id or extract_mid(args.url) or extract_weibo_id(args.url)
     if not post_id:
         raise argparse.ArgumentTypeError("comments requires --id or --url")
-    book = prepare_weibo_book(args)
+    book = attach_workflow(args, WEIBO_HOME_URL, ActionBook)
     ensure_api_context(book)
     rows = evaluate(book, f"""
         (async () => {{
@@ -1130,7 +1127,7 @@ def run_user_posts(args: argparse.Namespace, action: str) -> int:
     user_id = resolve_profile_id_from_url(args.id or args.profile_url)
     if not user_id:
         raise argparse.ArgumentTypeError("user-posts requires --id or --profile-url")
-    book = prepare_weibo_book(args)
+    book = attach_workflow(args, WEIBO_HOME_URL, ActionBook)
     ensure_api_context(book)
     statuses = evaluate(book, f"""
         (async () => {{
@@ -1190,7 +1187,7 @@ def run_user_posts(args: argparse.Namespace, action: str) -> int:
 
 def run_action(args: argparse.Namespace, source: str, url: str, action: str) -> int:
     output_dir = Path(args.output_dir).expanduser() if args.output_dir else default_action_output_dir(source, action)
-    book = prepare_weibo_book(args, url)
+    book = attach_workflow(args, url, ActionBook)
     book.goto(url)
     wait_page_ready(book, source)
     book.eval("window.scrollTo(0, 0); window.dispatchEvent(new Event('scroll')); true", timeout=10.0)
@@ -1280,7 +1277,7 @@ def get_self_uid(book: ActionBook) -> str:
 
 def run_favorites(args: argparse.Namespace, action: str) -> int:
     output_dir = Path(args.output_dir).expanduser() if args.output_dir else default_action_output_dir("favorites", action)
-    book = prepare_weibo_book(args)
+    book = attach_workflow(args, WEIBO_HOME_URL, ActionBook)
     ensure_api_context(book)
     uid = get_self_uid(book)
     if not uid:

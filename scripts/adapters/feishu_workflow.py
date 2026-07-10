@@ -125,9 +125,6 @@ def parse_root(value: str) -> tuple[str, str]:
     return name, url
 
 
-def start_book(args: argparse.Namespace, url: str) -> ActionBook:
-    return attach_workflow(args, url, ActionBook)
-
 
 def chrome_download_dir() -> Path:
     prefs = Path.home() / "Library/Application Support/Google/Chrome/Default/Preferences"
@@ -714,7 +711,7 @@ def run_workers(label: str, items: list[dict[str, Any]], workers: int, func: Any
 def command_inventory(args: argparse.Namespace) -> None:
     roots = [parse_root(value) for value in args.root]
     first_url = roots[0][1]
-    book = start_book(args, tenant_origin(first_url) + "/drive/")
+    book = attach_workflow(args, tenant_origin(first_url) + "/drive/", ActionBook)
     folders: list[dict[str, Any]] = []
     files: list[dict[str, Any]] = []
     folder_status: dict[str, Any] = {}
@@ -731,7 +728,7 @@ def command_download(args: argparse.Namespace) -> None:
     manifest = load_manifest(Path(args.manifest))
     files = manifest.get("files") or []
     first_url = next((item["url"] for item in files if item.get("url")), DEFAULT_TENANT)
-    book = start_book(args, tenant_origin(first_url) + "/drive/")
+    book = attach_workflow(args, tenant_origin(first_url) + "/drive/", ActionBook)
     cookies = get_cookies(book, first_url)
     if not cookies:
         raise RuntimeError("missing Feishu cookies from ActionBook session")

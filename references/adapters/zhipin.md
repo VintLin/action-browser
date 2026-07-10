@@ -1,5 +1,7 @@
 # BOSS Zhipin
 
+> 所有 `*_workflow.py` 示例都假定当前 task 已通过 `acquire-tab` 领取 tab，并设置 `ACTIONBOOK_TASK_ID`、`ACTIONBOOK_SESSION_ID`、`ACTIONBOOK_TAB_ID`；也可在命令中显式传入同名参数。并行 task 不得共享同一组环境变量。
+
 Use this reference for BOSS Zhipin job list pages such as `https://www.zhipin.com/web/geek/jobs?city=101020100`.
 
 Common entry rules live in `../../SKILL.md`; adapter runtime boundaries live in

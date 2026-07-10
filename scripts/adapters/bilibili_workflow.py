@@ -84,9 +84,6 @@ def write_records(records: list[dict[str, Any]], output_dir: Path, title: str) -
     write_json(output_dir / "failures.json", [])
 
 
-def start_book(args: argparse.Namespace, url: str = BILIBILI_HOME_URL) -> ActionBook:
-    return attach_workflow(args, url, ActionBook)
-
 
 def get_page_state(book: ActionBook) -> dict[str, str]:
     value = evaluate(book, """
@@ -264,7 +261,7 @@ def iso_time(timestamp: Any, length: int = 16) -> str:
 def run_hot(args: argparse.Namespace) -> int:
     count = read_count(args.count, default=20, max_value=100)
     output_dir = Path(args.output) if args.output else default_action_output_dir("hot")
-    book = start_book(args)
+    book = attach_workflow(args, BILIBILI_HOME_URL, ActionBook)
     ensure_bilibili_ready(book)
     payload = api_get(book, "/x/web-interface/popular", {"ps": count, "pn": 1}, label="bilibili hot")
     items = payload.get("data", {}).get("list") or []
@@ -287,7 +284,7 @@ def run_hot(args: argparse.Namespace) -> int:
 def run_ranking(args: argparse.Namespace) -> int:
     count = read_count(args.count, default=20, max_value=100)
     output_dir = Path(args.output) if args.output else default_action_output_dir("ranking")
-    book = start_book(args)
+    book = attach_workflow(args, BILIBILI_HOME_URL, ActionBook)
     ensure_bilibili_ready(book)
     payload = api_get(book, "/x/web-interface/ranking/v2", {"rid": args.rid, "type": args.type}, label="bilibili ranking")
     items = payload.get("data", {}).get("list") or []
@@ -309,7 +306,7 @@ def run_ranking(args: argparse.Namespace) -> int:
 def run_search(args: argparse.Namespace) -> int:
     count = read_count(args.count, default=20, max_value=50)
     output_dir = Path(args.output) if args.output else default_action_output_dir("search")
-    book = start_book(args, f"{BILIBILI_HOME_URL}/")
+    book = attach_workflow(args, f"{BILIBILI_HOME_URL}/", ActionBook)
     ensure_bilibili_ready(book)
     search_type = "bili_user" if args.type == "user" else "video"
     payload = api_get(
@@ -352,7 +349,7 @@ def run_search(args: argparse.Namespace) -> int:
 def run_video(args: argparse.Namespace) -> int:
     bvid = resolve_bvid(args.url)
     output_dir = Path(args.output) if args.output else default_action_output_dir("video")
-    book = start_book(args, f"{BILIBILI_HOME_URL}/video/{bvid}/")
+    book = attach_workflow(args, f"{BILIBILI_HOME_URL}/video/{bvid}/", ActionBook)
     ensure_bilibili_ready(book)
     payload = api_get(book, "/x/web-interface/view", {"bvid": bvid}, label="bilibili video")
     data = payload.get("data") or {}
@@ -387,7 +384,7 @@ def run_comments(args: argparse.Namespace) -> int:
     bvid = resolve_bvid(args.url)
     count = read_count(args.count, default=20, max_value=50)
     output_dir = Path(args.output) if args.output else default_action_output_dir("comments")
-    book = start_book(args, f"{BILIBILI_HOME_URL}/video/{bvid}/")
+    book = attach_workflow(args, f"{BILIBILI_HOME_URL}/video/{bvid}/", ActionBook)
     ensure_bilibili_ready(book)
     view = api_get(book, "/x/web-interface/view", {"bvid": bvid}, label="bilibili video")
     aid = view.get("data", {}).get("aid")
@@ -471,7 +468,7 @@ def run_feed(args: argparse.Namespace) -> int:
     count = read_count(args.count, default=20, max_value=100)
     pages = read_count(args.pages, default=1, max_value=10)
     output_dir = Path(args.output) if args.output else default_action_output_dir("feed")
-    book = start_book(args)
+    book = attach_workflow(args, BILIBILI_HOME_URL, ActionBook)
     ensure_bilibili_ready(book)
     rows: list[dict[str, Any]] = []
     offset = ""
@@ -521,7 +518,7 @@ def run_dynamic(args: argparse.Namespace) -> int:
 def run_history(args: argparse.Namespace) -> int:
     count = read_count(args.count, default=20, max_value=30)
     output_dir = Path(args.output) if args.output else default_action_output_dir("history")
-    book = start_book(args)
+    book = attach_workflow(args, BILIBILI_HOME_URL, ActionBook)
     ensure_bilibili_ready(book)
     payload = api_get(book, "/x/web-interface/history/cursor", {"ps": count, "type": "archive"}, label="bilibili history")
     items = payload.get("data", {}).get("list") or []
@@ -546,7 +543,7 @@ def run_history(args: argparse.Namespace) -> int:
 
 def run_me(args: argparse.Namespace) -> int:
     output_dir = Path(args.output) if args.output else default_action_output_dir("me")
-    book = start_book(args)
+    book = attach_workflow(args, BILIBILI_HOME_URL, ActionBook)
     ensure_bilibili_ready(book)
     uid = get_self_uid(book)
     payload = api_get(book, "/x/space/wbi/acc/info", {"mid": uid}, signed=True, label="bilibili me")
@@ -568,7 +565,7 @@ def run_me(args: argparse.Namespace) -> int:
 def run_following(args: argparse.Namespace) -> int:
     count = read_count(args.count, default=50, max_value=50)
     output_dir = Path(args.output) if args.output else default_action_output_dir("following")
-    book = start_book(args)
+    book = attach_workflow(args, BILIBILI_HOME_URL, ActionBook)
     ensure_bilibili_ready(book)
     uid = resolve_uid(book, args.uid) if args.uid else get_self_uid(book)
     payload = api_get(
@@ -596,7 +593,7 @@ def run_following(args: argparse.Namespace) -> int:
 def run_user_videos(args: argparse.Namespace) -> int:
     count = read_count(args.count, default=20, max_value=50)
     output_dir = Path(args.output) if args.output else default_action_output_dir("user-videos")
-    book = start_book(args)
+    book = attach_workflow(args, BILIBILI_HOME_URL, ActionBook)
     ensure_bilibili_ready(book)
     uid = resolve_uid(book, args.uid)
     payload = api_get(
@@ -627,7 +624,7 @@ def run_user_videos(args: argparse.Namespace) -> int:
 def run_subtitle(args: argparse.Namespace) -> int:
     bvid = resolve_bvid(args.url)
     output_dir = Path(args.output) if args.output else default_action_output_dir("subtitle")
-    book = start_book(args, f"{BILIBILI_HOME_URL}/video/{bvid}/")
+    book = attach_workflow(args, f"{BILIBILI_HOME_URL}/video/{bvid}/", ActionBook)
     ensure_bilibili_ready(book)
     view = api_get(book, "/x/web-interface/view", {"bvid": bvid}, label="bilibili video")
     cid = view.get("data", {}).get("cid")
@@ -673,7 +670,7 @@ def run_subtitle(args: argparse.Namespace) -> int:
 def run_summary(args: argparse.Namespace) -> int:
     bvid = resolve_bvid(args.url)
     output_dir = Path(args.output) if args.output else default_action_output_dir("summary")
-    book = start_book(args, f"{BILIBILI_HOME_URL}/video/{bvid}/")
+    book = attach_workflow(args, f"{BILIBILI_HOME_URL}/video/{bvid}/", ActionBook)
     ensure_bilibili_ready(book)
     view = api_get(book, "/x/web-interface/view", {"bvid": bvid}, label="bilibili video")
     data = view.get("data") or {}

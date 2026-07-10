@@ -83,9 +83,6 @@ def ensure_douyin_ready(book: ActionBook) -> None:
         raise LoginRequiredError(f"Douyin requires login or verification: {state.get('href')} title={state.get('title')}")
 
 
-def start_book(args: argparse.Namespace, url: str) -> ActionBook:
-    return attach_workflow(args, url, ActionBook)
-
 
 def write_records(records: list[dict[str, Any]], output_dir: Path, title: str) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -219,7 +216,7 @@ def format_ts(value: Any) -> str:
 
 def run_profile(args: argparse.Namespace) -> int:
     output_dir = Path(args.output) if args.output else default_action_output_dir("profile")
-    book = start_book(args, DOUYIN_CREATOR_URL)
+    book = attach_workflow(args, DOUYIN_CREATOR_URL, ActionBook)
     data = creator_fetch(book, "GET", f"{DOUYIN_CREATOR_URL}/web/api/media/user/info/?aid=1128", "douyin profile")
     user = data.get("user_info") if isinstance(data.get("user_info"), dict) else data.get("user")
     if not isinstance(user, dict):
@@ -259,7 +256,7 @@ def normalize_video_status(status: Any, public_time: Any) -> str:
 def run_videos(args: argparse.Namespace) -> int:
     count = read_count(args.count, default=20, max_value=100)
     output_dir = Path(args.output) if args.output else default_action_output_dir("videos")
-    book = start_book(args, DOUYIN_CREATOR_URL)
+    book = attach_workflow(args, DOUYIN_CREATOR_URL, ActionBook)
     status_map = {"all": 0, "published": 1, "reviewing": 3, "scheduled": 0}
     page_size = min(count, 100)
     url = (
@@ -297,7 +294,7 @@ def run_videos(args: argparse.Namespace) -> int:
 def run_drafts(args: argparse.Namespace) -> int:
     count = read_count(args.count, default=20, max_value=100)
     output_dir = Path(args.output) if args.output else default_action_output_dir("drafts")
-    book = start_book(args, DOUYIN_CREATOR_URL)
+    book = attach_workflow(args, DOUYIN_CREATOR_URL, ActionBook)
     data = creator_fetch(
         book,
         "POST",
@@ -326,7 +323,7 @@ def run_drafts(args: argparse.Namespace) -> int:
 def run_collections(args: argparse.Namespace) -> int:
     count = read_count(args.count, default=20, max_value=100)
     output_dir = Path(args.output) if args.output else default_action_output_dir("collections")
-    book = start_book(args, DOUYIN_CREATOR_URL)
+    book = attach_workflow(args, DOUYIN_CREATOR_URL, ActionBook)
     url = (
         f"{DOUYIN_CREATOR_URL}/web/api/mix/list/?status=0,1,2,3,6&count={count}"
         "&cursor=0&should_query_new_mix=1&device_platform=web&aid=1128"
@@ -348,7 +345,7 @@ def run_collections(args: argparse.Namespace) -> int:
 
 def run_activities(args: argparse.Namespace) -> int:
     output_dir = Path(args.output) if args.output else default_action_output_dir("activities")
-    book = start_book(args, DOUYIN_CREATOR_URL)
+    book = attach_workflow(args, DOUYIN_CREATOR_URL, ActionBook)
     data = creator_fetch(book, "GET", f"{DOUYIN_CREATOR_URL}/web/api/media/activity/get/?aid=1128", "douyin activities")
     rows = []
     for item in data.get("activity_list") if isinstance(data.get("activity_list"), list) else []:
@@ -367,7 +364,7 @@ def run_activities(args: argparse.Namespace) -> int:
 def run_hashtag(args: argparse.Namespace) -> int:
     count = read_count(args.count, default=10, max_value=50)
     output_dir = Path(args.output) if args.output else default_action_output_dir("hashtag")
-    book = start_book(args, DOUYIN_CREATOR_URL)
+    book = attach_workflow(args, DOUYIN_CREATOR_URL, ActionBook)
     if args.action == "search":
         if not args.keyword:
             raise ValueError("hashtag search requires --keyword")
@@ -407,7 +404,7 @@ def run_hashtag(args: argparse.Namespace) -> int:
 def run_location(args: argparse.Namespace) -> int:
     count = read_count(args.count, default=20, max_value=50)
     output_dir = Path(args.output) if args.output else default_action_output_dir("location")
-    book = start_book(args, DOUYIN_CREATOR_URL)
+    book = attach_workflow(args, DOUYIN_CREATOR_URL, ActionBook)
     url = f"{DOUYIN_CREATOR_URL}/aweme/v1/life/video_api/search/poi/?keyword={urllib.parse.quote(args.query)}&count={count}&aid=1128"
     data = creator_fetch(book, "GET", url, "douyin location")
     rows = []
@@ -434,7 +431,7 @@ def run_stats(args: argparse.Namespace) -> int:
         "end_time": now,
         "metrics": ["play_count", "like_count", "comment_count", "share_count"],
     }
-    book = start_book(args, DOUYIN_CREATOR_URL)
+    book = attach_workflow(args, DOUYIN_CREATOR_URL, ActionBook)
     data = creator_fetch(book, "POST", f"{DOUYIN_CREATOR_URL}/janus/douyin/creator/data/item_analysis/metrics_trend", "douyin stats", body=body)
     values = data.get("data") if isinstance(data.get("data"), dict) else {}
     rows = [{"metric": key, "value": value} for key, value in values.items()]
@@ -449,7 +446,7 @@ def run_user_videos(args: argparse.Namespace) -> int:
     output_dir = Path(args.output) if args.output else default_action_output_dir("user-videos")
     media_dir = output_dir / "media"
     max_media_bytes = max(0, int(float(args.max_media_mb) * 1024 * 1024))
-    book = start_book(args, f"{DOUYIN_HOME_URL}/user/{args.sec_uid}")
+    book = attach_workflow(args, f"{DOUYIN_HOME_URL}/user/{args.sec_uid}", ActionBook)
     wait_until_stable(book)
     ensure_douyin_ready(book)
     params = urllib.parse.urlencode({"sec_user_id": args.sec_uid, "max_cursor": "0", "count": str(count), "aid": "6383"})

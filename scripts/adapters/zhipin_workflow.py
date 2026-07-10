@@ -1308,11 +1308,6 @@ def write_records_outputs(
 
 def add_common_browser_args(parser: argparse.ArgumentParser) -> None:
     add_workflow_args(parser)
-    parser.add_argument(
-        "--adopt-running-session",
-        action="store_true",
-        help="Reuse another healthy extension session when the named session cannot be created",
-    )
     parser.add_argument("--output-dir", default="", help="Output directory override")
     parser.add_argument("--delay-min", type=float, default=1.2, help="Minimum delay between pages/scrolls")
     parser.add_argument("--delay-max", type=float, default=2.8, help="Maximum delay between pages/scrolls")

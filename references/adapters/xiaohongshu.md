@@ -1,15 +1,19 @@
 # 小红书 ActionBook 操作说明
 
+> 所有 `*_workflow.py` 示例都假定当前 task 已通过 `acquire-tab` 领取 tab，并设置 `ACTIONBOOK_TASK_ID`、`ACTIONBOOK_SESSION_ID`、`ACTIONBOOK_TAB_ID`；也可在命令中显式传入同名参数。并行 task 不得共享同一组环境变量。
+
 本文记录小红书网页在 ActionBook extension 模式下的站点专属经验。通用入口见 `../../SKILL.md`，适配脚本运行边界见 `../adapter-operation-boundaries.md`。
 
 如果用户要处理多个搜索结果或多个博主帖子，优先使用脚本：
 
-建议先跑一次通用 bootstrap，拿到当前可用的 `session_id` / `tab_id`，再决定是否手工带上 `--tab`：
+先领取 task-owned tab，并把返回的真实 `session_id` / `tab_id` 传给 workflow：
 
 ```bash
-python3 scripts/actionbook_session.py ensure \
-  --session xhs-task \
+python3 scripts/actionbook_session.py acquire-tab \
+  --task xhs-task \
+  --session shared \
   --url "https://www.xiaohongshu.com" \
+  --adopt-running-session \
   --json
 ```
 
@@ -179,9 +183,11 @@ python3 scripts/adapters/xiaohongshu_workflow.py likes download \
 推荐入口：
 
 ```bash
-python3 scripts/actionbook_session.py ensure \
-  --session xhs-task \
+python3 scripts/actionbook_session.py acquire-tab \
+  --task xhs-task \
+  --session shared \
   --url "https://www.xiaohongshu.com/explore" \
+  --adopt-running-session \
   --json
 ```
 
@@ -189,9 +195,9 @@ python3 scripts/actionbook_session.py ensure \
 
 ```bash
 actionbook extension status --json
-python3 scripts/actionbook_session.py list-tabs --session xhs-task --json
-actionbook browser url --session xhs-task --tab <real-tab-id> --json
-actionbook browser title --session xhs-task --tab <real-tab-id> --json
+python3 scripts/actionbook_session.py list-task-tabs --json
+actionbook browser url --session <returned-session-id> --tab <returned-tab-id> --json
+actionbook browser title --session <returned-session-id> --tab <returned-tab-id> --json
 ```
 
 可操作页面通常满足：

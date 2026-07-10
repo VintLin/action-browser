@@ -61,17 +61,41 @@ class FakeBook:
         return [{"tab_id": tab_id} for tab_id in self.tabs]
 
 
-def test_workflow_args_and_attach_require_an_owned_tab() -> None:
+def write_registry(path: Path, *, task_id: str = "task-a", session: str = "shared", tab: str = "owned") -> None:
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "tasks": {
+                    task_id: {
+                        "task_id": task_id,
+                        "session_id": session,
+                        "tab_id": tab,
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_workflow_args_and_attach_require_an_owned_tab(tmp_path: Path, monkeypatch) -> None:
     parser = ArgumentParser()
     add_workflow_args(parser)
-    with pytest.raises(ValueError, match="require --session and --tab"):
+    with pytest.raises(ValueError, match="require --task-id, --session, --tab"):
         attach_workflow(parser.parse_args([]), "https://target.example/start", FakeBook)
 
-    args = parser.parse_args(["--session", "shared", "--tab", "owned"])
+    registry = tmp_path / "task-tabs.json"
+    write_registry(registry)
+    monkeypatch.setenv("ACTION_BROWSER_TASK_TABS_FILE", str(registry))
+    args = parser.parse_args(["--task-id", "task-a", "--session", "shared", "--tab", "owned"])
     book = attach_workflow(args, "https://target.example/start", FakeBook)
 
     assert book.allow_adopt is False
     assert book.events == [("use", "owned"), ("goto", "https://target.example/start")]
+
+    with pytest.raises(ValueError, match="ownership mismatch"):
+        attach_workflow(parser.parse_args(["--task-id", "task-a", "--session", "shared", "--tab", "other"]), action_book_cls=FakeBook)
 
 
 def test_evaluate_retries_transient_context_loss() -> None:
@@ -82,15 +106,18 @@ def test_evaluate_retries_transient_context_loss() -> None:
     assert book.events == [("eval", "owned"), ("eval", "owned")]
 
 
-def test_wait_until_stable_returns_state_and_rejects_timeout() -> None:
+def test_wait_until_stable_returns_state_and_allows_timeout() -> None:
     book = FakeBook("shared", "owned")
     stable = {"href": "https://example.com", "title": "A", "text_length": 2, "height": 10}
     book.states = [{**stable, "text_length": 1}, stable, stable, stable]
     assert wait_until_stable(book, timeout_secs=1, interval=0) == stable
 
     book.states = [{**stable, "text_length": value} for value in range(1000)]
+    last_state = wait_until_stable(book, timeout_secs=0.002, interval=0.001)
+    assert last_state["href"] == "https://example.com"
+
     with pytest.raises(RuntimeError, match="did not settle"):
-        wait_until_stable(book, timeout_secs=0.001, interval=0)
+        wait_until_stable(book, timeout_secs=0.002, interval=0.001, require_stable=True)
 
 
 def test_temporary_tab_always_closes_and_write_json_is_atomic(tmp_path: Path) -> None:
@@ -104,3 +131,14 @@ def test_temporary_tab_always_closes_and_write_json_is_atomic(tmp_path: Path) ->
     write_json(output, {"ok": True})
     assert json.loads(output.read_text(encoding="utf-8")) == {"ok": True}
     assert not output.with_suffix(".json.tmp").exists()
+
+
+def test_temporary_tab_preserves_body_error_when_cleanup_also_fails() -> None:
+    book = FakeBook("shared", "owned")
+    book.close_tab = lambda tab_id: (_ for _ in ()).throw(RuntimeError("close failed"))  # type: ignore[method-assign]
+
+    with pytest.raises(RuntimeError, match="body failed") as error:
+        with temporary_tab(book, "https://detail.example"):
+            raise RuntimeError("body failed")
+
+    assert any("temporary tab cleanup failed" in note for note in error.value.__notes__)

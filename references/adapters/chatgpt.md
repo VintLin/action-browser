@@ -1,5 +1,7 @@
 # ChatGPT Workflow
 
+> 所有 `*_workflow.py` 示例都假定当前 task 已通过 `acquire-tab` 领取 tab，并设置 `ACTIONBOOK_TASK_ID`、`ACTIONBOOK_SESSION_ID`、`ACTIONBOOK_TAB_ID`；也可在命令中显式传入同名参数。并行 task 不得共享同一组环境变量。
+
 This reference covers `chatgpt_workflow.py`, a Chrome extension-mode workflow
 for asking ChatGPT questions through the web UI and exporting ChatGPT
 conversation replies to local Markdown.

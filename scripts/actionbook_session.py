@@ -42,6 +42,46 @@ CHROME_APP_NAME = "Google Chrome"
 DEFAULT_ALLOW_VISIBLE_RECOVERY = False
 TASK_TABS_SCHEMA_VERSION = 1
 
+CHROME_CLOSE_EXACT_TAB_SCRIPT = r"""
+on run argv
+    set targetURL to item 1 of argv
+    set targetTitle to item 2 of argv
+    set urlMatchCount to 0
+    set urlMatchWindow to 0
+    set urlMatchTab to 0
+    set exactMatchCount to 0
+    set exactMatchWindow to 0
+    set exactMatchTab to 0
+    tell application "Google Chrome"
+        repeat with windowIndex from 1 to count windows
+            set currentWindow to window windowIndex
+            repeat with tabIndex from 1 to count tabs of currentWindow
+                set currentTab to tab tabIndex of currentWindow
+                if (URL of currentTab as text) is targetURL then
+                    set urlMatchCount to urlMatchCount + 1
+                    set urlMatchWindow to windowIndex
+                    set urlMatchTab to tabIndex
+                    if (title of currentTab as text) is targetTitle then
+                        set exactMatchCount to exactMatchCount + 1
+                        set exactMatchWindow to windowIndex
+                        set exactMatchTab to tabIndex
+                    end if
+                end if
+            end repeat
+        end repeat
+        if exactMatchCount is 1 then
+            close tab exactMatchTab of window exactMatchWindow
+            return "closed"
+        end if
+        if urlMatchCount is 1 then
+            close tab urlMatchTab of window urlMatchWindow
+            return "closed"
+        end if
+    end tell
+    return "matches:" & urlMatchCount
+end run
+"""
+
 
 def sleep_between(low: float = 0.8, high: float = 1.8) -> None:
     time.sleep(random.uniform(low, high))
@@ -68,6 +108,18 @@ def chrome_window_count() -> int:
         return int(str(result.stdout or "").strip() or "0")
     except ValueError:
         return 0
+
+
+def close_unique_chrome_tab(url: str, title: str) -> bool:
+    if sys.platform != "darwin" or not url:
+        return False
+    result = subprocess.run(
+        ["osascript", "-e", CHROME_CLOSE_EXACT_TAB_SCRIPT, url, title],
+        capture_output=True,
+        text=True,
+        timeout=10.0,
+    )
+    return result.returncode == 0 and str(result.stdout or "").strip() == "closed"
 
 
 def ensure_chrome_app_running(
@@ -759,6 +811,18 @@ def task_tabs_path() -> Path:
     return Path(configured).expanduser() if configured else Path.home() / ".action-browser" / "task-tabs.json"
 
 
+@contextmanager
+def tab_mutation_lock() -> Iterator[None]:
+    lock_path = task_tabs_path().with_suffix(".tabs.lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with lock_path.open("a+", encoding="utf-8") as lock_file:
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+
 class TaskTabRegistry:
     def __init__(self, path: Path) -> None:
         self.path = path
@@ -769,8 +833,24 @@ class TaskTabRegistry:
             state = json.loads(self.path.read_text(encoding="utf-8"))
         except FileNotFoundError:
             return {"schema_version": TASK_TABS_SCHEMA_VERSION, "tasks": {}}
-        if not isinstance(state, dict) or not isinstance(state.get("tasks"), dict):
+        if (
+            not isinstance(state, dict)
+            or state.get("schema_version") != TASK_TABS_SCHEMA_VERSION
+            or not isinstance(state.get("tasks"), dict)
+        ):
             raise ValueError(f"invalid task tab registry: {self.path}")
+        for task_id, record in state["tasks"].items():
+            if (
+                not isinstance(task_id, str)
+                or not task_id.strip()
+                or not isinstance(record, dict)
+                or record.get("task_id") != task_id
+                or not isinstance(record.get("session_id"), str)
+                or not record["session_id"].strip()
+                or not isinstance(record.get("tab_id"), str)
+                or not record["tab_id"].strip()
+            ):
+                raise ValueError(f"invalid task tab registry: {self.path}")
         return state
 
     @contextmanager
@@ -815,28 +895,68 @@ def _resource_is_missing(error: Exception) -> bool:
     )
 
 
-def close_and_verify_tab(session: Any, tab_id: str) -> None:
-    before = session.list_tabs()
-    before_ids = {
-        str(tab.get("tab_id") or "").strip()
-        for tab in before
-        if isinstance(tab, dict)
-    }
-    if tab_id not in before_ids:
-        raise RuntimeError(f"TAB_NOT_FOUND: tab {tab_id!r} is not listed in session {session.session!r}")
-    session.close_tab(tab_id)
-    after = session.list_tabs()
-    remaining = {
-        str(tab.get("tab_id") or "").strip()
-        for tab in after
-        if isinstance(tab, dict)
-    }
-    if tab_id in remaining:
-        raise RuntimeError(f"tab still open after close-tab: {tab_id}")
-    if len(after) >= len(before):
-        raise RuntimeError(
-            f"tab count did not decrease after close-tab: session={session.session} before={len(before)} after={len(after)}"
+def require_owned_task_tab(task_id: str, session_id: str, tab_id: str) -> dict[str, Any]:
+    task_id = _task_id(task_id)
+    record = TaskTabRegistry(task_tabs_path()).load()["tasks"].get(task_id)
+    if not isinstance(record, dict):
+        raise ValueError(f"task tab ownership not found for {task_id!r}; run acquire-tab first")
+    if record["session_id"] != session_id or record["tab_id"] != tab_id:
+        raise ValueError(
+            "task tab ownership mismatch: "
+            f"task={task_id!r} owns session={record['session_id']!r} tab={record['tab_id']!r}, "
+            f"not session={session_id!r} tab={tab_id!r}"
         )
+    return dict(record)
+
+
+def close_and_verify_tab(session: Any, tab_id: str) -> None:
+    with tab_mutation_lock():
+        before = session.list_tabs()
+        before_ids = {
+            str(tab.get("tab_id") or "").strip()
+            for tab in before
+            if isinstance(tab, dict)
+        }
+        if tab_id not in before_ids:
+            raise RuntimeError(f"TAB_NOT_FOUND: tab {tab_id!r} is not listed in session {session.session!r}")
+        session.close_tab(tab_id)
+        after = session.list_tabs()
+        remaining = {
+            str(tab.get("tab_id") or "").strip()
+            for tab in after
+            if isinstance(tab, dict)
+        }
+        if tab_id in remaining:
+            raise RuntimeError(f"tab still open after close-tab: {tab_id}")
+        replacement_ids = remaining - before_ids
+        if replacement_ids:
+            replacements = [
+                tab
+                for tab in after
+                if isinstance(tab, dict) and str(tab.get("tab_id") or "").strip() in replacement_ids
+            ]
+            if not all(
+                close_unique_chrome_tab(str(tab.get("url") or ""), str(tab.get("title") or ""))
+                for tab in replacements
+            ):
+                raise RuntimeError(
+                    "could not close replacement tab by unique Chrome URL/title: "
+                    f"session={session.session} old_tab={tab_id} new_tabs={sorted(replacement_ids)}"
+                )
+            deadline = time.monotonic() + 2.0
+            while time.monotonic() < deadline:
+                live_ids = {
+                    str(tab.get("tab_id") or "").strip()
+                    for tab in session.list_tabs()
+                    if isinstance(tab, dict)
+                }
+                if not replacement_ids.intersection(live_ids):
+                    return
+                time.sleep(0.1)
+            raise RuntimeError(
+                "replacement tab still visible after exact Chrome close: "
+                f"session={session.session} new_tabs={sorted(replacement_ids)}"
+            )
 
 
 def acquire_task_tab(args: argparse.Namespace) -> dict[str, Any]:
@@ -867,7 +987,8 @@ def acquire_task_tab(args: argparse.Namespace) -> dict[str, Any]:
             allow_visible_recovery=args.allow_visible_recovery,
         )
         try:
-            session.start(args.url, force_new_tab=True)
+            with tab_mutation_lock():
+                session.start(args.url, force_new_tab=True)
             state = session.describe()
         except Exception as exc:
             if session.tab:

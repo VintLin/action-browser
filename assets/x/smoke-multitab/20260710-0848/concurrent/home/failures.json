@@ -1,0 +1,22 @@
+[
+  {
+    "index": 3,
+    "source_page": "home",
+    "candidate_url": "https://x.com/atomic_chat_hq/status/2075323372574068947",
+    "reason": "extraction_warnings",
+    "warnings": [
+      "show_more_unexpanded: new tab ids appeared during the locked close operation: session=zhipin-batch-reuse old_tab=t67 new_tabs=['t69']"
+    ],
+    "raw_text_preview": "atomic.chat\n@atomic_chat_hq\n关注\n翻译自 英语\n显示原文\nGPT-5.6 Sol Ultra 在物理学上输给了 GPT-5.5，成本却是其 3 倍！\n我们给 4 个模型相同的提示：构建三个独立的 HTML5 画布场景，带有真实的物理演示\n提示：\n- 一辆怪兽卡车后空翻着撞上一辆停放的汽车\n- 一辆特技车跳过六辆公交车撞向一面砖墙\n- 一列火车从断裂的桥上脱轨坠入水中\n输出："
+  },
+  {
+    "index": 5,
+    "source_page": "home",
+    "candidate_url": "https://x.com/emanueledpt/status/2075274248558465113",
+    "reason": "extraction_warnings",
+    "warnings": [
+      "show_more_unexpanded: new tab ids appeared during the locked close operation: session=zhipin-batch-reuse old_tab=t70 new_tabs=['t71']"
+    ],
+    "raw_text_preview": "Emanuele Di Pietro\n@emanueledpt\n订阅\n翻译自 英语\n显示原文\n介绍 Peekaboo！\n我的第一个 macOS 应用，完全使用 5.6-Sol 制作，目前处于早期测试阶段！\nPeekaboo 是一个简单应用，可以将你的待办事项隐藏在角落里——并随身携带。\n将鼠标移动到角落，它就出现了。\n将任何待办事项直接拖放到 Codex、电子邮件、聊天或任何你正在输入的地方。\n原生、轻量级、完全开源。\n即将登陆 App Store"
+  }
+]

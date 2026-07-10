@@ -15,8 +15,8 @@ Use ActionBook for real browser pages. Prefer `extension` mode when the task nee
 - If a supported site or capability is named, read `references/adapters/<site>.md` before running commands.
 - If a supported site's UI drift breaks the documented workflow, or an unsupported site is likely to be reused, the agent may update this skill's adapter script and reference docs. Read `references/adapter-authoring.md` first and keep the patch scoped to observed site behavior.
 - Treat `session` as the browser container and `tab` as the task page. Give every independent task a stable task id and acquire one owned tab with `acquire-tab`; tasks may run concurrently in separate tabs of the same healthy session.
-- Use `scripts/actionbook_session.py` for `acquire-tab`, `list-task-tabs`, and `release-tab`. `release-tab` requires both the owned tab id to disappear and the session tab count to decrease before removing ownership. If ActionBook only reattaches the page under a new id, keep the record and use `chrome:control-chrome` to close that exact owned Chrome tab, then rerun `release-tab` to clear the stale record. Keep `ensure`, raw tab commands, and raw `actionbook browser start/new-tab/list-tabs/close-tab` for one-off work or diagnostics.
-- If `ensure` cannot create the named extension session but another running extension session is healthy, opt in with `--adopt-running-session` before falling back to raw browser commands.
+- Use `scripts/actionbook_session.py` for `acquire-tab`, `list-task-tabs`, and `release-tab`. Managed tab opens and closes share a short mutation lock, while page operations remain parallel. If ActionBook reattaches a closed page under a replacement id, the helper closes the unique Chrome tab matching its URL/title and verifies that the replacement disappeared. Ambiguous duplicate URLs remain a safe failure for manual `chrome:control-chrome` cleanup. Keep `ensure`, raw tab commands, and raw `actionbook browser start/new-tab/list-tabs/close-tab` for one-off work or diagnostics.
+- If `acquire-tab` cannot create the named extension session but another running extension session is healthy, opt in with `--adopt-running-session` before falling back to diagnostics.
 - Continue only after a second CLI command proves the session and selected tab are still accessible.
 - For page operations, take a fresh `snapshot` after structure changes, use current refs, and verify URL/title/key elements after each click, fill, press, navigation, or list/detail transition.
 - If login, CAPTCHA, MFA, or risk-control appears, keep the same Chrome window and ask the user to complete it there.
@@ -41,6 +41,7 @@ Use ActionBook for real browser pages. Prefer `extension` mode when the task nee
 | Page operations, waits, list/detail transitions | `references/adapter-operation-boundaries.md`, `references/status-check.md` |
 | Long run tracking and stopping | `scripts/actionbook_run.py`, `references/task-lifecycle.md` |
 | Adapter creation, UI drift, new reusable site support | `references/adapter-authoring.md`, `references/adapter-operation-boundaries.md` |
+| Workflow runtime helpers and new workflow template | `references/workflow-toolkit.md`, `scripts/adapters/workflow_template.py` |
 | Scheduler task lifecycle | `scripts/scheduler.py`, `references/task-lifecycle.md` |
 
 Supported site adapters live in `references/adapters/<site>.md` and `scripts/adapters/<site>_workflow.py`.

@@ -146,9 +146,6 @@ def ensure_ready(book: ActionBook) -> None:
         )
 
 
-def start_book(args: argparse.Namespace, url: str) -> ActionBook:
-    return attach_workflow(args, url, ActionBook)
-
 
 def default_output_dir(area: str) -> Path:
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -245,7 +242,6 @@ def finish(records: list[dict[str, Any]], args: argparse.Namespace, area: str, t
 
 
 def add_common_view_args(parser: argparse.ArgumentParser, count_default: int) -> None:
-    parser.add_argument("--task-id", default="")
     add_workflow_args(parser)
     parser.add_argument("--output", default="")
     parser.add_argument("--count", default=str(count_default))
@@ -648,7 +644,7 @@ WHOAMI_SCRIPT = """
 
 
 def navigate_from_home(args: argparse.Namespace, target_url: str, settle_seconds: float) -> ActionBook:
-    book = start_book(args, TAOBAO_HOME_URL)
+    book = attach_workflow(args, TAOBAO_HOME_URL, ActionBook)
     time.sleep(HOME_WARMUP_SECONDS)
     evaluate(book, f"location.href = {json.dumps(target_url)}; true", "打开淘宝页面失败")
     time.sleep(settle_seconds)

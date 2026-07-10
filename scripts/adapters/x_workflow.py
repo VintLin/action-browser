@@ -817,9 +817,7 @@ def enrich_article_payloads(book: ActionBook, payloads: list[TweetPayload]) -> N
 
 def needs_show_more_expansion(payload: TweetPayload) -> bool:
     lines = [str(line) for line in payload.raw_text_lines or []]
-    if any(line.strip() in {"显示更多", "Show more"} for line in lines):
-        return True
-    return bool(re.search(r"…\s*$", payload.text or ""))
+    return any(line.strip() in {"显示更多", "Show more"} for line in lines)
 
 
 def merge_expanded_payload(original: TweetPayload, expanded: TweetPayload) -> None:
@@ -868,7 +866,11 @@ def expand_show_more_payloads(book: ActionBook, payloads: list[TweetPayload]) ->
                     payload.extraction_warnings.append("show_more_unexpanded")
                     continue
                 merge_expanded_payload(payload, expanded)
-                log(f"显示更多已展开: clicked={clicked} chars={len(payload.text)}")
+                if needs_show_more_expansion(expanded):
+                    payload.extraction_warnings.append("show_more_unexpanded")
+                    log(f"显示更多仍未展开: clicked={clicked} chars={len(payload.text)}")
+                    continue
+                log(f"详情正文已补全: clicked_show_more={bool(clicked)} chars={len(payload.text)}")
         except Exception as exc:  # noqa: BLE001
             payload.extraction_warnings.append(f"show_more_unexpanded: {exc}")
             log(f"显示更多展开失败: {payload.source_url} reason={exc}")

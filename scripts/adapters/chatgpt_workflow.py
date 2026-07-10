@@ -155,9 +155,6 @@ def frontmatter_string(data: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def start_book(args: argparse.Namespace, url: str = CHATGPT_URL) -> ActionBook:
-    return attach_workflow(args, url, ActionBook)
-
 
 def get_page_state(book: ActionBook) -> dict[str, str]:
     value = evaluate(
@@ -1172,7 +1169,7 @@ def submit_one_task(
 
 
 def run_list(args: argparse.Namespace) -> int:
-    book = start_book(args)
+    book = attach_workflow(args, CHATGPT_URL, ActionBook)
     ensure_chatgpt_ready(book)
     prefixes = parse_prefixes(args.prefix)
     conversations = collect_conversations(book, prefixes, args.title_pattern, args.limit, args.max_scrolls)
@@ -1182,7 +1179,7 @@ def run_list(args: argparse.Namespace) -> int:
 
 def run_export(args: argparse.Namespace) -> int:
     output_dir = Path(args.output_dir).expanduser() if args.output_dir else default_output_dir()
-    book = start_book(args)
+    book = attach_workflow(args, CHATGPT_URL, ActionBook)
     ensure_chatgpt_ready(book)
     prefixes = parse_prefixes(args.prefix)
     conversations = (
@@ -1257,7 +1254,7 @@ def run_ask(args: argparse.Namespace) -> int:
     task = parse_task_record({"title": args.title, "question": args.question}, "ask")
     output_dir = Path(args.output_dir).expanduser() if args.output_dir else default_run_output_dir()
     output_dir.mkdir(parents=True, exist_ok=True)
-    book = start_book(args)
+    book = attach_workflow(args, CHATGPT_URL, ActionBook)
     submissions: list[dict[str, Any]] = []
     failures: list[dict[str, Any]] = []
     try:
@@ -1292,7 +1289,7 @@ def run_batch_ask(args: argparse.Namespace) -> int:
     tasks = load_tasks_file(Path(args.tasks_file))
     output_dir = Path(args.output_dir).expanduser() if args.output_dir else default_run_output_dir()
     output_dir.mkdir(parents=True, exist_ok=True)
-    book = start_book(args)
+    book = attach_workflow(args, CHATGPT_URL, ActionBook)
     submissions: list[dict[str, Any]] = []
     failures: list[dict[str, Any]] = []
     try:

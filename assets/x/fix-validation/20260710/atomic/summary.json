@@ -1,0 +1,109 @@
+[
+  {
+    "tweet_id": "2075323372574068947",
+    "source_url": "https://x.com/atomic_chat_hq/status/2075323372574068947",
+    "source_page": "tweet",
+    "author_name": "atomic.chat",
+    "author_handle": "@atomic_chat_hq",
+    "author_profile_url": "https://x.com/atomic_chat_hq",
+    "author_avatar_url": "",
+    "text": "GPT-5.6 Sol Ultra 在物理学上输给了 GPT-5.5，成本却是其 3 倍！\n\n我们给 4 个模型相同的提示：构建三个独立的 HTML5 画布场景，带有真实的物理演示\n\n提示：\n- 一辆怪兽卡车后空翻着撞上一辆停放的汽车\n- 一辆特技车跳过六辆公交车撞向一面砖墙\n- 一列火车从断裂的桥上脱轨坠入水中\n\n输出：\nGPT-5.6 Sol Ultra：32.9K 令牌，$0.33\nOpus 4.8：9.2K 令牌，$0.24\nGPT-5.5：12.4K 令牌，$0.11\nGrok 4.5：7.0K 令牌，$0.08\n\nSol Ultra 的绘制方式和 GPT-5.5 几乎一样，只是细节更多，这在公交车跳跃场景中表现得最明显，两者看起来几乎一模一样。在其他测试中，Sol Ultra 的表现不如其前身，物理效果也明显变弱。我们认为 GPT-5.5 完全赢得了卡车翻转和火车场景。用 Sol Ultra 你基本上得到的是物理效果更弱的 GPT-5.5，外加一张更漂亮的图片，却要花 3 倍的价格。新生 Grok 4.5 在三项测试中失败了两项，只有火车场景做得还行\n\nSol、Terra 和 Luna，我们的 GPT‑5.6 模型家族，现在开始在 ChatGPT、Codex 和 API 中推出。",
+    "created_at_text": "7小时",
+    "created_at_iso": "2026-07-09T17:30:38.000Z",
+    "tweet_type": "quote_tweet",
+    "reply_to": {},
+    "quoted_tweet": {
+      "author_handle": "@OpenAI",
+      "author_name": "OpenAI",
+      "media": [],
+      "source_url": "",
+      "text": "翻译自 英语\nSol、Terra 和 Luna，我们的 GPT‑5.6 模型家族，现在开始在 ChatGPT、Codex 和 API 中推出。\n上午4:57 · 2026年7月10日\n查看\n相关\n查看引用",
+      "tweet_id": ""
+    },
+    "media": [
+      {
+        "alt_text": "",
+        "kind": "image",
+        "url": "https://pbs.twimg.com/amplify_video_thumb/2075323261622140930/img/ZLFA4sZQLcWcgdSL.jpg"
+      },
+      {
+        "alt_text": "",
+        "kind": "image",
+        "url": "https://pbs.twimg.com/media/HMz76c-bMAAjbW5.jpg"
+      },
+      {
+        "duration_text": "",
+        "kind": "video",
+        "poster_url": "https://pbs.twimg.com/amplify_video_thumb/2075323261622140930/img/ZLFA4sZQLcWcgdSL.jpg",
+        "url": "blob:https://x.com/93c42107-2eb1-4c30-8df3-a16d33d4e56b"
+      },
+      {
+        "duration_text": "",
+        "kind": "video",
+        "poster_url": "https://pbs.twimg.com/media/HMz76c-bMAAjbW5.jpg",
+        "url": "blob:https://x.com/4789a08b-0e42-4945-beb7-2f611d02749d"
+      },
+      {
+        "duration_text": "",
+        "kind": "video",
+        "poster_url": "https://pbs.twimg.com/amplify_video_thumb/2075323261622140930/img/ZLFA4sZQLcWcgdSL.jpg",
+        "url": ""
+      },
+      {
+        "duration_text": "",
+        "kind": "video",
+        "poster_url": "https://pbs.twimg.com/media/HMz76c-bMAAjbW5.jpg",
+        "url": ""
+      }
+    ],
+    "links": [],
+    "card": {},
+    "article": {},
+    "metrics": {
+      "bookmarks": "155 书签。加入书签",
+      "likes": "337 喜欢次数。喜欢",
+      "replies": "32 回复。回复",
+      "reposts": "35 次转帖。转帖"
+    },
+    "social_context": {},
+    "is_bookmarked": false,
+    "raw_text_lines": [
+      "atomic.chat",
+      "@atomic_chat_hq",
+      "关注",
+      "翻译自 英语",
+      "显示原文",
+      "GPT-5.6 Sol Ultra 在物理学上输给了 GPT-5.5，成本却是其 3 倍！",
+      "我们给 4 个模型相同的提示：构建三个独立的 HTML5 画布场景，带有真实的物理演示",
+      "提示：",
+      "- 一辆怪兽卡车后空翻着撞上一辆停放的汽车",
+      "- 一辆特技车跳过六辆公交车撞向一面砖墙",
+      "- 一列火车从断裂的桥上脱轨坠入水中",
+      "输出：",
+      "GPT-5.6 Sol Ultra：32.9K 令牌，$0.33",
+      "Opus 4.8：9.2K 令牌，$0.24",
+      "GPT-5.5：12.4K 令牌，$0.11",
+      "Grok 4.5：7.0K 令牌，$0.08",
+      "Sol Ultra 的绘制方式和 GPT-5.5 几乎一样，只是细节更多，这在公交车跳跃场景中表现得最明显，两者看起来几乎一模一样。在其他测试中，Sol Ultra 的表现不如其前身，物理效果也明显变弱。我们认为 GPT-5.5 完全赢得了卡车翻转和火车场景。用 Sol Ultra 你基本上得到的是物理效果更弱的 GPT-5.5，外加一张更漂亮的图片，却要花 3 倍的价格。新生 Grok 4.5 在三项测试中失败了两项，只有火车场景做得还行",
+      "评价此翻译：",
+      "引用",
+      "OpenAI",
+      "@OpenAI",
+      "·",
+      "7小时",
+      "翻译自 英语",
+      "Sol、Terra 和 Luna，我们的 GPT‑5.6 模型家族，现在开始在 ChatGPT、Codex 和 API 中推出。",
+      "上午4:57 · 2026年7月10日",
+      "·",
+      "20.8万",
+      "查看",
+      "32",
+      "35",
+      "337",
+      "155",
+      "相关",
+      "查看引用"
+    ],
+    "extraction_warnings": []
+  }
+]

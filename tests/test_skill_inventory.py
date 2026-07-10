@@ -22,3 +22,12 @@ def test_current_sites_match_adapter_files() -> None:
     }
 
     assert _current_sites() == reference_sites == script_sites
+
+
+def test_workflows_use_the_shared_runtime_without_legacy_bootstrap() -> None:
+    for path in (ROOT_DIR / "scripts" / "adapters").glob("*_workflow.py"):
+        source = path.read_text(encoding="utf-8")
+        assert "from scripts.workflow_runtime import" in source, path
+        assert "scripts.adapter_runtime" not in source, path
+        assert "prepare_task_book" not in source, path
+        assert "add_session_tab_args" not in source, path

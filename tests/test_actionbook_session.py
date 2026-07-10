@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 import sys
+import threading
 
 import pytest
 
@@ -672,8 +673,16 @@ def test_release_tab_drops_stale_record_when_actionbook_reports_tab_not_found(tm
     assert json.loads(registry_path.read_text(encoding="utf-8"))["tasks"] == {}
 
 
-def test_close_verification_rejects_replacement_tab_with_new_id() -> None:
-    snapshots = iter([[{"tab_id": "owned"}], [{"tab_id": "replacement"}]])
+def test_close_verification_closes_unique_chrome_replacement(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("ACTION_BROWSER_TASK_TABS_FILE", str(tmp_path / "task-tabs.json"))
+    snapshots = iter(
+        [
+            [{"tab_id": "owned", "url": "https://example.com", "title": "Example"}],
+            [{"tab_id": "replacement", "url": "https://example.com", "title": "Loading..."}],
+            [],
+        ]
+    )
+    closed: list[tuple[str, str]] = []
 
     class ReplacingSession:
         session = "shared"
@@ -684,5 +693,114 @@ def test_close_verification_rejects_replacement_tab_with_new_id() -> None:
         def close_tab(self, tab_id: str) -> dict[str, str]:
             return {"status": "closed"}
 
-    with pytest.raises(RuntimeError, match="tab count did not decrease"):
+    monkeypatch.setattr(
+        actionbook_session,
+        "close_unique_chrome_tab",
+        lambda url, title: closed.append((url, title)) or True,
+    )
+
+    actionbook_session.close_and_verify_tab(ReplacingSession(), "owned")
+    assert closed == [("https://example.com", "Loading...")]
+
+
+def test_close_verification_keeps_failure_when_replacement_is_ambiguous(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("ACTION_BROWSER_TASK_TABS_FILE", str(tmp_path / "task-tabs.json"))
+    snapshots = iter(
+        [
+            [{"tab_id": "owned", "url": "https://example.com", "title": "Example"}],
+            [{"tab_id": "replacement", "url": "https://example.com", "title": "Example"}],
+        ]
+    )
+
+    class ReplacingSession:
+        session = "shared"
+
+        def list_tabs(self) -> list[dict[str, str]]:
+            return next(snapshots)
+
+        def close_tab(self, tab_id: str) -> dict[str, str]:
+            return {"status": "closed"}
+
+    monkeypatch.setattr(actionbook_session, "close_unique_chrome_tab", lambda url, title: False)
+
+    with pytest.raises(RuntimeError, match="could not close replacement"):
         actionbook_session.close_and_verify_tab(ReplacingSession(), "owned")
+
+
+def test_close_verification_allows_preexisting_unrelated_tabs(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("ACTION_BROWSER_TASK_TABS_FILE", str(tmp_path / "task-tabs.json"))
+    snapshots = iter(
+        [
+            [
+                {"tab_id": "owned", "url": "https://example.com", "title": "Example"},
+                {"tab_id": "existing", "url": "https://existing.example", "title": "Existing"},
+            ],
+            [
+                {"tab_id": "existing", "url": "https://existing.example", "title": "Existing"},
+            ],
+        ]
+    )
+
+    class ConcurrentSession:
+        session = "shared"
+
+        def list_tabs(self) -> list[dict[str, str]]:
+            return next(snapshots)
+
+        def close_tab(self, tab_id: str) -> dict[str, str]:
+            return {"status": "closed"}
+
+    actionbook_session.close_and_verify_tab(ConcurrentSession(), "owned")
+
+
+def test_close_lock_serializes_concurrent_open_of_same_page(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("ACTION_BROWSER_TASK_TABS_FILE", str(tmp_path / "task-tabs.json"))
+    tabs = [{"tab_id": "owned", "url": "https://example.com", "title": "Example"}]
+    attempted = threading.Event()
+    opened = threading.Event()
+
+    def open_same_page() -> None:
+        attempted.set()
+        with actionbook_session.tab_mutation_lock():
+            tabs.append({"tab_id": "concurrent", "url": "https://example.com", "title": "Example"})
+        opened.set()
+
+    class ConcurrentSession:
+        session = "shared"
+        opener: threading.Thread | None = None
+
+        def list_tabs(self) -> list[dict[str, str]]:
+            return [dict(tab) for tab in tabs]
+
+        def close_tab(self, tab_id: str) -> dict[str, str]:
+            tabs[:] = [tab for tab in tabs if tab["tab_id"] != tab_id]
+            self.opener = threading.Thread(target=open_same_page)
+            self.opener.start()
+            assert attempted.wait(1)
+            assert not opened.wait(0.02)
+            return {"status": "closed"}
+
+    session = ConcurrentSession()
+    actionbook_session.close_and_verify_tab(session, "owned")
+    assert session.opener is not None
+    session.opener.join(timeout=1)
+    assert opened.is_set()
+    assert tabs == [{"tab_id": "concurrent", "url": "https://example.com", "title": "Example"}]
+
+
+@pytest.mark.parametrize(
+    "state",
+    [
+        {"schema_version": 2, "tasks": {}},
+        {"schema_version": 1, "tasks": {"task-a": {"task_id": "wrong", "session_id": "s1", "tab_id": "t1"}}},
+        {"schema_version": 1, "tasks": {"task-a": {"task_id": "task-a", "session_id": "", "tab_id": "t1"}}},
+        {"schema_version": 1, "tasks": {"task-a": {"task_id": "task-a", "session_id": 123, "tab_id": "t1"}}},
+        {"schema_version": 1, "tasks": {"task-a": {"task_id": "task-a", "session_id": "s1", "tab_id": []}}},
+    ],
+)
+def test_task_tab_registry_rejects_invalid_schema(tmp_path: Path, state: dict[str, object]) -> None:
+    path = tmp_path / "task-tabs.json"
+    path.write_text(json.dumps(state), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="invalid task tab registry"):
+        actionbook_session.TaskTabRegistry(path).load()

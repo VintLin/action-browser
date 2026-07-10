@@ -77,9 +77,6 @@ def write_records(records: list[dict[str, Any]], output_dir: Path, title: str) -
     write_json(output_dir / "failures.json", [])
 
 
-def start_book(args: argparse.Namespace, url: str) -> ActionBook:
-    return attach_workflow(args, url, ActionBook)
-
 
 def ensure_youtube_ready(book: ActionBook) -> None:
     state = evaluate(book, """
@@ -274,7 +271,7 @@ def run_search(args: argparse.Namespace) -> int:
     url = f"{YOUTUBE_HOME_URL}/results?search_query={urllib.parse.quote(args.query)}"
     if sp:
         url += "&sp=" + urllib.parse.quote(sp)
-    book = start_book(args, url)
+    book = attach_workflow(args, url, ActionBook)
     book.goto(url)
     wait_until_stable(book)
     ensure_youtube_ready(book)
@@ -352,7 +349,7 @@ def run_search(args: argparse.Namespace) -> int:
 def run_video(args: argparse.Namespace) -> int:
     vid = parse_video_id(args.url)
     output_dir = Path(args.output) if args.output else default_action_output_dir("video", "view")
-    book = start_book(args, YOUTUBE_HOME_URL)
+    book = attach_workflow(args, YOUTUBE_HOME_URL, ActionBook)
     book.goto(YOUTUBE_HOME_URL)
     wait_until_stable(book)
     ensure_youtube_ready(book)
@@ -541,7 +538,7 @@ def transcript_text(segments: list[dict[str, Any]], mode: str) -> str:
 def run_transcript_view(args: argparse.Namespace) -> int:
     vid = parse_video_id(args.url)
     output_dir = Path(args.output) if args.output else default_action_output_dir("transcript", "view")
-    book = start_book(args, video_url(vid))
+    book = attach_workflow(args, video_url(vid), ActionBook)
     data = load_transcript(book, vid, args.lang)
     segments = data.get("segments") if isinstance(data.get("segments"), list) else []
     rows = segments if args.mode == "raw" else group_segments(segments)
@@ -564,7 +561,7 @@ def run_transcript_view(args: argparse.Namespace) -> int:
 def run_transcript_download(args: argparse.Namespace) -> int:
     vid = parse_video_id(args.url)
     output_dir = Path(args.output) if args.output else default_action_output_dir("transcript", "download")
-    book = start_book(args, video_url(vid))
+    book = attach_workflow(args, video_url(vid), ActionBook)
     data = load_transcript(book, vid, args.lang)
     segments = data.get("segments") if isinstance(data.get("segments"), list) else []
     text = transcript_text(segments, args.mode)
@@ -602,7 +599,7 @@ def run_comments(args: argparse.Namespace) -> int:
     vid = parse_video_id(args.url)
     count = read_count(args.count, default=20, max_value=100)
     output_dir = Path(args.output) if args.output else default_action_output_dir("comments", "view")
-    book = start_book(args, video_url(vid))
+    book = attach_workflow(args, video_url(vid), ActionBook)
     book.goto(video_url(vid))
     wait_until_stable(book)
     ensure_youtube_ready(book)
@@ -658,7 +655,7 @@ def run_comments(args: argparse.Namespace) -> int:
 def run_feed(args: argparse.Namespace) -> int:
     count = read_count(args.count, default=20, max_value=100)
     output_dir = Path(args.output) if args.output else default_action_output_dir("feed", "view")
-    book = start_book(args, YOUTUBE_HOME_URL)
+    book = attach_workflow(args, YOUTUBE_HOME_URL, ActionBook)
     book.goto(YOUTUBE_HOME_URL)
     wait_until_stable(book)
     ensure_youtube_ready(book)
@@ -717,7 +714,7 @@ def run_feed(args: argparse.Namespace) -> int:
 def run_playlist_like(args: argparse.Namespace, source: str, url: str, playlist_id: str | None = None) -> int:
     count = read_count(args.count, default=50, max_value=200)
     output_dir = Path(args.output) if args.output else default_action_output_dir(source, "view")
-    book = start_book(args, url)
+    book = attach_workflow(args, url, ActionBook)
     try:
         book.goto(url)
     except Exception as exc:  # noqa: BLE001
@@ -777,7 +774,7 @@ def run_watch_later(args: argparse.Namespace) -> int:
 def run_history(args: argparse.Namespace) -> int:
     count = read_count(args.count, default=30, max_value=200)
     output_dir = Path(args.output) if args.output else default_action_output_dir("history", "view")
-    book = start_book(args, f"{YOUTUBE_HOME_URL}/feed/history")
+    book = attach_workflow(args, f"{YOUTUBE_HOME_URL}/feed/history", ActionBook)
     book.goto(f"{YOUTUBE_HOME_URL}/feed/history")
     wait_until_stable(book)
     ensure_youtube_ready(book)
@@ -824,7 +821,7 @@ def run_history(args: argparse.Namespace) -> int:
 def run_subscriptions(args: argparse.Namespace) -> int:
     count = read_count(args.count, default=50, max_value=1000)
     output_dir = Path(args.output) if args.output else default_action_output_dir("subscriptions", "view")
-    book = start_book(args, f"{YOUTUBE_HOME_URL}/feed/channels")
+    book = attach_workflow(args, f"{YOUTUBE_HOME_URL}/feed/channels", ActionBook)
     book.goto(f"{YOUTUBE_HOME_URL}/feed/channels")
     wait_until_stable(book)
     ensure_youtube_ready(book)
@@ -869,7 +866,7 @@ def run_channel(args: argparse.Namespace) -> int:
     channel_input = str(args.id or "").strip()
     output_dir = Path(args.output) if args.output else default_action_output_dir("channel", "view")
     start_url = f"{YOUTUBE_HOME_URL}/{channel_input}" if channel_input.startswith("@") else f"{YOUTUBE_HOME_URL}/channel/{channel_input}"
-    book = start_book(args, YOUTUBE_HOME_URL)
+    book = attach_workflow(args, YOUTUBE_HOME_URL, ActionBook)
     book.goto(YOUTUBE_HOME_URL)
     wait_until_stable(book)
     ensure_youtube_ready(book)

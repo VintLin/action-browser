@@ -48,7 +48,7 @@ python3 scripts/actionbook_session.py release-tab --task task-a --json
 python3 scripts/actionbook_session.py release-tab --task task-b --json
 ```
 
-`acquire-tab` reuses a live tab already owned by the same task and opens a fresh tab for a different task. `--adopt-running-session` explicitly allows the task to use another healthy extension session when the requested name cannot be created. `release-tab` requires the tab count to decrease and keeps ownership when close verification fails, so cleanup can be retried safely.
+`acquire-tab` reuses a live tab already owned by the same task and opens a fresh tab for a different task. `--adopt-running-session` explicitly allows the task to use another healthy extension session when the requested name cannot be created. Managed tab mutations are briefly serialized; when ActionBook reattaches a closed page under a new id, `release-tab` closes the unique Chrome tab matching that replacement and verifies it disappeared. Ambiguous duplicate URLs fail safely. Page work across tabs remains parallel.
 
 Run a long workflow so it can be stopped later:
 
@@ -80,6 +80,7 @@ python3 scripts/webpage_markdown.py capture \
 | Session, daemon, bridge, or tab checks | [references/status-check.md](references/status-check.md) |
 | Shared adapter browser boundaries | [references/adapter-operation-boundaries.md](references/adapter-operation-boundaries.md) |
 | Adapter creation or UI drift fixes | [references/adapter-authoring.md](references/adapter-authoring.md) |
+| Workflow runtime and copyable template | [references/workflow-toolkit.md](references/workflow-toolkit.md), `scripts/adapters/workflow_template.py` |
 | Scheduler state and retries | [references/task-lifecycle.md](references/task-lifecycle.md) |
 | Webpage-to-Markdown extraction | [references/webpage-markdown.md](references/webpage-markdown.md) |
 | Site commands and output schemas | `references/adapters/<site>.md` |

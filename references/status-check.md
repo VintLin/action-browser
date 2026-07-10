@@ -26,7 +26,7 @@ python3 scripts/actionbook_session.py acquire-tab \
 python3 scripts/actionbook_session.py release-tab --task task-check --json
 ```
 
-`release-tab` 只有确认目标 id 消失且 session tab 数量减少后才删除 ownership。关闭或复查失败时记录会保留；如果 ActionBook 把同一页面重新挂到新 id，使用 `chrome:control-chrome` 从当前 Chrome tab 清单认领并关闭该 task 的准确页面，再次执行 `release-tab` 清理 stale ownership。不要按模糊 URL 批量关闭用户 tab。
+`release-tab` 会确认目标 id 消失。如果 ActionBook 把同一页面重新挂到新 id，helper 会关闭 Chrome 中 URL/title 唯一匹配的替代 tab，并再次验证它已消失。如果存在多个同 URL 且 title 也无法唯一定位，保留 ownership 并使用 `chrome:control-chrome` 精确清理；不按模糊 URL 批量关闭用户 tab。
 
 如果怀疑 extension / session 状态存在抖动，先跑一轮诊断脚本，把 `start -> status -> list-tabs` 的真实输出落盘：
 

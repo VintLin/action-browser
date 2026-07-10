@@ -101,9 +101,6 @@ def ensure_zhihu_ready(book: ActionBook) -> None:
         raise RuntimeError(f"Zhihu requires login or verification: {state.get('href')} title={state.get('title')}")
 
 
-def start_book(args: argparse.Namespace, url: str) -> ActionBook:
-    return attach_workflow(args, url, ActionBook)
-
 
 def write_records(records: list[dict[str, Any]], output_dir: Path, title: str) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -253,7 +250,7 @@ def normalize_feed_item(item: dict[str, Any], rank: int) -> dict[str, Any] | Non
 def run_hot(args: argparse.Namespace) -> int:
     count = read_count(args.count, default=20, max_value=100)
     output_dir = Path(args.output) if args.output else default_action_output_dir("hot", "view")
-    book = start_book(args, ZHIHU_HOME_URL)
+    book = attach_workflow(args, ZHIHU_HOME_URL, ActionBook)
     book.goto(ZHIHU_HOME_URL)
     wait_until_stable(book)
     ensure_zhihu_ready(book)
@@ -289,7 +286,7 @@ def run_hot(args: argparse.Namespace) -> int:
 def run_recommend(args: argparse.Namespace) -> int:
     count = read_count(args.count, default=20, max_value=1000)
     output_dir = Path(args.output) if args.output else default_action_output_dir("recommend", "view")
-    book = start_book(args, ZHIHU_HOME_URL)
+    book = attach_workflow(args, ZHIHU_HOME_URL, ActionBook)
     book.goto(ZHIHU_HOME_URL)
     wait_until_stable(book)
     ensure_zhihu_ready(book)
@@ -364,7 +361,7 @@ def normalize_search_next(value: str) -> str:
 def run_search(args: argparse.Namespace) -> int:
     count = read_count(args.count, default=10, max_value=1000)
     output_dir = Path(args.output) if args.output else default_action_output_dir("search", "view")
-    book = start_book(args, ZHIHU_HOME_URL)
+    book = attach_workflow(args, ZHIHU_HOME_URL, ActionBook)
     book.goto(ZHIHU_HOME_URL)
     wait_until_stable(book)
     ensure_zhihu_ready(book)
@@ -410,7 +407,7 @@ def run_question(args: argparse.Namespace) -> int:
     sort = "created" if args.sort == "created" else "default"
     output_dir = Path(args.output) if args.output else default_action_output_dir("question", "view")
     page_url = f"{ZHIHU_HOME_URL}/question/{question_id}/answers/updated" if sort == "created" else f"{ZHIHU_HOME_URL}/question/{question_id}"
-    book = start_book(args, page_url)
+    book = attach_workflow(args, page_url, ActionBook)
     book.goto(page_url)
     wait_until_stable(book)
     ensure_zhihu_ready(book)
@@ -474,7 +471,7 @@ def run_answer_detail(args: argparse.Namespace) -> int:
     target = parse_answer_target(args.id)
     max_content = max(0, int(args.max_content or 0))
     output_dir = Path(args.output) if args.output else default_action_output_dir("answer-detail", "view")
-    book = start_book(args, target["url"])
+    book = attach_workflow(args, target["url"], ActionBook)
     book.goto(target["url"])
     wait_until_stable(book)
     ensure_zhihu_ready(book)
@@ -522,7 +519,7 @@ def get_me_url_token(book: ActionBook) -> str:
 def run_collections(args: argparse.Namespace) -> int:
     count = read_count(args.count, default=20, max_value=200)
     output_dir = Path(args.output) if args.output else default_action_output_dir("collections", "view")
-    book = start_book(args, ZHIHU_HOME_URL)
+    book = attach_workflow(args, ZHIHU_HOME_URL, ActionBook)
     book.goto(ZHIHU_HOME_URL)
     wait_until_stable(book)
     ensure_zhihu_ready(book)
@@ -615,7 +612,7 @@ def run_collection(args: argparse.Namespace) -> int:
     count = read_count(args.count, default=20, max_value=200)
     offset = max(0, int(args.offset or 0))
     output_dir = Path(args.output) if args.output else default_action_output_dir("collection", "view")
-    book = start_book(args, ZHIHU_HOME_URL)
+    book = attach_workflow(args, ZHIHU_HOME_URL, ActionBook)
     book.goto(ZHIHU_HOME_URL)
     wait_until_stable(book)
     ensure_zhihu_ready(book)
@@ -728,7 +725,7 @@ def download_file(url: str, dest_base: Path, referer: str) -> dict[str, Any]:
 def run_download(args: argparse.Namespace) -> int:
     article_url = parse_article_url(args.url)
     output_dir = Path(args.output) if args.output else default_action_output_dir("download", "download")
-    book = start_book(args, article_url)
+    book = attach_workflow(args, article_url, ActionBook)
     book.goto(article_url)
     wait_until_stable(book)
     ensure_zhihu_ready(book)

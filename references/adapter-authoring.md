@@ -40,8 +40,8 @@ Do not update the skill when:
 
 Minimum update:
 
-1. patch the matching `scripts/adapters/<site>_workflow.py`, or add one only
-   when the flow is reusable
+1. read `references/workflow-toolkit.md`; copy `scripts/adapters/workflow_template.py`
+   for a new reusable site, or patch the matching `<site>_workflow.py`
 2. update or add `references/adapters/<site>.md` with supported commands,
    output files, known brittle areas, and user-action boundaries
 3. keep `SKILL.md` site-neutral; add only the site id to `Current sites` for a
@@ -54,12 +54,13 @@ If the fix is only a one-time workaround, record it in the run output or
 
 ## Required Inputs
 
-Every scheduler-managed adapter must accept:
+Every browser workflow command must accept these through
+`workflow_runtime.add_workflow_args()`:
 
 - `--task-id`
 - `--session`
 - `--tab`
-- `--output`
+- its site-specific output option (`--output` or `--output-dir`)
 
 The scheduler may also pass task-specific inputs such as `--query`,
 `--limit`, or `--item-url`, but the four fields above are the minimum contract.
@@ -75,14 +76,14 @@ Input semantics:
 - `--tab` is the scheduler-issued tab identifier inside `--session`; it is
   stable only for the lifetime of that browser session and lease, and becomes
   invalid if the session is rebuilt or the tab is closed
-- `--output` is the adapter-owned output directory for durable artifacts and
+- the output option is the adapter-owned location for durable artifacts and
   progress files for that task
 
 ## Ownership Boundaries
 
 - The adapter works inside the tab assigned by the scheduler.
 - Multiple tasks may share the same `--session`, but one adapter run owns only its assigned `--tab`.
-- The scheduler should hand adapters a tab that was opened and validated through the session helper; adapters should not rely on raw session bootstrap semantics themselves.
+- The caller must acquire the tab through `actionbook_session.py acquire-tab`; the workflow attaches through `workflow_runtime.attach_workflow` and never bootstraps or adopts a session.
 - The adapter must not open a replacement tab on its own after failure.
 - The adapter must not adopt a different current tab implicitly.
 - Retry logic belongs to the scheduler. The adapter reports failures; it does

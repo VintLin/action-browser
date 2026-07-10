@@ -1,5 +1,7 @@
 # X 工作流
 
+> 所有 `*_workflow.py` 示例都假定当前 task 已通过 `acquire-tab` 领取 tab，并设置 `ACTIONBOOK_TASK_ID`、`ACTIONBOOK_SESSION_ID`、`ACTIONBOOK_TAB_ID`；也可在命令中显式传入同名参数。并行 task 不得共享同一组环境变量。
+
 本文用于在 `action-browser` skill 中操作 X。流程依赖 ActionBook Chrome extension 模式和用户当前 Chrome 登录态。
 
 通用入口见 `../../SKILL.md`，适配脚本运行边界见 `../adapter-operation-boundaries.md`。
@@ -100,7 +102,7 @@ failures.json
 - 原始行：保留页面可见文本，方便排查 DOM 解析。
 - 文章详情正文：如果文章详情已补全，同步写入详情正文、正文行数、图片数和图片位置标记。
 
-`download` 时，如果列表页帖子包含 `显示更多` / `Show more` 或明显截断，脚本应打开该条详情页，尽量展开完整文本后再写入 `metadata.json`、`content.md` 和 `raw.txt`。`view` 会尽力尝试补全文本，但不创建单帖目录。
+`download` 时，如果列表页帖子的 DOM 明确包含 `显示更多` / `Show more`，脚本会打开详情页：详情页仍有展开控件时点击，否则直接读取详情页已完整渲染的正文。只有展开标记消失后才将补全结果写入 `metadata.json`、`content.md` 和 `raw.txt`。外链显示文本末尾的 `…` 不视为长文截断。`view` 会执行同样的正文补全，但不创建单帖目录。
 
 ## Bookmarks
 

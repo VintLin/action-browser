@@ -1,0 +1,12 @@
+[
+  {
+    "index": 4,
+    "source_page": "search",
+    "candidate_url": "https://x.com/abogados_now/status/2075381404003684831",
+    "reason": "extraction_warnings",
+    "warnings": [
+      "show_more_unexpanded: new tab ids appeared during the locked close operation: session=zhipin-batch-reuse old_tab=t62 new_tabs=['t63']"
+    ],
+    "raw_text_preview": "Abogados NOW\n@abogados_now\n关注\n显示翻译\nOpenAI just made ChatGPT conversations rentable. 2.5 billion daily prompts — including people figuring out their next legal move. Ads appear at the bottom, never change the answer. Worth knowing about.\nShould your firm test ChatGPT ads? Watch this first:\nhttps://\nabogadosnow.com/chatgpt-ads-fo\nr-law-firms-what-they-are-how-they-work-and-whether-your-firm-should-test-them/\n…\n上午8:47 · 2026年7月10日"
+  }
+]

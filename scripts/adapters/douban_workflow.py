@@ -92,9 +92,6 @@ def ensure_douban_ready(book: ActionBook) -> None:
         raise RuntimeError(f"Douban requires login or verification: {href} title={title}")
 
 
-def start_book(args: argparse.Namespace, url: str) -> ActionBook:
-    return attach_workflow(args, url, ActionBook)
-
 
 def write_records(records: list[dict[str, Any]], output_dir: Path, title: str) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -183,7 +180,7 @@ def search_url(search_type: str, keyword: str) -> str:
 def run_search(args: argparse.Namespace) -> int:
     count = read_count(args.count, default=20, max_value=50)
     output_dir = Path(args.output) if args.output else default_action_output_dir("search", "view")
-    book = start_book(args, search_url(args.type, args.keyword))
+    book = attach_workflow(args, search_url(args.type, args.keyword), ActionBook)
     book.goto(search_url(args.type, args.keyword))
     wait_until_stable(book)
     ensure_douban_ready(book)
@@ -241,7 +238,7 @@ def run_search(args: argparse.Namespace) -> int:
 def run_top250(args: argparse.Namespace) -> int:
     count = read_count(args.count, default=250, max_value=250)
     output_dir = Path(args.output) if args.output else default_action_output_dir("top250", "view")
-    book = start_book(args, MOVIE_HOME_URL + "/top250")
+    book = attach_workflow(args, MOVIE_HOME_URL + "/top250", ActionBook)
     book.goto(MOVIE_HOME_URL + "/top250")
     wait_until_stable(book)
     ensure_douban_ready(book)
@@ -290,7 +287,7 @@ def run_top250(args: argparse.Namespace) -> int:
 def run_movie_hot(args: argparse.Namespace) -> int:
     count = read_count(args.count, default=20, max_value=50)
     output_dir = Path(args.output) if args.output else default_action_output_dir("movie-hot", "view")
-    book = start_book(args, MOVIE_HOME_URL + "/chart")
+    book = attach_workflow(args, MOVIE_HOME_URL + "/chart", ActionBook)
     book.goto(MOVIE_HOME_URL + "/chart")
     wait_until_stable(book)
     ensure_douban_ready(book)
@@ -329,7 +326,7 @@ def run_movie_hot(args: argparse.Namespace) -> int:
 def run_book_hot(args: argparse.Namespace) -> int:
     count = read_count(args.count, default=20, max_value=50)
     output_dir = Path(args.output) if args.output else default_action_output_dir("book-hot", "view")
-    book = start_book(args, BOOK_HOME_URL + "/chart")
+    book = attach_workflow(args, BOOK_HOME_URL + "/chart", ActionBook)
     book.goto(BOOK_HOME_URL + "/chart")
     wait_until_stable(book)
     ensure_douban_ready(book)
@@ -417,7 +414,7 @@ def run_subject(args: argparse.Namespace) -> int:
     subject_type = "book" if args.type == "book" else "movie"
     home = BOOK_HOME_URL if subject_type == "book" else MOVIE_HOME_URL
     output_dir = Path(args.output) if args.output else default_action_output_dir("subject", "view")
-    book = start_book(args, f"{home}/subject/{subject_id}/")
+    book = attach_workflow(args, f"{home}/subject/{subject_id}/", ActionBook)
     book.goto(f"{home}/subject/{subject_id}/")
     wait_until_stable(book)
     ensure_douban_ready(book)
@@ -558,7 +555,7 @@ def run_photos_view(args: argparse.Namespace) -> int:
     subject_id = normalize_subject_id(args.id)
     count = read_count(args.count, default=120, max_value=500)
     output_dir = Path(args.output) if args.output else default_action_output_dir("photos", "view")
-    book = start_book(args, f"{MOVIE_HOME_URL}/subject/{subject_id}/photos")
+    book = attach_workflow(args, f"{MOVIE_HOME_URL}/subject/{subject_id}/photos", ActionBook)
     data = load_photos(book, subject_id, args.type, count)
     photos = data.get("photos") if isinstance(data.get("photos"), list) else []
     write_records(photos, output_dir, f"豆瓣图片列表: {data.get('subjectTitle') or subject_id}")
@@ -570,7 +567,7 @@ def run_photos_download(args: argparse.Namespace) -> int:
     subject_id = normalize_subject_id(args.id)
     count = read_count(args.count, default=120, max_value=500)
     output_dir = Path(args.output) if args.output else default_action_output_dir("photos", "download")
-    book = start_book(args, f"{MOVIE_HOME_URL}/subject/{subject_id}/photos")
+    book = attach_workflow(args, f"{MOVIE_HOME_URL}/subject/{subject_id}/photos", ActionBook)
     data = load_photos(book, subject_id, args.type, count, args.photo_id)
     photos = data.get("photos") if isinstance(data.get("photos"), list) else []
     if args.photo_id:
@@ -591,7 +588,7 @@ def run_photos_download(args: argparse.Namespace) -> int:
 def run_marks(args: argparse.Namespace) -> int:
     count = read_count(args.count, default=50, max_value=1000)
     output_dir = Path(args.output) if args.output else default_action_output_dir("marks", "view")
-    book = start_book(args, MOVIE_HOME_URL + "/mine")
+    book = attach_workflow(args, MOVIE_HOME_URL + "/mine", ActionBook)
     uid = args.uid or get_self_uid(book)
     statuses = ["collect", "wish", "do"] if args.status == "all" else [args.status]
     rows: list[dict[str, Any]] = []
@@ -648,7 +645,7 @@ def run_marks(args: argparse.Namespace) -> int:
 def run_reviews(args: argparse.Namespace) -> int:
     count = read_count(args.count, default=20, max_value=500)
     output_dir = Path(args.output) if args.output else default_action_output_dir("reviews", "view")
-    book = start_book(args, MOVIE_HOME_URL + "/mine")
+    book = attach_workflow(args, MOVIE_HOME_URL + "/mine", ActionBook)
     uid = args.uid or get_self_uid(book)
     rows: list[dict[str, Any]] = []
     start = 0

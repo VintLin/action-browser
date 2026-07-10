@@ -1,4 +1,5 @@
 from argparse import Namespace
+import json
 from pathlib import Path
 import sys
 
@@ -9,6 +10,27 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 from scripts.adapters import x_workflow
+
+
+@pytest.fixture(autouse=True)
+def owned_tab_registry(tmp_path, monkeypatch) -> None:
+    path = tmp_path / "task-tabs.json"
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "tasks": {
+                    "task-a": {
+                        "task_id": "task-a",
+                        "session_id": "s1",
+                        "tab_id": "leased-tab",
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("ACTION_BROWSER_TASK_TABS_FILE", str(path))
 
 
 class FakeBook:
@@ -58,6 +80,7 @@ class FakeBook:
 
 def base_args(**overrides):
     values = {
+        "task_id": "task-a",
         "session": "s1",
         "tab": "leased-tab",
         "count": 5,
@@ -76,7 +99,7 @@ def test_run_view_without_owned_tab_is_rejected(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(x_workflow, "collect_tweets", lambda book, source, count, max_scrolls: [])
     monkeypatch.setattr(x_workflow, "expand_show_more_payloads", lambda book, payloads: None)
 
-    with pytest.raises(ValueError, match="require --session and --tab"):
+    with pytest.raises(ValueError, match="require --tab"):
         x_workflow.run_view(base_args(tab="", output_dir=str(tmp_path)), "home", x_workflow.HOME_URL)
 
 
@@ -133,3 +156,34 @@ def test_x_page_ready_state_rejects_user_gates() -> None:
     assert not x_workflow.is_x_page_ready_state(
         {"href": "https://x.com/account/access", "body": "Verify your account", "articles": 1, "primary_articles": 1}
     )
+
+
+def test_show_more_detection_uses_explicit_control_not_link_ellipsis() -> None:
+    payload = x_workflow.TweetPayload(
+        tweet_id="1",
+        source_url="https://x.com/user/status/1",
+        source_page="bookmarks",
+        author_name="",
+        author_handle="",
+        author_profile_url="",
+        author_avatar_url="",
+        text="Read https://example.com/article/\u2026",
+        created_at_text="",
+        created_at_iso="",
+        tweet_type="tweet",
+        reply_to={},
+        quoted_tweet={},
+        media=[],
+        links=[],
+        card={},
+        article={},
+        metrics={},
+        social_context={},
+        is_bookmarked=True,
+        raw_text_lines=["Read", "https://example.com/article/", "\u2026"],
+        extraction_warnings=[],
+    )
+    assert not x_workflow.needs_show_more_expansion(payload)
+
+    payload.raw_text_lines.append("显示更多")
+    assert x_workflow.needs_show_more_expansion(payload)

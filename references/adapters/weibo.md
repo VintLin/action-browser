@@ -1,5 +1,7 @@
 # 微博工作流
 
+> 所有 `*_workflow.py` 示例都假定当前 task 已通过 `acquire-tab` 领取 tab，并设置 `ACTIONBOOK_TASK_ID`、`ACTIONBOOK_SESSION_ID`、`ACTIONBOOK_TAB_ID`；也可在命令中显式传入同名参数。并行 task 不得共享同一组环境变量。
+
 本文用于在 `action-browser` skill 中操作微博。流程依赖 ActionBook Chrome extension 模式和用户当前 Chrome 登录态。
 
 通用入口见 `../../SKILL.md`，适配脚本运行边界见 `../adapter-operation-boundaries.md`。
