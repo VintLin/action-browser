@@ -7,7 +7,7 @@ Execution Baseline: `6027d703c86d1e8e3798212bf1841422a41903fc`
 |---|---|---:|---:|---|
 | bilibili | bilibili | 21 | 101 | missing |
 | chatgpt | chatgpt | 14 | 49 | existing |
-| douban | douban | 11 | 83 | missing |
+| douban | douban | 11 | 76 | missing |
 | douyin | douyin | 16 | 63 | missing |
 | feishu | - | 1 | 0 | missing |
 | jd | jd | 8 | 36 | missing |

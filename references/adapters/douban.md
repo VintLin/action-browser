@@ -4,6 +4,26 @@
 
 本文记录豆瓣网页在 ActionBook extension 模式下的站点专属经验。通用入口见 `../../SKILL.md`，适配脚本运行边界见 `../adapter-operation-boundaries.md`。
 
+## Canonical Public Read
+
+`douban.movie-ranking.trending.read` is the Foundation tracer. It uses public
+HTTP only and never acquires, adopts, or creates an ActionBook tab:
+
+```bash
+python3 scripts/action_browser.py run \
+  --site douban --resource movie-ranking --intent trending \
+  --limit 5 --task-id douban-ranking-smoke \
+  --output-root assets/douban/canonical/movie-ranking
+```
+
+It writes one Result Envelope to stdout, `contract/summary.json`, and
+`artifacts/movie-ranking.json`. Each item maps the reference `movie-hot`
+fields as follows: `id -> id`, `url -> url`, `title -> title`, `rank -> rank`,
+`rating -> rating`, `votes -> rating_count`, and `year -> year`; `summary` is
+the available chart metadata. A list is `verified_empty` only when the page
+contains an explicit empty marker; a missing chart container is
+`page_not_ready` and a missing required field is `field_gap`.
+
 ## 支持范围
 
 当前对齐 OpenCLI 豆瓣只读能力：

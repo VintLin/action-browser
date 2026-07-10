@@ -1,0 +1,17 @@
+{
+  "ticket": "T2",
+  "capability_id": "douban.movie-ranking.trending.read",
+  "reference_baseline": "6129bb3953d5eebd8dd67f96802b320c723f50ca",
+  "execution_baseline": "6027d703c86d1e8e3798212bf1841422a41903fc",
+  "focused_tests": "14 passed",
+  "full_deterministic_suite": "126 passed",
+  "real_smoke_evidence": "catalog/evidence/t2/douban-movie-ranking-20260710T043116Z.json",
+  "real_smoke": {
+    "strategy": "public_http",
+    "requested_count": 5,
+    "collected_count": 5,
+    "owned_tabs_before": 0,
+    "owned_tabs_after": 0
+  },
+  "failures": []
+}

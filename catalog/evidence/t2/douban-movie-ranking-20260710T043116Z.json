@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "capability_id": "douban.movie-ranking.trending.read",
+  "reference_baseline": "6129bb3953d5eebd8dd67f96802b320c723f50ca",
+  "execution_baseline": "6027d703c86d1e8e3798212bf1841422a41903fc",
+  "timestamp": "2026-07-10T04:31:16.236187Z",
+  "redacted_url": "https://movie.douban.com/chart",
+  "strategy": "public_http",
+  "access": "public",
+  "requested_count": 5,
+  "collected_count": 5,
+  "schema_assertions": {
+    "artifact_schema_version": 1,
+    "contract_schema_version": 1,
+    "progress_schema_version": 1,
+    "strict_schema_validation": true,
+    "item_identity": true,
+    "canonical_url": true,
+    "title": true,
+    "rank": true,
+    "rating": true,
+    "rating_count": true,
+    "summary": true,
+    "year": true
+  },
+  "owned_tabs_before": 0,
+  "owned_tabs_after": 0,
+  "status": "completed",
+  "failure_reason": null
+}

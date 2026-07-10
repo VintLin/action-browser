@@ -2875,98 +2875,103 @@
       "tests": []
     },
     {
-      "access_requirement": "browser",
+      "access_requirement": "public",
       "conflict_reason": null,
       "description": "豆瓣电影热门榜单",
-      "docs": [],
+      "docs": [
+        "references/adapters/douban.md"
+      ],
       "effect": "read",
       "equivalence_classes": [],
-      "evidence": [],
+      "evidence": [
+        "catalog/evidence/t2/douban-movie-ranking-20260710T043116Z.json"
+      ],
       "exclusion_reason": null,
       "fallbacks": [],
-      "id": "douban.movie-hot.detail.read",
+      "id": "douban.movie-ranking.trending.read",
       "idempotency": "not_applicable",
       "identity": {
         "field": "id"
       },
-      "intent": "detail",
+      "intent": "trending",
       "limits": {
         "max_items": 20
       },
       "local_effect": "none",
       "native": false,
       "parameters": [],
-      "primary_strategy": "cookie",
+      "primary_strategy": "public_http",
       "priority_score": null,
       "reference_aliases": [
         "douban"
       ],
-      "resource": "movie-hot",
+      "resource": "movie-ranking",
       "risk_tier": "read",
       "semantic_fields": [
         {
+          "semantic": "identity",
           "reference_fields": [
-            "rank"
+            "id",
+            "url"
           ],
-          "required": true,
-          "semantic": "rank",
-          "target_field": ""
+          "target_field": "id,url",
+          "required": true
         },
         {
-          "reference_fields": [
-            "id"
-          ],
-          "required": true,
-          "semantic": "id",
-          "target_field": ""
-        },
-        {
+          "semantic": "title",
           "reference_fields": [
             "title"
           ],
-          "required": true,
-          "semantic": "title",
-          "target_field": ""
+          "target_field": "title",
+          "required": true
         },
         {
+          "semantic": "rank",
+          "reference_fields": [
+            "rank"
+          ],
+          "target_field": "rank",
+          "required": true
+        },
+        {
+          "semantic": "rating",
           "reference_fields": [
             "rating"
           ],
-          "required": true,
-          "semantic": "rating",
-          "target_field": ""
+          "target_field": "rating",
+          "required": true
         },
         {
+          "semantic": "rating_count",
           "reference_fields": [
             "votes"
           ],
-          "required": true,
-          "semantic": "votes",
-          "target_field": ""
+          "target_field": "rating_count",
+          "required": true
         },
         {
+          "semantic": "summary",
+          "reference_fields": [],
+          "target_field": "summary",
+          "required": false
+        },
+        {
+          "semantic": "year",
           "reference_fields": [
             "year"
           ],
-          "required": true,
-          "semantic": "year",
-          "target_field": ""
-        },
-        {
-          "reference_fields": [
-            "url"
-          ],
-          "required": true,
-          "semantic": "url",
-          "target_field": ""
+          "target_field": "year",
+          "required": true
         }
       ],
       "site": "douban",
       "source_commands": [
         "douban movie-hot"
       ],
-      "status": "discovered",
-      "tests": []
+      "status": "verified",
+      "tests": [
+        "tests/test_action_browser_douban.py"
+      ]
     },
     {
       "access_requirement": "browser",
