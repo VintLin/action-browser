@@ -523,6 +523,99 @@ def create_new_chat(book: ActionBook) -> None:
     )
 
 
+CHAT_SURFACE_CONTROL_JS = r"""
+(() => {
+  const visible = node => {
+    const rect = node.getBoundingClientRect();
+    const style = getComputedStyle(node);
+    return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
+  };
+  const chat = [...document.querySelectorAll('[role="radio"]')]
+    .find(node => visible(node) && /^(chat|聊天)$/i.test(String(node.innerText || node.textContent || '').trim()));
+  if (!chat) return { ok: false, error: 'Chat / Work switch not found' };
+  const rect = chat.getBoundingClientRect();
+  return {
+    ok: true,
+    selected: chat.getAttribute('aria-checked') === 'true',
+    x: Math.round(rect.left + rect.width / 2),
+    y: Math.round(rect.top + rect.height / 2)
+  };
+})()
+"""
+
+
+MODEL_MENU_CONTROL_JS = r"""
+(() => {
+  const visible = node => {
+    const rect = node.getBoundingClientRect();
+    const style = getComputedStyle(node);
+    return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
+  };
+  const candidates = [...document.querySelectorAll('button, [role="button"]')]
+    .filter(visible)
+    .map(node => {
+      const text = String(node.innerText || node.textContent || node.getAttribute('aria-label') || '').trim();
+      const rect = node.getBoundingClientRect();
+      return { node, text, rect };
+    })
+    .filter(item => item.rect.top > window.innerHeight * 0.35 && /^(极速|中$|高$|极高|pro$|gpt-|o\d)/i.test(item.text));
+  const item = candidates[0];
+  if (!item) return { ok: false, error: 'model settings button not found' };
+  return {
+    ok: true,
+    x: Math.round(item.rect.left + item.rect.width / 2),
+    y: Math.round(item.rect.top + item.rect.height / 2)
+  };
+})()
+"""
+
+
+def select_chat_surface(book: ActionBook) -> None:
+    state = evaluate(book, CHAT_SURFACE_CONTROL_JS, "locate Chat / Work switch", timeout=10.0)
+    if not isinstance(state, dict) or not state.get("ok"):
+        raise RuntimeError(f"Chat / Work switch not found: {state}")
+    if not state.get("selected"):
+        book.browser("click", f"{int(state['x'])},{int(state['y'])}", timeout=10.0)
+        time.sleep(0.4)
+
+
+def select_default_model_settings(book: ActionBook) -> None:
+    click_visible_control(book, "model settings", MODEL_MENU_CONTROL_JS)
+    click_visible_control(book, "extreme intelligence", menu_item_control_js(r"^极高$|^extreme$", "extreme intelligence"))
+    click_visible_control(book, "model settings", MODEL_MENU_CONTROL_JS)
+    click_visible_control(book, "model list", menu_item_control_js(r"^(GPT-|o\\d)", "model list"))
+    latest = evaluate(
+        book,
+        r"""
+        (() => {
+          const visible = node => {
+            const rect = node.getBoundingClientRect();
+            const style = getComputedStyle(node);
+            return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
+          };
+          const item = [...document.querySelectorAll('[role="menuitemradio"]')]
+            .find(node => visible(node) && /^(GPT-|o\d)/i.test(String(node.innerText || node.textContent || '').trim()));
+          if (!item) return { ok: false, error: 'model options not found' };
+          const rect = item.getBoundingClientRect();
+          return { ok: true, x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) };
+        })()
+        """,
+        "locate latest model",
+        timeout=10.0,
+    )
+    if not isinstance(latest, dict) or not latest.get("ok"):
+        raise RuntimeError(f"latest model option not found: {latest}")
+    book.browser("click", f"{int(latest['x'])},{int(latest['y'])}", timeout=10.0)
+    time.sleep(0.4)
+
+
+def configure_default_chat(book: ActionBook) -> dict[str, Any]:
+    select_chat_surface(book)
+    web_search_state = enable_web_search(book)
+    select_default_model_settings(book)
+    return web_search_state
+
+
 COMPOSER_PLUS_CONTROL_JS = r"""
 (() => {
   const clickWithPointerEvents = node => {
@@ -713,57 +806,12 @@ def search_mode_state_js() -> str:
           };
         });
       const searchControl = controls.find(item => item.insideComposerArea && /网页搜索|搜索|web search|search/i.test(item.text));
-      const intelligentControl = controls.find(item => /智能|intelligent/i.test(item.text));
       return {
         search_enabled: Boolean(searchControl),
-        search_text: searchControl ? searchControl.text : '',
-        intelligent_visible: Boolean(intelligentControl),
-        intelligent_text: intelligentControl ? intelligentControl.text : ''
+        search_text: searchControl ? searchControl.text : ''
       };
     })()
     """
-
-
-def select_intelligent_mode(book: ActionBook) -> dict[str, Any]:
-    result = evaluate(book, menu_item_control_js("智能|intelligent", "intelligent mode"), "find intelligent mode", timeout=10.0)
-    if isinstance(result, dict) and result.get("ok"):
-        book.browser("click", f"{int(result['x'])},{int(result['y'])}", timeout=10.0)
-        time.sleep(0.4)
-        return {"selected": True, "fallback": False, "text": str(result.get("text") or "")}
-    state = evaluate(book, search_mode_state_js(), "check search mode state", timeout=10.0)
-    if isinstance(state, dict) and state.get("search_enabled"):
-        return {
-            "selected": False,
-            "fallback": True,
-            "text": str(state.get("search_text") or ""),
-            "reason": "intelligent option not visible after web search was enabled",
-        }
-    raise RuntimeError(f"intelligent mode control not found: {result}")
-
-
-def select_pro_extension(book: ActionBook) -> bool:
-    last_result: Any = None
-    for _attempt in range(2):
-        click_control_via_pointer_events(book, "composer plus", COMPOSER_PLUS_CONTROL_JS)
-        deadline = time.time() + 3.0
-        while time.time() < deadline:
-            result = evaluate(
-                book,
-                menu_item_control_js("Pro 扩展|Pro extension", "Pro extension"),
-                "find Pro extension",
-                timeout=1.0,
-            )
-            last_result = result
-            if isinstance(result, dict) and result.get("ok"):
-                click_control_via_pointer_events(
-                    book,
-                    "Pro extension",
-                    menu_item_control_pointer_click_js("Pro 扩展|Pro extension", "Pro extension"),
-                )
-                return True
-            time.sleep(0.5)
-    log(f"跳过 Pro extension: control not found or did not click: {last_result}")
-    return False
 
 
 def fill_prompt(book: ActionBook, question: str) -> None:
@@ -1053,9 +1101,10 @@ def write_task_markdown(
         "copied_at": completed_at,
         "method": "system-clipboard",
         "web_search": "true",
-        "mode": result.get("mode") or "intelligent",
+        "mode": result.get("mode") or "极高",
         "mode_fallback": bool(result.get("mode_fallback")),
-        "extension": "pro",
+        "surface": "Chat",
+        "model": "latest",
         "clicked_copy": bool(result.get("clicked_copy")),
     }
     content = normalize_text(result.get("text") or "")
@@ -1089,7 +1138,6 @@ def submission_record(
     attempts: int,
     submitted_at: str,
     web_search_state: dict[str, Any],
-    pro_extension_selected: bool,
 ) -> dict[str, Any]:
     return {
         "index": index,
@@ -1098,9 +1146,11 @@ def submission_record(
         "url": url,
         "status": "submitted",
         "mode": {
+            "surface": "Chat",
             "web_search": bool(web_search_state.get("search_enabled")),
             "web_search_state": str(web_search_state.get("search_text") or ""),
-            "extension": "pro" if pro_extension_selected else "not-selected",
+            "intelligence": "极高",
+            "model": "latest",
         },
         "submitted_at": submitted_at,
         "attempts": attempts,
@@ -1116,9 +1166,12 @@ def is_nonfatal_submit_error(exc: Exception) -> bool:
     text = str(exc).lower()
     nonfatal_markers = [
         r"composer plus control not found(?: or did not click)?",
+        r"chat / work switch not found",
+        r"model settings control not found",
+        r"model list control not found",
+        r"latest model option not found",
         r"new chat control not found(?: or did not click)?",
         r"web search control not found(?: or did not enable)?",
-        r"pro extension control not found(?: or did not click)?",
         r"send button not found",
         r"composer not found",
         r"new chat did not become ready",
@@ -1158,14 +1211,13 @@ def submit_one_task(
     require_web_search: bool = False,
 ) -> dict[str, Any]:
     create_new_chat(book)
-    fill_prompt(book, task.question)
-    web_search_state = enable_web_search(book)
+    web_search_state = configure_default_chat(book)
     require_web_search_enabled(web_search_state, require_web_search)
-    pro_extension_selected = select_pro_extension(book)
+    fill_prompt(book, task.question)
     send_current_prompt(book)
     current_url = wait_for_submission_started(book)
     submitted_at = datetime.now().isoformat(timespec="seconds")
-    return submission_record(index, task, current_url, attempts, submitted_at, web_search_state, pro_extension_selected)
+    return submission_record(index, task, current_url, attempts, submitted_at, web_search_state)
 
 
 def run_list(args: argparse.Namespace) -> int:
@@ -1347,10 +1399,8 @@ def ask_one_task(
 ) -> dict[str, Any]:
     started_at = datetime.now().isoformat(timespec="seconds")
     create_new_chat(book)
+    configure_default_chat(book)
     fill_prompt(book, task.question)
-    enable_web_search(book)
-    mode_state = select_intelligent_mode(book)
-    select_pro_extension(book)
     send_current_prompt(book)
     wait_for_answer_complete(book, answer_timeout)
     scroll_state = go_to_conversation_bottom(book)
@@ -1370,8 +1420,8 @@ def ask_one_task(
     result["text"] = system_clipboard
     result["used_system_clipboard"] = True
     result["clicked_copy"] = True
-    result["mode"] = "intelligent"
-    result["mode_fallback"] = bool(mode_state.get("fallback"))
+    result["mode"] = "极高"
+    result["mode_fallback"] = False
     current_url = str(book.browser("url", timeout=10.0) or "")
     path = write_task_markdown(output_dir, index, task, result, current_url, started_at, completed_at)
     return {
@@ -1383,8 +1433,8 @@ def ask_one_task(
         "clicked_copy": True,
         "used_system_clipboard": True,
         "text_length": len(system_clipboard),
-        "mode": "intelligent",
-        "mode_fallback": bool(mode_state.get("fallback")),
+        "mode": "极高",
+        "mode_fallback": False,
         "started_at": started_at,
         "completed_at": completed_at,
     }

@@ -16,7 +16,7 @@ from scripts.adapters.chatgpt_workflow import (
 )
 
 
-def test_submission_record_tracks_web_search_state_and_extension() -> None:
+def test_submission_record_tracks_new_chat_defaults() -> None:
     record = submission_record(
         1,
         ChatGptTask(title="Q1", question="Question"),
@@ -24,13 +24,14 @@ def test_submission_record_tracks_web_search_state_and_extension() -> None:
         2,
         "2026-07-02T12:00:00",
         {"search_enabled": True, "search_text": "网页搜索"},
-        False,
     )
 
     assert record["mode"] == {
+        "surface": "Chat",
         "web_search": True,
         "web_search_state": "网页搜索",
-        "extension": "not-selected",
+        "intelligence": "极高",
+        "model": "latest",
     }
 
 
@@ -39,5 +40,5 @@ def test_require_web_search_enabled_raises_when_required_but_not_verified() -> N
         require_web_search_enabled({"search_enabled": False}, True)
 
 
-def test_pro_extension_selection_failure_is_nonfatal() -> None:
-    assert is_nonfatal_submit_error(RuntimeError("pro extension control not found: {}"))
+def test_model_settings_failure_is_nonfatal() -> None:
+    assert is_nonfatal_submit_error(RuntimeError("model settings control not found: {}"))

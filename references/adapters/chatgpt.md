@@ -195,12 +195,17 @@ uses multiple selectors:
 - Composer controls: `data-testid="composer-plus-btn"` is used only to open the
   tool menu and choose `网页搜索`; it must not select upload-file items. The
   question is sent through the composer and the visible send button.
-- Mode controls: the deprecated answer-capture helper can still look for `智能`
-  and `Pro 扩展`. `ask` and `batch-ask` are submit-only; they enable Web Search,
-  log the verified visible search control text, and make a best-effort Pro
-  extension selection before sending, but they do not select `智能`.
-  If Pro extension cannot be selected, the run continues and records
-  `extension: not-selected` in `submissions.json`.
+- New-chat defaults are explicit: select the top `Chat` surface (not `Work`),
+  enable `网页搜索` from the composer `+` menu, set intelligence to `极高`, then
+  open the current-model submenu and select its first listed model. The first
+  entry is the page's current newest model; it was `GPT-5.6 Sol` when this flow
+  was last verified. `ask` and `batch-ask` record the stable intent as
+  `surface: Chat`, `intelligence: 极高`, and `model: latest` rather than a
+  stale model name.
+- The composer `+` menu currently includes upload photos/files, create image,
+  web search, deep research, and connected-service entries such as GitHub,
+  Gmail, OpenAI Platform, and Atlassian Rovo. Only `网页搜索` is selected by the
+  workflow.
 - Assistant messages: submission-start detection uses
   `data-message-author-role="assistant"`; broader article/markdown fallbacks are
   limited to the deprecated answer-capture helper.
