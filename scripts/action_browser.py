@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import redirect_stdout
 from datetime import UTC, datetime
 import json
 from pathlib import Path
@@ -14,9 +15,15 @@ if __package__ in {None, ""}:
         sys.path.insert(0, str(root))
 
 from scripts.adapters.douban_public import CHART_URL, PageStateError, parse_movie_chart
+from scripts.adapters import x_workflow
+from scripts.workflow_runtime import attach_workflow, temporary_tab
 
 
 CAPABILITY_ID = "douban.movie-ranking.trending.read"
+X_TIMELINE_CAPABILITY_ID = "x.timeline.list.read"
+X_ARTICLE_CAPABILITY_ID = "x.article.detail.read"
+REFERENCE_BASELINE = "6129bb3953d5eebd8dd67f96802b320c723f50ca"
+EXECUTION_BASELINE = "6027d703c86d1e8e3798212bf1841422a41903fc"
 
 
 def now() -> str:
@@ -117,6 +124,8 @@ def command_failure(args: argparse.Namespace, started_at: str, reason_code: str,
 
 
 def run(args: argparse.Namespace) -> int:
+    if args.site == "x":
+        return run_x(args)
     started_at = now()
     try:
         args.limit = int(args.limit)
@@ -155,6 +164,124 @@ def run(args: argparse.Namespace) -> int:
     return 0
 
 
+def x_capability(args: argparse.Namespace) -> str:
+    if (args.resource, args.intent) == ("timeline", "list"):
+        return X_TIMELINE_CAPABILITY_ID
+    if (args.resource, args.intent) == ("article", "detail"):
+        return X_ARTICLE_CAPABILITY_ID
+    return ""
+
+
+def x_envelope(args: argparse.Namespace, capability_id: str, started_at: str, *, status: str, contract_ref: str | None = None, artifact_refs: list[str] | None = None, failure: dict[str, object] | None = None) -> dict[str, object]:
+    return {"schema_version": 1, "run_id": args.task_id, "task_id": args.task_id, "capability_id": capability_id, "site": "x", "command": "run", "status": status, "result_quality": "full" if status == "completed" else "none", "contract_ref": contract_ref, "artifact_refs": artifact_refs or [], "strategy_used": "dom", "fallback_reason": None, "failure": failure, "started_at": started_at, "finished_at": now()}
+
+
+def x_failure_reason(error: Exception) -> str:
+    message = str(error).lower()
+    if isinstance(error, x_workflow.ShowMoreExpansionError):
+        return str(error).split(":", 1)[0]
+    if "login" in message:
+        return "needs_login"
+    if "captcha" in message:
+        return "captcha"
+    if "mfa" in message:
+        return "mfa_required"
+    if "ownership" in message or "require" in message or "task tab" in message:
+        return "invalid_input"
+    if "tab" in message or "session" in message:
+        return "tab_lost"
+    return "page_not_ready"
+
+
+def x_contract(args: argparse.Namespace, capability_id: str, started_at: str, *, status: str, requested: int, records: list[dict[str, object]], artifact: str | None, last_url: str, last_title: str, failure: dict[str, object] | None = None) -> dict[str, object]:
+    progress = {"schema_version": 1, "task_id": args.task_id, "status": status, "stage": "completed", "completed": len(records), "requested": requested, "last_url": last_url, "last_title": last_title}
+    return {"schema_version": 1, "run_id": args.task_id, "task_id": args.task_id, "reference_baseline": REFERENCE_BASELINE, "execution_baseline": EXECUTION_BASELINE, "capability_id": capability_id, "site": "x", "status": status, "stage": "completed", "result_quality": "full" if status == "completed" else "none", "requested_count": requested, "collected_count": len(records), "access": "browser", "strategy_used": "dom", "fallback_reason": None, "limits": {"max_items": 5, "max_scrolls": args.max_scrolls, "max_expansions": 2}, "artifacts": [artifact] if artifact else [], "warnings": [], "failure": failure, "progress": progress, "started_at": started_at, "updated_at": now(), "finished_at": now(), "ok": status == "completed", "needs_user_action": bool(failure and failure["reason_code"] in {"needs_login", "captcha", "mfa_required"}), "reason_code": None if status == "completed" else failure["reason_code"] if failure else "page_not_ready"}
+
+
+def x_timeline_record(payload: x_workflow.TweetPayload) -> dict[str, object]:
+    return {"id": payload.tweet_id, "url": payload.source_url, "author": {"id": payload.author_handle.removeprefix("@"), "handle": payload.author_handle, "name": payload.author_name}, "text_preview": payload.text, "published_at": payload.created_at_iso or payload.created_at_text, "engagement": payload.metrics, "has_media": bool(payload.media), "media": payload.media, "card": payload.card, "quoted_tweet": payload.quoted_tweet, "content_type": payload.tweet_type, "long_form": x_workflow.needs_show_more_expansion(payload)}
+
+
+def x_article_record(payload: x_workflow.TweetPayload) -> dict[str, object]:
+    return {"id": payload.tweet_id, "url": payload.source_url, "title": payload.article.get("title") or "", "author": {"id": payload.author_handle.removeprefix("@"), "handle": payload.author_handle, "name": payload.author_name}, "published_at": payload.created_at_iso or payload.created_at_text, "full_text": payload.text, "full_text_tail": payload.text[-240:], "media": payload.media, "links": payload.links, "expanded": not x_workflow.needs_show_more_expansion(payload)}
+
+
+def write_x_failure(args: argparse.Namespace, capability_id: str, started_at: str, error: Exception) -> int:
+    reason_code = x_failure_reason(error)
+    failure = {"reason_code": reason_code, "message": str(error), "retryable": reason_code in {"page_not_ready", "tab_lost"}}
+    status = "blocked" if reason_code in {"needs_login", "captcha", "mfa_required"} else "failed"
+    contract_ref: str | None = "contract/summary.json"
+    try:
+        contract = x_contract(args, capability_id, started_at, status=status, requested=int(args.limit) if str(args.limit).isdigit() else 0, records=[], artifact=None, last_url=x_workflow.HOME_URL, last_title="", failure=failure)
+        write_json(Path(args.output_root) / "contract" / "summary.json", contract)
+        write_json(Path(args.output_root) / "contract" / "progress.json", contract["progress"])
+    except OSError as write_error:
+        contract_ref = None
+        print(f"contract write failed: {write_error}", file=sys.stderr)
+    print(json.dumps(x_envelope(args, capability_id, started_at, status=status, contract_ref=contract_ref, failure=failure), ensure_ascii=False))
+    return 1
+
+
+def collect_x_timeline(book: x_workflow.ActionBook, limit: int, max_scrolls: int) -> list[x_workflow.TweetPayload]:
+    with redirect_stdout(sys.stderr):
+        current_url = str(book.describe().get("url") or "").rstrip("/")
+        if current_url != x_workflow.HOME_URL:
+            book.goto(x_workflow.HOME_URL)
+        x_workflow.wait_page_ready(book, "home")
+        x_workflow.wait_for_visible_tweets(book, "home")
+        return x_workflow.collect_tweets(book, "home", limit, max_scrolls)
+
+
+def run_x(args: argparse.Namespace) -> int:
+    started_at = now()
+    capability_id = x_capability(args)
+    if not capability_id:
+        return write_x_failure(args, "x.unsupported.read", started_at, ValueError("unsupported X capability"))
+    try:
+        args.limit = int(args.limit)
+        if not 1 <= args.limit <= 5:
+            raise ValueError("limit must be between 1 and 5")
+        if not all(str(value or "").strip() for value in (args.task_id, args.session, args.tab)):
+            raise ValueError("X browser commands require task id, session, and owned tab")
+        book = attach_workflow(args, x_workflow.HOME_URL, x_workflow.ActionBook)
+        payloads = collect_x_timeline(book, 5 if capability_id == X_ARTICLE_CAPABILITY_ID else args.limit, args.max_scrolls)
+        if capability_id == X_TIMELINE_CAPABILITY_ID:
+            records = [x_timeline_record(payload) for payload in payloads]
+            if len(records) != args.limit or len({str(record["id"]) for record in records}) != len(records) or any(not record["id"] or not record["url"] for record in records):
+                raise RuntimeError("page_not_ready: timeline identities are not stable")
+            artifact_path = "artifacts/timeline.json"
+        else:
+            payload = next((item for item in payloads if item.tweet_id == args.item_id), None)
+            if payload is None:
+                raise RuntimeError("page_not_ready: item identity was not found in the owned timeline")
+            with redirect_stdout(sys.stderr):
+                if x_workflow.needs_show_more_expansion(payload):
+                    x_workflow.expand_show_more_payloads(book, [payload], max_expansions=1)
+                else:
+                    with temporary_tab(book, payload.source_url) as tab_id:
+                        x_workflow.wait_tab_articles(book, tab_id)
+                        detail = x_workflow.wait_for_expanded_payload(book, payload, tab_id)
+                        if detail is None:
+                            raise x_workflow.ShowMoreExpansionError("page_not_ready: article detail was not found")
+                        x_workflow.merge_expanded_payload(payload, detail)
+            if not payload.text or x_workflow.needs_show_more_expansion(payload):
+                raise x_workflow.ShowMoreExpansionError("page_not_ready: article full text is unavailable")
+            records = [x_article_record(payload)]
+            if not records[0]["full_text_tail"]:
+                raise x_workflow.ShowMoreExpansionError("page_not_ready: article text tail is unavailable")
+            artifact_path = "artifacts/article.json"
+        artifact = {"schema_version": 1, "capability_id": capability_id, "items": records}
+        contract = x_contract(args, capability_id, started_at, status="completed", requested=args.limit, records=records, artifact=artifact_path, last_url=str(records[-1]["url"]), last_title=str(records[-1].get("title") or ""))
+        output = Path(args.output_root)
+        write_json(output / artifact_path, artifact)
+        write_json(output / "contract" / "summary.json", contract)
+        write_json(output / "contract" / "progress.json", contract["progress"])
+    except (OSError, ValueError, RuntimeError) as error:
+        return write_x_failure(args, capability_id, started_at, error)
+    print(json.dumps(x_envelope(args, capability_id, started_at, status="completed", contract_ref="contract/summary.json", artifact_refs=[artifact_path]), ensure_ascii=False))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     sub = parser.add_subparsers(dest="command", required=True)
@@ -162,10 +289,14 @@ def main(argv: list[str] | None = None) -> int:
     command.add_argument("--site", required=True)
     command.add_argument("--resource", required=True)
     command.add_argument("--intent", required=True)
-    command.add_argument("--limit", required=True)
+    command.add_argument("--limit", default="5")
     command.add_argument("--task-id", required=True)
     command.add_argument("--output-root", required=True)
     command.add_argument("--fixture", default="")
+    command.add_argument("--session", default="")
+    command.add_argument("--tab", default="")
+    command.add_argument("--item-id", default="")
+    command.add_argument("--max-scrolls", type=int, default=5)
     args = parser.parse_args(argv)
     return run(args)
 

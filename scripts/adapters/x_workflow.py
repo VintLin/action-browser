@@ -513,6 +513,50 @@ def click_show_more_in_tab(book: ActionBook, tab_id: str) -> int:
         return 0
 
 
+def click_show_more_for_payload(book: ActionBook, payload: TweetPayload) -> int:
+    if not payload.tweet_id:
+        return 0
+    value = unwrap_eval(book.browser(
+        "eval",
+        f"""(() => {{
+            const statusId = {json.dumps(payload.tweet_id)};
+            const normalize = value => String(value || '').replace(/\\s+/g, ' ').trim();
+            const article = [...document.querySelectorAll('article[data-testid="tweet"], article')].find(node =>
+                [...node.querySelectorAll('a[href*="/status/"]')].some(anchor =>
+                    String(anchor.getAttribute('href') || '').includes(`/status/${{statusId}}`)
+                )
+            );
+            if (!article) return false;
+            return [...article.querySelectorAll('button, a, div[role="button"], span')].some(candidate =>
+                /^(显示更多|Show more)$/i.test(normalize(candidate.innerText || candidate.textContent || candidate.getAttribute('aria-label') || ''))
+            );
+        }})()""",
+        timeout=10.0,
+    ))
+    if not value:
+        return 0
+    # The extension's selector-click transport can acknowledge without X invoking
+    # this React button. Activate the observed native button, then the caller
+    # proves its visible state changed before treating the detail as expanded.
+    clicked = unwrap_eval(book.browser(
+        "eval",
+        f"""(() => {{
+            const statusId = {json.dumps(payload.tweet_id)};
+            const article = [...document.querySelectorAll('article[data-testid="tweet"], article')].find(node =>
+                [...node.querySelectorAll('a[href*="/status/"]')].some(anchor =>
+                    String(anchor.getAttribute('href') || '').includes(`/status/${{statusId}}`)
+                )
+            );
+            const button = article?.querySelector('button[data-testid="tweet-text-show-more-link"]');
+            if (!button) return false;
+            button.click();
+            return true;
+        }})()""",
+        timeout=10.0,
+    ))
+    return 1 if clicked else 0
+
+
 def wait_for_expanded_payload(
     book: ActionBook,
     original: TweetPayload,
@@ -533,6 +577,27 @@ def wait_for_expanded_payload(
         if expanded.text and len(expanded.text) > len(original.text or ""):
             return expanded
         if not needs_show_more_expansion(expanded):
+            return expanded
+        time.sleep(0.4)
+    return fallback
+
+
+def wait_for_parent_expansion(
+    book: ActionBook,
+    original: TweetPayload,
+    timeout_secs: float = 3.0,
+) -> TweetPayload | None:
+    """Prove the native control changed the owned timeline before detail extraction."""
+    deadline = time.time() + timeout_secs
+    fallback: TweetPayload | None = None
+    while time.time() < deadline:
+        candidates = extract_visible_tweets(book, original.source_page)
+        expanded = next((item for item in candidates if item.tweet_id and item.tweet_id == original.tweet_id), None)
+        if expanded is None:
+            time.sleep(0.4)
+            continue
+        fallback = expanded
+        if expanded.text and not needs_show_more_expansion(expanded):
             return expanded
         time.sleep(0.4)
     return fallback
@@ -820,10 +885,16 @@ def needs_show_more_expansion(payload: TweetPayload) -> bool:
     return any(line.strip() in {"显示更多", "Show more"} for line in lines)
 
 
+class ShowMoreExpansionError(RuntimeError):
+    """Typed X long-form expansion failure for the canonical browser seam."""
+
+
 def merge_expanded_payload(original: TweetPayload, expanded: TweetPayload) -> None:
     if expanded.text and len(expanded.text) > len(original.text or ""):
         original.text = expanded.text
     if expanded.raw_text_lines and len(expanded.raw_text_lines) > len(original.raw_text_lines or []):
+        original.raw_text_lines = expanded.raw_text_lines
+    elif expanded.raw_text_lines:
         original.raw_text_lines = expanded.raw_text_lines
     if expanded.media and len(expanded.media) >= len(original.media):
         original.media = expanded.media
@@ -844,36 +915,43 @@ def merge_expanded_payload(original: TweetPayload, expanded: TweetPayload) -> No
     ]
 
 
-def expand_show_more_payloads(book: ActionBook, payloads: list[TweetPayload]) -> None:
+def expand_show_more_payloads(book: ActionBook, payloads: list[TweetPayload], *, max_expansions: int = 2) -> None:
+    expanded_count = 0
     for index, payload in enumerate(payloads, start=1):
         if not needs_show_more_expansion(payload):
             continue
+        if expanded_count >= max_expansions:
+            break
         if not payload.source_url:
-            payload.extraction_warnings.append("show_more_unexpanded")
-            continue
+            raise ShowMoreExpansionError("selector_failed: show more post has no source URL")
         log(f"展开显示更多: {index}/{len(payloads)} {payload.source_url}")
         try:
+            clicked = click_show_more_for_payload(book, payload)
+            if not clicked:
+                raise ShowMoreExpansionError("selector_failed: show more control was not clicked")
+            parent_expanded = wait_for_parent_expansion(book, payload)
+            if parent_expanded is None or needs_show_more_expansion(parent_expanded):
+                raise ShowMoreExpansionError("page_not_ready: parent show more control did not disappear")
+            merge_expanded_payload(payload, parent_expanded)
             with temporary_tab(book, payload.source_url) as tab_id:
                 wait_tab_articles(book, tab_id)
-                clicked = click_show_more_in_tab(book, tab_id)
-                expanded = wait_for_expanded_payload(book, payload, tab_id) if clicked else None
+                expanded = wait_for_expanded_payload(book, payload, tab_id)
                 if expanded is None:
                     candidates = extract_visible_tweets(book, payload.source_page, tab_id=tab_id)
                     expanded = next((item for item in candidates if item.tweet_id and item.tweet_id == payload.tweet_id), None)
                     if expanded is None and candidates:
                         expanded = candidates[0]
                 if expanded is None:
-                    payload.extraction_warnings.append("show_more_unexpanded")
-                    continue
+                    raise ShowMoreExpansionError("page_not_ready: expanded post was not found")
                 merge_expanded_payload(payload, expanded)
-                if needs_show_more_expansion(expanded):
-                    payload.extraction_warnings.append("show_more_unexpanded")
-                    log(f"显示更多仍未展开: clicked={clicked} chars={len(payload.text)}")
-                    continue
+                if needs_show_more_expansion(payload) or len(payload.text) <= 0:
+                    raise ShowMoreExpansionError("page_not_ready: expanded text is still unavailable")
+                expanded_count += 1
                 log(f"详情正文已补全: clicked_show_more={bool(clicked)} chars={len(payload.text)}")
+        except ShowMoreExpansionError:
+            raise
         except Exception as exc:  # noqa: BLE001
-            payload.extraction_warnings.append(f"show_more_unexpanded: {exc}")
-            log(f"显示更多展开失败: {payload.source_url} reason={exc}")
+            raise ShowMoreExpansionError(f"selector_failed: show more expansion failed: {exc}") from exc
 
 
 def collect_tweets(book: ActionBook, source: str, count: int, max_scrolls: int) -> list[TweetPayload]:

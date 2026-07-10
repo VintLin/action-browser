@@ -15,6 +15,7 @@
 - Timeline: `python3 scripts/action_browser.py run --site x --resource timeline --intent list --limit 5 --task-id <id> --session <id> --tab <id> --output-root <root>`.
 - Article detail: 使用 timeline 输出的 Item Identity 调用 `--resource article --intent detail --item-id <id>`。
 - Timeline required fields: post identity, canonical URL, author identity/name, text preview, timestamp, engagement fields available in reference semantics, content type/long-form marker。
+- Scope decision: OpenCLI exposes author `bio`; this DOM tracer does not open one profile page per timeline author, so `bio` is explicitly non-tracer and must remain unmapped rather than synthesized.
 - Article required fields: identity, canonical URL, title, author, published time, full expanded text, referenced media/links。
 - Primary strategy: DOM extraction in owned tab；article 使用 temporary tab。Fallback 只允许已在 catalog 登记的 typed strategy，本 tracer 不隐式加 API fallback。
 

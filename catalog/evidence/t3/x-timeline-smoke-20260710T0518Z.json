@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "capability_id": "x.timeline.list.read",
+  "reference_baseline": "6129bb3953d5eebd8dd67f96802b320c723f50ca",
+  "observed_at": "2026-07-10T05:05:22Z",
+  "strategy_used": "dom",
+  "redacted_url": "https://x.com/home",
+  "result": "completed",
+  "collected_count": 5,
+  "assertions": {
+    "one_result_envelope_on_stdout": true,
+    "unique_item_identities": true,
+    "canonical_x_status_urls": true,
+    "parent_owned_tab_preserved": true,
+    "temporary_tabs_remaining": 0
+  }
+}

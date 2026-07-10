@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "type": "reference_conflict",
+  "observed_at": "2026-07-10T05:10:00Z",
+  "reference_baseline": "6129bb3953d5eebd8dd67f96802b320c723f50ca",
+  "ticket_capability_id": "x.timeline.list.read",
+  "catalog_capability_id": "x.timeline.detail.read",
+  "reference_command": "twitter timeline",
+  "conflict": "The frozen catalog normalizes the reference command as detail and requires fields including author bio, while T3 specifies a list capability and does not require or produce author bio.",
+  "observed_t3_output": {
+    "identity": "id",
+    "canonical_url": true,
+    "author_identity_and_name": true,
+    "text_preview": true,
+    "published_time": true,
+    "engagement": true,
+    "content_type_and_long_form_marker": true,
+    "author_bio": false
+  },
+  "resolution": "Programme owner approved x.timeline.list.read and the explicit non-tracer bio scope on 2026-07-10.",
+  "result": "Resolved; the Catalog Source now records the approved capability id and scoped Semantic Field Map."
+}

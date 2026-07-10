@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "capability_id": "x.article.detail.read",
+  "reference_baseline": "6129bb3953d5eebd8dd67f96802b320c723f50ca",
+  "observed_at": "2026-07-10T05:14:19Z",
+  "strategy_used": "dom",
+  "redacted_url": "https://x.com/<redacted>/status/<redacted>",
+  "result": "completed",
+  "verified_long_forms": 1,
+  "operational_limit": 2,
+  "assertions": {
+    "one_result_envelope_on_stdout": true,
+    "parent_show_more_control_disappeared": true,
+    "full_text_saved": true,
+    "full_text_length": 1825,
+    "full_text_tail_present": true,
+    "temporary_tab_closed": true,
+    "parent_owned_tab_preserved": true
+  }
+}

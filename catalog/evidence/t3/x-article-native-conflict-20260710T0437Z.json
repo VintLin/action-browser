@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "capability_id": "x.article.detail.read",
+  "type": "native_conflict",
+  "reference_baseline": "6129bb3953d5eebd8dd67f96802b320c723f50ca",
+  "observed_at": "2026-07-10T04:37:00Z",
+  "redacted_url": "https://x.com/<redacted>/status/<redacted>",
+  "observation": "The home timeline exposed an in-post show-more control. The corresponding temporary status detail page rendered the complete visible post body but exposed zero matching show-more controls.",
+  "required_behavior": "T3 requires a real click on the expansion control before article detail can be verified.",
+  "result": "x.article.detail.read remains blocked; automatic full-detail rendering is not treated as click-success.",
+  "temporary_tab_cleanup": true,
+  "parent_owned_tab_preserved": true
+}

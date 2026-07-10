@@ -231,6 +231,17 @@ assets/x/downloads/me/yyyyMMdd-HHmmss/
 
 ## Payload 字段
 
+## OpenCLI canonical commands
+
+T3 exposes read-only commands with one Result Envelope JSON on stdout; diagnostic logs go to stderr.
+
+```bash
+python3 scripts/action_browser.py run --site x --resource timeline --intent list --limit 5 --task-id <task> --session <session> --tab <owned-tab> --output-root <root>
+python3 scripts/action_browser.py run --site x --resource article --intent detail --item-id <timeline-id> --task-id <task> --session <session> --tab <owned-tab> --output-root <root>
+```
+
+Timeline writes `artifacts/timeline.json`; article writes `artifacts/article.json`. Both write versioned `contract/summary.json` and `contract/progress.json`. Article detail uses a temporary tab and must verify the timeline expansion control disappeared before accepting its full-text artifact. `author bio` is outside the T3 DOM tracer and is intentionally unmapped.
+
 `summary.json` 是 `TweetPayload[]`，每条包含：
 
 - `tweet_id`

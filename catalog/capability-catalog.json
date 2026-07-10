@@ -7125,10 +7125,15 @@
       "access_requirement": "browser",
       "conflict_reason": null,
       "description": "Fetch a Twitter Article (long-form content) and export as Markdown",
-      "docs": [],
+      "docs": [
+        "references/adapters/x.md",
+        "docs/tickets/opencli-programme/T3-browser-read-longform.md"
+      ],
       "effect": "read",
       "equivalence_classes": [],
-      "evidence": [],
+      "evidence": [
+        "catalog/evidence/t3/x-article-smoke-20260710T0514Z.json"
+      ],
       "exclusion_reason": null,
       "fallbacks": [],
       "id": "x.article.detail.read",
@@ -7138,12 +7143,12 @@
       },
       "intent": "detail",
       "limits": {
-        "max_items": 20
+        "max_items": 2
       },
       "local_effect": "none",
       "native": false,
       "parameters": [],
-      "primary_strategy": "cookie",
+      "primary_strategy": "dom",
       "priority_score": null,
       "reference_aliases": [
         "twitter"
@@ -7157,7 +7162,7 @@
           ],
           "required": true,
           "semantic": "title",
-          "target_field": ""
+          "target_field": "title"
         },
         {
           "reference_fields": [
@@ -7165,7 +7170,7 @@
           ],
           "required": true,
           "semantic": "author",
-          "target_field": ""
+          "target_field": "author.name"
         },
         {
           "reference_fields": [
@@ -7173,7 +7178,7 @@
           ],
           "required": true,
           "semantic": "content",
-          "target_field": ""
+          "target_field": "full_text"
         },
         {
           "reference_fields": [
@@ -7181,15 +7186,18 @@
           ],
           "required": true,
           "semantic": "url",
-          "target_field": ""
+          "target_field": "url"
         }
       ],
       "site": "x",
       "source_commands": [
         "twitter article"
       ],
-      "status": "discovered",
-      "tests": []
+      "status": "verified",
+      "tests": [
+        "tests/test_action_browser_x.py",
+        "tests/test_x_workflow.py"
+      ]
     },
     {
       "access_requirement": "browser",
@@ -9945,25 +9953,30 @@
       "access_requirement": "browser",
       "conflict_reason": null,
       "description": "Fetch the logged-in user's home timeline (for-you algorithmic feed by default; pass --type following for the chronological feed of accounts you follow)",
-      "docs": [],
+      "docs": [
+        "references/adapters/x.md",
+        "docs/tickets/opencli-programme/T3-browser-read-longform.md"
+      ],
       "effect": "read",
       "equivalence_classes": [],
-      "evidence": [],
+      "evidence": [
+        "catalog/evidence/t3/x-timeline-smoke-20260710T0518Z.json"
+      ],
       "exclusion_reason": null,
       "fallbacks": [],
-      "id": "x.timeline.detail.read",
+      "id": "x.timeline.list.read",
       "idempotency": "not_applicable",
       "identity": {
         "field": "id"
       },
-      "intent": "detail",
+      "intent": "list",
       "limits": {
-        "max_items": 20
+        "max_items": 5
       },
       "local_effect": "none",
       "native": false,
       "parameters": [],
-      "primary_strategy": "cookie",
+      "primary_strategy": "dom",
       "priority_score": null,
       "reference_aliases": [
         "twitter"
@@ -9977,7 +9990,7 @@
           ],
           "required": true,
           "semantic": "id",
-          "target_field": ""
+          "target_field": "id"
         },
         {
           "reference_fields": [
@@ -9985,13 +9998,13 @@
           ],
           "required": true,
           "semantic": "author",
-          "target_field": ""
+          "target_field": "author.name"
         },
         {
           "reference_fields": [
             "bio"
           ],
-          "required": true,
+          "required": false,
           "semantic": "bio",
           "target_field": ""
         },
@@ -10001,7 +10014,7 @@
           ],
           "required": true,
           "semantic": "text",
-          "target_field": ""
+          "target_field": "text_preview"
         },
         {
           "reference_fields": [
@@ -10009,7 +10022,7 @@
           ],
           "required": true,
           "semantic": "likes",
-          "target_field": ""
+          "target_field": "engagement.likes"
         },
         {
           "reference_fields": [
@@ -10017,7 +10030,7 @@
           ],
           "required": true,
           "semantic": "retweets",
-          "target_field": ""
+          "target_field": "engagement.reposts"
         },
         {
           "reference_fields": [
@@ -10025,7 +10038,7 @@
           ],
           "required": true,
           "semantic": "replies",
-          "target_field": ""
+          "target_field": "engagement.replies"
         },
         {
           "reference_fields": [
@@ -10033,7 +10046,7 @@
           ],
           "required": true,
           "semantic": "views",
-          "target_field": ""
+          "target_field": "engagement.views"
         },
         {
           "reference_fields": [
@@ -10041,7 +10054,7 @@
           ],
           "required": true,
           "semantic": "created_at",
-          "target_field": ""
+          "target_field": "published_at"
         },
         {
           "reference_fields": [
@@ -10049,7 +10062,7 @@
           ],
           "required": true,
           "semantic": "url",
-          "target_field": ""
+          "target_field": "url"
         },
         {
           "reference_fields": [
@@ -10057,7 +10070,7 @@
           ],
           "required": true,
           "semantic": "has_media",
-          "target_field": ""
+          "target_field": "has_media"
         },
         {
           "reference_fields": [
@@ -10065,7 +10078,7 @@
           ],
           "required": true,
           "semantic": "media_urls",
-          "target_field": ""
+          "target_field": "media[].url"
         },
         {
           "reference_fields": [
@@ -10073,7 +10086,7 @@
           ],
           "required": true,
           "semantic": "media_posters",
-          "target_field": ""
+          "target_field": "media[].poster_url"
         },
         {
           "reference_fields": [
@@ -10081,7 +10094,7 @@
           ],
           "required": true,
           "semantic": "card",
-          "target_field": ""
+          "target_field": "card"
         },
         {
           "reference_fields": [
@@ -10089,15 +10102,18 @@
           ],
           "required": true,
           "semantic": "quoted_tweet",
-          "target_field": ""
+          "target_field": "quoted_tweet"
         }
       ],
       "site": "x",
       "source_commands": [
         "twitter timeline"
       ],
-      "status": "discovered",
-      "tests": []
+      "status": "verified",
+      "tests": [
+        "tests/test_action_browser_x.py",
+        "tests/test_x_workflow.py"
+      ]
     },
     {
       "access_requirement": "browser",

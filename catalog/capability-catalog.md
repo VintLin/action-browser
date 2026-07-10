@@ -13,7 +13,7 @@ Execution Baseline: `6027d703c86d1e8e3798212bf1841422a41903fc`
 | jd | jd | 8 | 36 | missing |
 | taobao | taobao | 7 | 34 | existing |
 | weibo | weibo | 13 | 81 | missing |
-| x | twitter | 44 | 241 | existing |
+| x | twitter | 44 | 222 | existing |
 | xiaohongshu | xiaohongshu | 25 | 133 | missing |
 | youtube | youtube | 16 | 65 | missing |
 | zhihu | zhihu | 22 | 145 | missing |

@@ -1,4 +1,5 @@
 from argparse import Namespace
+from contextlib import contextmanager
 import json
 from pathlib import Path
 import sys
@@ -187,3 +188,92 @@ def test_show_more_detection_uses_explicit_control_not_link_ellipsis() -> None:
 
     payload.raw_text_lines.append("显示更多")
     assert x_workflow.needs_show_more_expansion(payload)
+
+
+def test_show_more_expansion_clicks_and_rejects_unexpanded_payload(monkeypatch) -> None:
+    payload = x_workflow.TweetPayload(
+        tweet_id="1", source_url="https://x.com/user/status/1", source_page="home",
+        author_name="A", author_handle="@a", author_profile_url="", author_avatar_url="",
+        text="preview", created_at_text="", created_at_iso="", tweet_type="tweet",
+        reply_to={}, quoted_tweet={}, media=[], links=[], card={}, article={}, metrics={}, social_context={},
+        is_bookmarked=False, raw_text_lines=["preview", "显示更多"], extraction_warnings=[],
+    )
+    expanded = x_workflow.TweetPayload(
+        **{**payload.__dict__, "text": "preview with the full final paragraph", "raw_text_lines": ["preview", "with the full final paragraph"]}
+    )
+
+    @contextmanager
+    def fake_tab(_book, _url):
+        yield "temporary"
+
+    monkeypatch.setattr(x_workflow, "temporary_tab", fake_tab)
+    monkeypatch.setattr(x_workflow, "wait_tab_articles", lambda *_args: None)
+    monkeypatch.setattr(x_workflow, "click_show_more_for_payload", lambda *_args: True)
+    monkeypatch.setattr(x_workflow, "wait_for_parent_expansion", lambda *_args: expanded)
+    monkeypatch.setattr(x_workflow, "wait_for_expanded_payload", lambda *_args: expanded)
+
+    x_workflow.expand_show_more_payloads(object(), [payload])
+
+    assert payload.text.endswith("final paragraph")
+    assert not x_workflow.needs_show_more_expansion(payload)
+
+
+def test_show_more_expansion_returns_typed_failure_when_click_is_missing(monkeypatch) -> None:
+    payload = x_workflow.TweetPayload(
+        tweet_id="1", source_url="https://x.com/user/status/1", source_page="home",
+        author_name="A", author_handle="@a", author_profile_url="", author_avatar_url="",
+        text="preview", created_at_text="", created_at_iso="", tweet_type="tweet",
+        reply_to={}, quoted_tweet={}, media=[], links=[], card={}, article={}, metrics={}, social_context={},
+        is_bookmarked=False, raw_text_lines=["preview", "Show more"], extraction_warnings=[],
+    )
+
+    @contextmanager
+    def fake_tab(_book, _url):
+        yield "temporary"
+
+    monkeypatch.setattr(x_workflow, "temporary_tab", fake_tab)
+    monkeypatch.setattr(x_workflow, "wait_tab_articles", lambda *_args: None)
+    monkeypatch.setattr(x_workflow, "click_show_more_for_payload", lambda *_args: False)
+
+    with pytest.raises(x_workflow.ShowMoreExpansionError, match="selector_failed"):
+        x_workflow.expand_show_more_payloads(object(), [payload])
+
+
+def test_show_more_click_activates_the_observed_browser_control() -> None:
+    payload = x_workflow.TweetPayload(
+        tweet_id="2075342549351297525", source_url="https://x.com/dotey/status/2075342549351297525", source_page="home",
+        author_name="A", author_handle="@a", author_profile_url="", author_avatar_url="",
+        text="preview", created_at_text="", created_at_iso="", tweet_type="tweet",
+        reply_to={}, quoted_tweet={}, media=[], links=[], card={}, article={}, metrics={}, social_context={},
+        is_bookmarked=False, raw_text_lines=["preview", "显示更多"], extraction_warnings=[],
+    )
+
+    class Book:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, tuple[str, ...]]] = []
+
+        def browser(self, command: str, *args: str, **_kwargs):
+            self.calls.append((command, args))
+            return True
+
+    book = Book()
+
+    assert x_workflow.click_show_more_for_payload(book, payload) == 1
+    assert book.calls[1][0] == "eval"
+    assert 'button[data-testid="tweet-text-show-more-link"]' in book.calls[1][1][0]
+    assert "button.click()" in book.calls[1][1][0]
+
+
+def test_show_more_expansion_rejects_when_parent_control_remains(monkeypatch) -> None:
+    payload = x_workflow.TweetPayload(
+        tweet_id="1", source_url="https://x.com/user/status/1", source_page="home",
+        author_name="A", author_handle="@a", author_profile_url="", author_avatar_url="",
+        text="preview", created_at_text="", created_at_iso="", tweet_type="tweet",
+        reply_to={}, quoted_tweet={}, media=[], links=[], card={}, article={}, metrics={}, social_context={},
+        is_bookmarked=False, raw_text_lines=["preview", "显示更多"], extraction_warnings=[],
+    )
+    monkeypatch.setattr(x_workflow, "click_show_more_for_payload", lambda *_args: True)
+    monkeypatch.setattr(x_workflow, "wait_for_parent_expansion", lambda *_args: payload)
+
+    with pytest.raises(x_workflow.ShowMoreExpansionError, match="page_not_ready"):
+        x_workflow.expand_show_more_payloads(object(), [payload])
