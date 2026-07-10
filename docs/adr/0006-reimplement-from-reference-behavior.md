@@ -1,0 +1,3 @@
+# Reimplement from reference behavior
+
+Opencli supplies Reference Evidence for website outcomes, fields, interaction strategies, and tests, while action-browser implementations follow their own owned-tab runtime and Adapter Contract. Its manifest defines command inventory, adapter source defines actual behavior, tests define verified edges, site documentation supplements intent and limits, and README material is navigation only. Material contradictions become Reference Conflicts and block specification rather than inviting model guesses. Models must not copy whole adapters; any small algorithm directly derived from Apache-2.0 source must preserve attribution and identify modifications so architecture and license obligations remain explicit.

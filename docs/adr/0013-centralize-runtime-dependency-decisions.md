@@ -1,0 +1,3 @@
+# Centralize runtime dependency decisions
+
+Site tickets may use only the standard library, ActionBook, and dependencies already approved by the Foundation Wave. A new runtime dependency requires a separate cross-capability decision demonstrating shared value, maintenance cost, and security impact, and is introduced only by a shared-runtime ticket rather than hidden inside one website implementation. Site Owners also cannot create speculative shared abstractions: extraction waits until at least three websites exhibit the same verified, site-neutral duplication and then proceeds through its own shared-runtime ticket.

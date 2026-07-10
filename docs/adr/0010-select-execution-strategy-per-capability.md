@@ -1,0 +1,3 @@
+# Select the lightest execution strategy per capability
+
+Each Canonical Capability declares its own Execution Strategy. Public capabilities use static HTTP or public APIs without acquiring a tab when those paths satisfy the contract; only capabilities requiring login state, same-origin browser APIs, DOM, UI, or interception enter the owned-tab lifecycle, even when public and browser capabilities coexist under one site adapter. Any Fallback Chain is finite, triggered only by declared typed failures, preserves the same business schema, and records the actual strategy and transition reason in the Adapter Contract and Smoke Evidence.

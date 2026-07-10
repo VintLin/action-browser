@@ -1,0 +1,3 @@
+# Freeze the latest opencli revision per maintenance cycle
+
+Each planning round fetches opencli remote refs without pulling, checking out, or changing the reference worktree, then captures the remote default branch's latest commit in a temporary read-only snapshot as its Reference Baseline. Offline use of local HEAD requires explicit confirmation and cannot be labeled latest. Implementation and acceptance remain pinned to the recorded commit for the entire round; later changes are handled by a new Maintenance Cycle and incremental capability diff. Maintenance is triggered monthly and by opencli releases, observed site drift, or requests for uncovered behavior; automation generates only diffs and candidate tickets, never adapter changes or website actions.
