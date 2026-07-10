@@ -1,7 +1,8 @@
 # Foundation Verification
 
 - Integration branch: `codex/opencli-capability-integration`
-- Foundation implementation commit: `31bb182016a01655d55be091daafc6dd9ecf3190`
+- Foundation contract wiring commit: `e121db8`
+- X viewport/long-form canary commit: `31bb182016a01655d55be091daafc6dd9ecf3190`
 - Reference baseline: `6129bb3953d5eebd8dd67f96802b320c723f50ca`
 - Scope: T1 through T4 atomic commits; no released-branch cutover.
 
@@ -33,3 +34,4 @@ The independent verifier ran focused named-commit checks (`42 passed`) and revie
 - Douban bounded photo download reran successfully on 2026-07-10.
 - X timeline reran successfully on 2026-07-10.
 - X article canary reran successfully after the collector was fixed to exclude offscreen virtualized nodes: the canonical timeline artifact included the long-form identity, its parent expansion control disappeared, full text and tail were saved, and the temporary tab closed.
+- After `e121db8`, public HTTP, Douban download, and X timeline reran successfully through the shared atomic writer/validator seam. Article behavior remains evidenced by unchanged workflow commit `31bb182`; its shared contract shape is exercised by the current X timeline run.

@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "implementation_commit": "e121db8",
+  "observed_at": "2026-07-10T06:15:06Z",
+  "canaries": [
+    {"capability_id":"douban.movie-ranking.trending.read","status":"completed","strategy":"public_http"},
+    {"capability_id":"douban.photo.download.read","status":"completed","strategy":"dom"},
+    {"capability_id":"x.timeline.list.read","status":"completed","strategy":"dom"}
+  ],
+  "assertions": {"one_result_envelope_on_stdout":true,"shared_atomic_json_writer":true,"shared_contract_validation":true}
+}
