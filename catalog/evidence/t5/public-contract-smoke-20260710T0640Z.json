@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "implementation_commit": "fab0324",
+  "observed_at": "2026-07-10T06:40:00Z",
+  "capability_id": "douban.movie-ranking.trending.read",
+  "strategy_used": "public_http",
+  "result": "completed",
+  "assertions": {
+    "stdout_result_envelope_count": 1,
+    "stderr_empty": true,
+    "shared_result_envelope_validation": true,
+    "shared_adapter_contract_validation": true,
+    "shared_site_artifact_validation": true,
+    "artifact_item_count": 1,
+    "semantic_field_count": 8
+  }
+}

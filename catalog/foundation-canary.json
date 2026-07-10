@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "foundation_commit": "e121db8",
+  "foundation_commit": "fab0324",
   "canaries": [
     {"kind": "public_http", "capability_id": "douban.movie-ranking.trending.read", "status": "passed"},
     {"kind": "dom", "capability_id": "x.timeline.list.read", "status": "passed"},
