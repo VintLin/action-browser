@@ -6,6 +6,8 @@
 ## Blockers and ownership
 
 - Blocked by: T5 / GitHub #7.
+- Foundation implementation commits: `fab0324`, `9716cac`.
+- Foundation verification report commit: `0c432dcc118a8486a77eb141712b30dcbf211c7c`.
 - Capability IDs: `chatgpt.prompt.message.write`, `chatgpt.prompt-batch.message.write`.
 - File Ownership: ChatGPT workflow/reference/fixtures/focused tests，shared write-safety primitive 在 Foundation 已定义的边界内的最小改动，ChatGPT dry-run evidence。
 - Prohibited: 其他 site writes，真实 message submission smoke，新 dependency，为未来站点预建 framework。

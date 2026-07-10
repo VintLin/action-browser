@@ -7,6 +7,8 @@
 ## Blockers and ownership
 
 - Blocked by: T5 / GitHub #7.
+- Foundation implementation commits: `fab0324`, `9716cac`.
+- Foundation verification report commit: `0c432dcc118a8486a77eb141712b30dcbf211c7c`.
 - File Ownership: preflight runner/config/tests，13-site redacted preflight records，programme preflight report，Catalog Source 中 access/status/evidence 的 integrator update。
 - Prohibited: 站点实现修复、login 表单填写、登出用户、cookie/credential 导出、CAPTCHA/MFA 绕过、真实 write。
 - 本票是 read-only；任何站点 drift 只记录 blocker，不顺手修复。
