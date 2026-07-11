@@ -10,7 +10,7 @@ import json
 
 CURRENT_SITES = (
     "bilibili", "chatgpt", "douban", "douyin", "feishu", "jd", "taobao",
-    "weibo", "x", "xiaohongshu", "youtube", "zhihu", "zhipin",
+    "weibo", "x", "xiaohongshu", "youtube", "zhihu", "zhipin", "reddit",
 )
 ALIASES = {"twitter": "x", "boss": "zhipin"}
 READ_INTENTS = ("list", "search", "recommend", "trending", "detail", "comments", "profile", "whoami", "history", "notifications", "stats", "download", "export")

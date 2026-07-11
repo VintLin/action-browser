@@ -63,7 +63,7 @@ def test_builds_one_record_per_canonical_site_and_marks_native_feishu() -> None:
         execution_baseline="exec",
     )
 
-    assert len(catalog["sites"]) == 13
+    assert len(catalog["sites"]) == 14
     assert next(site for site in catalog["sites"] if site["id"] == "x")["reference_aliases"] == ["twitter"]
     assert any(record["site"] == "feishu" and record["native"] for record in catalog["capabilities"])
 

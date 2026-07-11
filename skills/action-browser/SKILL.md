@@ -46,7 +46,7 @@ Use ActionBook for real browser pages. Prefer `extension` mode when the task nee
 
 Supported site adapters live in `references/adapters/<site>.md` and `scripts/adapters/<site>_workflow.py`.
 
-Current sites: `xiaohongshu`, `x`, `weibo`, `douban`, `zhihu`, `youtube`, `douyin`, `bilibili`, `jd`, `taobao`, `zhipin`, `feishu`, `chatgpt`.
+Current sites: `xiaohongshu`, `x`, `weibo`, `douban`, `zhihu`, `youtube`, `douyin`, `bilibili`, `jd`, `taobao`, `zhipin`, `feishu`, `chatgpt`, `reddit`.
 
 Keep this file site-neutral. Put site command catalogs, payload schemas, DOM details, output trees, login notes, and risk-control quirks in the matching reference.
 
