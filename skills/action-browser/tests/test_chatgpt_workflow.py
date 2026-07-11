@@ -16,6 +16,7 @@ from scripts.adapters.chatgpt_workflow import (
     build_write_preview,
     checkpoint_successes,
     is_nonfatal_submit_error,
+    page_has_login_or_risk,
     require_write_approval,
     require_web_search_enabled,
     write_checkpoint,
@@ -49,6 +50,17 @@ def test_require_web_search_enabled_raises_when_required_but_not_verified() -> N
 
 def test_model_settings_failure_is_nonfatal() -> None:
     assert is_nonfatal_submit_error(RuntimeError("model settings control not found: {}"))
+
+
+def test_research_answer_terms_do_not_trigger_login_detection() -> None:
+    state = {
+        "href": "https://chatgpt.com/c/1",
+        "title": "LLM output verification",
+        "text": "Research login and verification limits before adoption.",
+    }
+
+    assert not page_has_login_or_risk(state)
+    assert page_has_login_or_risk({**state, "text": "Log in to continue"})
 
 
 def test_ask_defaults_to_dry_run_without_attaching_a_browser(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:

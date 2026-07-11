@@ -179,6 +179,8 @@ truth for conversations that were skipped or could not be exported.
 If ChatGPT shows login, CAPTCHA, MFA, Cloudflare, or unusual activity checks,
 stop automation and complete the challenge in the same Chrome window. Then run
 the command again with the same `--session`.
+Gate detection uses explicit login/challenge phrases and routes; research answer
+text mentioning login or verification is not itself treated as a gate.
 
 If ChatGPT shows request-frequency or restricted-access warnings, stop real
 question sending. Do not use rapid retries. Resume with a larger `--delay`

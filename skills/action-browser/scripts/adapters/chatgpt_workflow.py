@@ -243,12 +243,19 @@ def get_page_state(book: ActionBook) -> dict[str, str]:
 
 
 def page_has_login_or_risk(state: dict[str, str]) -> bool:
-    haystack = "\n".join(str(state.get(key) or "") for key in ("href", "title", "text"))
-    if re.search(r"captcha|cloudflare|verify|verification|unusual activity|验证码|验证|异常活动", haystack, re.I):
+    href = str(state.get("href") or "")
+    title = str(state.get("title") or "")
+    text = str(state.get("text") or "")
+    route_context = f"{href}\n{title}"
+    if re.search(r"captcha|cloudflare|auth0|/auth/|/login|unusual activity|验证码|异常活动", route_context, re.I):
         return True
-    if re.search(r"login|sign in|log in", haystack, re.I):
-        return True
-    return bool(re.search(r"登录|登入", haystack) and "退出登录" not in haystack)
+    return bool(
+        re.search(
+            r"log in to continue|sign in to continue|请先登录|登录后继续|完成验证后继续|verify you are human",
+            text,
+            re.I,
+        )
+    )
 
 
 def ensure_chatgpt_ready(book: ActionBook) -> None:
