@@ -232,6 +232,10 @@ _Avoid_: Popularity, directory order
 The set of Reference Website Adapter Read Capabilities that an Overlap Website must provide with equivalent user outcomes, while preserving action-browser-specific capabilities.
 _Avoid_: Matching command count
 
+**Read-Only Expansion Set**:
+The explicitly admitted websites in the current expansion scope whose delivery is limited to complete Read Coverage; Write Capabilities are excluded until a separate decision admits them.
+_Avoid_: Full website parity, one-command support
+
 **Site Read Completion**:
 The state in which all admitted reference Read Capabilities and all retained Native Capabilities for one website are `verified` or `verified_empty`.
 _Avoid_: Adapter exists, parity percentage
