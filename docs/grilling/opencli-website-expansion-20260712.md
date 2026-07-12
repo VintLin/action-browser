@@ -1,6 +1,6 @@
 # OpenCLI Website Expansion — Grilling Handoff
 
-状态：grilling 进行中，尚未进入实现。
+状态：已完成 grilling，已进入实现；当前交付仍受 Batch 2 浏览器 User Gate 阻塞。
 
 ## 目标
 
@@ -31,9 +31,9 @@
 - 当前站点索引位于 `skills/action-browser/SKILL.md`，站点文档和 workflow 分别位于 `references/adapters/<site>.md` 与 `scripts/adapters/<site>_workflow.py`。
 - 项目现有 ADR 已规定只读优先、用户门禁、单一 Result Envelope、Capability Catalog、真实 smoke 和按站点并行边界。
 - 本次决策沿用 ADR 0001、0002、0005、0008、0009、0010、0012、0018、0020、0021，不新增与其冲突的架构规则。
+- OpenCLI 远端已刷新到 `c1ad69676f220b5ef382bbf4c387a2486daf8355`；Batch 1 已完成 26/26 smoke，GitHub `trending` 与 `whoami` 已完成，LinkedIn 21 个 read capability 仍为 `waiting_user`。
 
-## 尚待确认
+## 实现后的待办
 
-- 新站点的 canonical command / intent 命名和 capability 粒度。
-- OpenCLI 刷新后各站点实际 read capability 是否发生变化，以及 manifest/source/tests 之间是否存在 reference conflict。
-- 第一批四个站点的具体交付顺序和每站的执行策略由 Foundation/Catalog 结果决定。
+- 恢复 ActionBook/Chrome 会话后，执行 GitHub `whoami` 与 LinkedIn 21 个 read capability 的 assisted smoke。
+- 为六个候选站点补齐以参考字段为依据的 semantic catalog records，再将已满足闭环的站点从 `Expansion candidates` 提升为当前 Supported Website。

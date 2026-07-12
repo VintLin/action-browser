@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "reference_baseline": "c1ad69676f220b5ef382bbf4c387a2486daf8355",
+  "execution_baseline": "d9f2c639a454b72121c4189c94601b05ddae2655",
+  "batch": "batch2-authenticated-read",
+  "captured_at": "2026-07-12",
+  "status": "blocked",
+  "capabilities": {
+    "github": {
+      "trending": "completed",
+      "whoami": "completed"
+    },
+    "linkedin": {
+      "company": "waiting_user",
+      "connections": "waiting_user",
+      "inbox": "waiting_user",
+      "job-detail": "waiting_user",
+      "jobs-preferences": "waiting_user",
+      "people-search": "waiting_user",
+      "post-analytics": "waiting_user",
+      "posts": "waiting_user",
+      "profile-analytics": "waiting_user",
+      "profile-experience": "waiting_user",
+      "profile-projects": "waiting_user",
+      "profile-read": "waiting_user",
+      "salesnav-inbox": "waiting_user",
+      "salesnav-search": "waiting_user",
+      "salesnav-thread": "waiting_user",
+      "search": "waiting_user",
+      "sent-invitations": "waiting_user",
+      "services-read": "waiting_user",
+      "thread-snapshot": "waiting_user",
+      "timeline": "waiting_user",
+      "whoami": "waiting_user"
+    }
+  },
+  "smokes": [
+    {"site": "github", "resource": "trending", "status": "completed", "strategy": "public_http", "count": 2, "artifact_schema": "site-artifact-v1"},
+    {"site": "github", "resource": "whoami", "status": "completed", "strategy": "dom", "count": 1, "artifact_schema": "site-artifact-v1"},
+    {"site": "linkedin", "resource": "company", "status": "waiting_user", "strategy": "dom", "count": 0, "artifact_schema": "adapter-contract-v1"},
+    {"site": "linkedin", "resource": "connections", "status": "waiting_user", "strategy": "dom", "count": 0, "artifact_schema": "adapter-contract-v1"},
+    {"site": "linkedin", "resource": "inbox", "status": "waiting_user", "strategy": "dom", "count": 0, "artifact_schema": "adapter-contract-v1"},
+    {"site": "linkedin", "resource": "job-detail", "status": "waiting_user", "strategy": "dom", "count": 0, "artifact_schema": "adapter-contract-v1"},
+    {"site": "linkedin", "resource": "jobs-preferences", "status": "waiting_user", "strategy": "dom", "count": 0, "artifact_schema": "adapter-contract-v1"},
+    {"site": "linkedin", "resource": "people-search", "status": "waiting_user", "strategy": "dom", "count": 0, "artifact_schema": "adapter-contract-v1"},
+    {"site": "linkedin", "resource": "post-analytics", "status": "waiting_user", "strategy": "dom", "count": 0, "artifact_schema": "adapter-contract-v1"},
+    {"site": "linkedin", "resource": "posts", "status": "waiting_user", "strategy": "dom", "count": 0, "artifact_schema": "adapter-contract-v1"},
+    {"site": "linkedin", "resource": "profile-analytics", "status": "waiting_user", "strategy": "dom", "count": 0, "artifact_schema": "adapter-contract-v1"},
+    {"site": "linkedin", "resource": "profile-experience", "status": "waiting_user", "strategy": "dom", "count": 0, "artifact_schema": "adapter-contract-v1"},
+    {"site": "linkedin", "resource": "profile-projects", "status": "waiting_user", "strategy": "dom", "count": 0, "artifact_schema": "adapter-contract-v1"},
+    {"site": "linkedin", "resource": "profile-read", "status": "waiting_user", "strategy": "dom", "count": 0, "artifact_schema": "adapter-contract-v1"},
+    {"site": "linkedin", "resource": "salesnav-inbox", "status": "waiting_user", "strategy": "dom", "count": 0, "artifact_schema": "adapter-contract-v1"},
+    {"site": "linkedin", "resource": "salesnav-search", "status": "waiting_user", "strategy": "dom", "count": 0, "artifact_schema": "adapter-contract-v1"},
+    {"site": "linkedin", "resource": "salesnav-thread", "status": "waiting_user", "strategy": "dom", "count": 0, "artifact_schema": "adapter-contract-v1"},
+    {"site": "linkedin", "resource": "search", "status": "waiting_user", "strategy": "dom", "count": 0, "artifact_schema": "adapter-contract-v1"},
+    {"site": "linkedin", "resource": "sent-invitations", "status": "waiting_user", "strategy": "dom", "count": 0, "artifact_schema": "adapter-contract-v1"},
+    {"site": "linkedin", "resource": "services-read", "status": "waiting_user", "strategy": "dom", "count": 0, "artifact_schema": "adapter-contract-v1"},
+    {"site": "linkedin", "resource": "thread-snapshot", "status": "waiting_user", "strategy": "dom", "count": 0, "artifact_schema": "adapter-contract-v1"},
+    {"site": "linkedin", "resource": "timeline", "status": "waiting_user", "strategy": "dom", "count": 0, "artifact_schema": "adapter-contract-v1"},
+    {"site": "linkedin", "resource": "whoami", "status": "waiting_user", "strategy": "dom", "count": 0, "artifact_schema": "adapter-contract-v1"}
+  ],
+  "blocker": {
+    "reason_code": "needs_user_action",
+    "message": "LinkedIn is at the login page and ActionBook cannot attach the owned tab because it reports a different chrome-extension URL.",
+    "next_step": "Use the active ActionBook extension/profile, complete LinkedIn login if needed, then rerun the assisted smoke window."
+  },
+  "notes": [
+    "GitHub Trending has a completed public HTTP smoke.",
+    "No credentials were entered and no write operation was attempted.",
+    "LinkedIn command surface and focused URL/contract tests pass, but semantic field parity and real smoke remain unverified."
+  ]
+}

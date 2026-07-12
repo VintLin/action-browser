@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-The programme replaces command, result, contract, and artifact schemas across the shared runtime and thirteen current sites. Shipping those changes site by site would expose a mixed runtime even though ADR 0017 requires a clean break with no compatibility aliases or dual writers. The migration also needs an unambiguous rollback boundary.
+The programme replaces command, result, contract, and artifact schemas across the shared runtime and fourteen current sites. Shipping those changes site by site would expose a mixed runtime even though ADR 0017 requires a clean break with no compatibility aliases or dual writers. The migration also needs an unambiguous rollback boundary.
 
 ## Decision
 

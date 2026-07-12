@@ -9,8 +9,8 @@ Use the latest OpenCLI website adapters as Reference Evidence to update existing
 ## Reference facts to refresh at `/To Spec`
 
 - OpenCLI's generated `cli-manifest.json` is the command inventory authority; source, tests, site docs, then README follow in evidence precedence.
-- The observed planning snapshot was OpenCLI `1.8.6` at commit `6129bb39`, with 173 sites and 1275 commands, but this is not the future Reference Baseline.
-- Action-browser currently declares 13 websites. Twelve map to OpenCLI (`x` to `twitter`, `zhipin` to `boss`); Feishu is action-browser-only.
+- The observed planning snapshot was OpenCLI `1.8.6` at commit `c1ad6967`, with 173 sites and 1277 commands; this is the frozen Reference Baseline for the current cycle.
+- Action-browser currently declares 14 websites. Thirteen map to OpenCLI (`x` to `twitter`, `zhipin` to `boss`); Feishu is action-browser-only.
 - Before specification, fetch OpenCLI remote refs without changing its worktree, capture the latest remote-default-branch commit, and freeze it for the cycle.
 - Before execution, record a clean action-browser Execution Baseline. Unknown or overlapping uncommitted changes block affected tickets.
 
@@ -27,9 +27,9 @@ Use the latest OpenCLI website adapters as Reference Evidence to update existing
 
 1. **Foundation Wave (serial):** Catalog Source and generator, canonical intent vocabulary, clean-break schemas, Adapter Contract, Result Envelope, typed Failure Reasons, execution/fallback metadata, inventory checks, test/smoke templates, privacy, write safety primitives, and canary matrix.
 2. **ChatGPT Write Safety tracer:** migrate existing `ask` and `batch-ask` to default dry-run, Preview Hash approval, explicit execution, Idempotency Policy, and post-write verification before adding any other writes.
-3. **Wave 1 (maximum four sites per Delivery Batch):** all 12 Overlap Websites reach full reference Read Coverage and all retained Native Capabilities are verified. Feishu is the thirteenth maintenance site and receives the common contract/tests/smoke without fabricated OpenCLI parity.
+3. **Wave 1 (maximum four sites per Delivery Batch):** all 13 Overlap Websites reach full reference Read Coverage and all retained Native Capabilities are verified. Feishu is the fourteenth maintenance site and receives the common contract/tests/smoke without fabricated OpenCLI parity.
 4. **Wave 2:** score Candidate Websites by user demand, browser-only value, reference maturity, smoke feasibility, complexity, and risk. Present the top three for approval as the first tracer batch; later batches contain at most five sites. A tracer proves the skeleton, but each admitted site must complete all reference reads before release.
-5. **General Write Wave:** eligible only after Foundation, ChatGPT tracer, and Site Read Completion for all 13 current sites. A future site must complete its own reads before writes.
+5. **General Write Wave:** eligible only after Foundation, ChatGPT tracer, and Site Read Completion for all 14 current sites. A future site must complete its own reads before writes.
 6. **Maintenance Cycles:** monthly plus OpenCLI releases, observed drift, or uncovered user requests. Automation creates read-only diffs and candidate tickets; it never modifies adapters or websites.
 
 No calendar estimate is produced until model concurrency, Access Preflight results, and Assisted Smoke Windows are known.
@@ -119,7 +119,7 @@ A ticket missing any required section is not executable. `/To Tickets` generates
 - The latest frozen Reference Baseline and normalized manifest inventory.
 - The clean Execution Baseline or an explicit blocker if the worktree remains dirty.
 - Exact JSON Catalog Source schema, canonical intents, Failure Reason taxonomy, contract/result schemas, and generator commands.
-- Current 13-site capability matrix, native/reference conflicts, field maps, and focused-test gaps.
+- Current 14-site capability matrix, native/reference conflicts, field maps, and focused-test gaps.
 - Wave 1 batch grouping and dependency ordering within the agreed maximum of four sites.
 - Wave 2 Priority Score formula, candidate exclusions, top-three proposal, and tracer selection.
 - Access Preflight matrix, Assisted Smoke Window needs, canary selection, and smoke artifact paths.

@@ -1740,6 +1740,78 @@
         },
         {
           "reference_fields": [
+            "progress"
+          ],
+          "required": true,
+          "semantic": "progress",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "asyncTaskConversationId"
+          ],
+          "required": true,
+          "semantic": "asyncTaskConversationId",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "widgetSessionId"
+          ],
+          "required": true,
+          "semantic": "widgetSessionId",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "asyncStatus"
+          ],
+          "required": true,
+          "semantic": "asyncStatus",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "venusMessageType"
+          ],
+          "required": true,
+          "semantic": "venusMessageType",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "venusStatus"
+          ],
+          "required": true,
+          "semantic": "venusStatus",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "waitingForUserUntil"
+          ],
+          "required": true,
+          "semantic": "waitingForUserUntil",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "planTitle"
+          ],
+          "required": true,
+          "semantic": "planTitle",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "planId"
+          ],
+          "required": true,
+          "semantic": "planId",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
             "url"
           ],
           "required": true,
@@ -2636,13 +2708,13 @@
       "access_requirement": "browser",
       "conflict_reason": null,
       "description": "下载电影海报/剧照图片",
-      "docs": ["references/adapters/douban.md", "docs/tickets/opencli-programme/T4-download-tracer.md"],
+      "docs": [],
       "effect": "read",
       "equivalence_classes": [],
-      "evidence": ["catalog/evidence/t4/douban-photo-download-smoke-20260710T0521Z.json"],
+      "evidence": [],
       "exclusion_reason": null,
       "fallbacks": [],
-      "id": "douban.photo.download.read",
+      "id": "douban.download.download.read",
       "idempotency": "not_applicable",
       "identity": {
         "field": "id"
@@ -2659,7 +2731,7 @@
       "reference_aliases": [
         "douban"
       ],
-      "resource": "photo",
+      "resource": "download",
       "risk_tier": "read",
       "semantic_fields": [
         {
@@ -2668,7 +2740,7 @@
           ],
           "required": true,
           "semantic": "index",
-          "target_field": "items[].index"
+          "target_field": ""
         },
         {
           "reference_fields": [
@@ -2676,7 +2748,7 @@
           ],
           "required": true,
           "semantic": "title",
-          "target_field": "items[].title"
+          "target_field": ""
         },
         {
           "reference_fields": [
@@ -2684,7 +2756,7 @@
           ],
           "required": true,
           "semantic": "status",
-          "target_field": "items[].status"
+          "target_field": ""
         },
         {
           "reference_fields": [
@@ -2692,15 +2764,15 @@
           ],
           "required": true,
           "semantic": "size",
-          "target_field": "items[].size"
+          "target_field": ""
         }
       ],
       "site": "douban",
       "source_commands": [
         "douban download"
       ],
-      "status": "verified",
-      "tests": ["tests/test_download_primitive.py"]
+      "status": "discovered",
+      "tests": []
     },
     {
       "access_requirement": "browser",
@@ -2875,103 +2947,98 @@
       "tests": []
     },
     {
-      "access_requirement": "public",
+      "access_requirement": "browser",
       "conflict_reason": null,
       "description": "豆瓣电影热门榜单",
-      "docs": [
-        "references/adapters/douban.md"
-      ],
+      "docs": [],
       "effect": "read",
       "equivalence_classes": [],
-      "evidence": [
-        "catalog/evidence/t2/douban-movie-ranking-20260710T043116Z.json"
-      ],
+      "evidence": [],
       "exclusion_reason": null,
       "fallbacks": [],
-      "id": "douban.movie-ranking.trending.read",
+      "id": "douban.movie-hot.detail.read",
       "idempotency": "not_applicable",
       "identity": {
         "field": "id"
       },
-      "intent": "trending",
+      "intent": "detail",
       "limits": {
         "max_items": 20
       },
       "local_effect": "none",
       "native": false,
       "parameters": [],
-      "primary_strategy": "public_http",
+      "primary_strategy": "cookie",
       "priority_score": null,
       "reference_aliases": [
         "douban"
       ],
-      "resource": "movie-ranking",
+      "resource": "movie-hot",
       "risk_tier": "read",
       "semantic_fields": [
         {
-          "semantic": "identity",
-          "reference_fields": [
-            "id",
-            "url"
-          ],
-          "target_field": "id,url",
-          "required": true
-        },
-        {
-          "semantic": "title",
-          "reference_fields": [
-            "title"
-          ],
-          "target_field": "title",
-          "required": true
-        },
-        {
-          "semantic": "rank",
           "reference_fields": [
             "rank"
           ],
-          "target_field": "rank",
-          "required": true
+          "required": true,
+          "semantic": "rank",
+          "target_field": ""
         },
         {
-          "semantic": "rating",
+          "reference_fields": [
+            "id"
+          ],
+          "required": true,
+          "semantic": "id",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "title"
+          ],
+          "required": true,
+          "semantic": "title",
+          "target_field": ""
+        },
+        {
           "reference_fields": [
             "rating"
           ],
-          "target_field": "rating",
-          "required": true
+          "required": true,
+          "semantic": "rating",
+          "target_field": ""
         },
         {
-          "semantic": "rating_count",
           "reference_fields": [
             "votes"
           ],
-          "target_field": "rating_count",
-          "required": true
+          "required": true,
+          "semantic": "votes",
+          "target_field": ""
         },
         {
-          "semantic": "summary",
-          "reference_fields": [],
-          "target_field": "summary",
-          "required": false
-        },
-        {
-          "semantic": "year",
           "reference_fields": [
             "year"
           ],
-          "target_field": "year",
-          "required": true
+          "required": true,
+          "semantic": "year",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "url"
+          ],
+          "required": true,
+          "semantic": "url",
+          "target_field": ""
         }
       ],
       "site": "douban",
       "source_commands": [
         "douban movie-hot"
       ],
-      "status": "verified",
-      "tests": [
-        "tests/test_action_browser_douban.py"
-      ]
+      "status": "discovered",
+      "tests": []
     },
     {
       "access_requirement": "browser",
@@ -5374,6 +5441,1828 @@
     {
       "access_requirement": "browser",
       "conflict_reason": null,
+      "description": "Post a comment on a Reddit post",
+      "docs": [],
+      "effect": "remote_write",
+      "equivalence_classes": [],
+      "evidence": [],
+      "exclusion_reason": null,
+      "fallbacks": [],
+      "id": "reddit.comment.update.remote_write",
+      "idempotency": "verify_before_retry",
+      "identity": {
+        "field": "id"
+      },
+      "intent": "update",
+      "limits": {
+        "max_items": 20
+      },
+      "local_effect": "none",
+      "native": false,
+      "parameters": [],
+      "primary_strategy": "cookie",
+      "priority_score": null,
+      "reference_aliases": [
+        "reddit"
+      ],
+      "resource": "comment",
+      "risk_tier": "communication",
+      "semantic_fields": [
+        {
+          "reference_fields": [
+            "status"
+          ],
+          "required": true,
+          "semantic": "status",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "message"
+          ],
+          "required": true,
+          "semantic": "message",
+          "target_field": ""
+        }
+      ],
+      "site": "reddit",
+      "source_commands": [
+        "reddit comment"
+      ],
+      "status": "discovered",
+      "tests": []
+    },
+    {
+      "access_requirement": "browser",
+      "conflict_reason": null,
+      "description": "Reddit Frontpage / r/all",
+      "docs": [],
+      "effect": "read",
+      "equivalence_classes": [],
+      "evidence": [],
+      "exclusion_reason": null,
+      "fallbacks": [],
+      "id": "reddit.frontpage.detail.read",
+      "idempotency": "not_applicable",
+      "identity": {
+        "field": "id"
+      },
+      "intent": "detail",
+      "limits": {
+        "max_items": 20
+      },
+      "local_effect": "none",
+      "native": false,
+      "parameters": [],
+      "primary_strategy": "cookie",
+      "priority_score": null,
+      "reference_aliases": [
+        "reddit"
+      ],
+      "resource": "frontpage",
+      "risk_tier": "read",
+      "semantic_fields": [
+        {
+          "reference_fields": [
+            "title"
+          ],
+          "required": true,
+          "semantic": "title",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "subreddit"
+          ],
+          "required": true,
+          "semantic": "subreddit",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "author"
+          ],
+          "required": true,
+          "semantic": "author",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "upvotes"
+          ],
+          "required": true,
+          "semantic": "upvotes",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "comments"
+          ],
+          "required": true,
+          "semantic": "comments",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "url"
+          ],
+          "required": true,
+          "semantic": "url",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "post_hint"
+          ],
+          "required": true,
+          "semantic": "post_hint",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "url_overridden_by_dest"
+          ],
+          "required": true,
+          "semantic": "url_overridden_by_dest",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "preview_image_url"
+          ],
+          "required": true,
+          "semantic": "preview_image_url",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "gallery_urls"
+          ],
+          "required": true,
+          "semantic": "gallery_urls",
+          "target_field": ""
+        }
+      ],
+      "site": "reddit",
+      "source_commands": [
+        "reddit frontpage"
+      ],
+      "status": "discovered",
+      "tests": []
+    },
+    {
+      "access_requirement": "browser",
+      "conflict_reason": null,
+      "description": "Reddit personalized home feed (Best, requires login)",
+      "docs": [],
+      "effect": "read",
+      "equivalence_classes": [],
+      "evidence": [],
+      "exclusion_reason": null,
+      "fallbacks": [],
+      "id": "reddit.home.detail.read",
+      "idempotency": "not_applicable",
+      "identity": {
+        "field": "id"
+      },
+      "intent": "detail",
+      "limits": {
+        "max_items": 20
+      },
+      "local_effect": "none",
+      "native": false,
+      "parameters": [],
+      "primary_strategy": "cookie",
+      "priority_score": null,
+      "reference_aliases": [
+        "reddit"
+      ],
+      "resource": "home",
+      "risk_tier": "read",
+      "semantic_fields": [
+        {
+          "reference_fields": [
+            "rank"
+          ],
+          "required": true,
+          "semantic": "rank",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "title"
+          ],
+          "required": true,
+          "semantic": "title",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "subreddit"
+          ],
+          "required": true,
+          "semantic": "subreddit",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "score"
+          ],
+          "required": true,
+          "semantic": "score",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "comments"
+          ],
+          "required": true,
+          "semantic": "comments",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "postId"
+          ],
+          "required": true,
+          "semantic": "postId",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "author"
+          ],
+          "required": true,
+          "semantic": "author",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "url"
+          ],
+          "required": true,
+          "semantic": "url",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "post_hint"
+          ],
+          "required": true,
+          "semantic": "post_hint",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "url_overridden_by_dest"
+          ],
+          "required": true,
+          "semantic": "url_overridden_by_dest",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "preview_image_url"
+          ],
+          "required": true,
+          "semantic": "preview_image_url",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "gallery_urls"
+          ],
+          "required": true,
+          "semantic": "gallery_urls",
+          "target_field": ""
+        }
+      ],
+      "site": "reddit",
+      "source_commands": [
+        "reddit home"
+      ],
+      "status": "discovered",
+      "tests": []
+    },
+    {
+      "access_requirement": "browser",
+      "conflict_reason": null,
+      "description": "Reddit 热门帖子",
+      "docs": [],
+      "effect": "read",
+      "equivalence_classes": [],
+      "evidence": [],
+      "exclusion_reason": null,
+      "fallbacks": [],
+      "id": "reddit.hot.detail.read",
+      "idempotency": "not_applicable",
+      "identity": {
+        "field": "id"
+      },
+      "intent": "detail",
+      "limits": {
+        "max_items": 20
+      },
+      "local_effect": "none",
+      "native": false,
+      "parameters": [],
+      "primary_strategy": "cookie",
+      "priority_score": null,
+      "reference_aliases": [
+        "reddit"
+      ],
+      "resource": "hot",
+      "risk_tier": "read",
+      "semantic_fields": [
+        {
+          "reference_fields": [
+            "rank"
+          ],
+          "required": true,
+          "semantic": "rank",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "title"
+          ],
+          "required": true,
+          "semantic": "title",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "subreddit"
+          ],
+          "required": true,
+          "semantic": "subreddit",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "score"
+          ],
+          "required": true,
+          "semantic": "score",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "comments"
+          ],
+          "required": true,
+          "semantic": "comments",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "postId"
+          ],
+          "required": true,
+          "semantic": "postId",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "author"
+          ],
+          "required": true,
+          "semantic": "author",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "url"
+          ],
+          "required": true,
+          "semantic": "url",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "post_hint"
+          ],
+          "required": true,
+          "semantic": "post_hint",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "url_overridden_by_dest"
+          ],
+          "required": true,
+          "semantic": "url_overridden_by_dest",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "preview_image_url"
+          ],
+          "required": true,
+          "semantic": "preview_image_url",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "gallery_urls"
+          ],
+          "required": true,
+          "semantic": "gallery_urls",
+          "target_field": ""
+        }
+      ],
+      "site": "reddit",
+      "source_commands": [
+        "reddit hot"
+      ],
+      "status": "discovered",
+      "tests": []
+    },
+    {
+      "access_requirement": "browser",
+      "conflict_reason": null,
+      "description": "Open reddit login and wait until the browser session is authenticated",
+      "docs": [],
+      "effect": "login_assistance",
+      "equivalence_classes": [],
+      "evidence": [],
+      "exclusion_reason": null,
+      "fallbacks": [],
+      "id": "reddit.login.login.login_assistance",
+      "idempotency": "not_applicable",
+      "identity": {
+        "field": "id"
+      },
+      "intent": "login",
+      "limits": {
+        "max_items": 20
+      },
+      "local_effect": "none",
+      "native": false,
+      "parameters": [],
+      "primary_strategy": "cookie",
+      "priority_score": null,
+      "reference_aliases": [
+        "reddit"
+      ],
+      "resource": "login",
+      "risk_tier": "read",
+      "semantic_fields": [
+        {
+          "reference_fields": [
+            "status"
+          ],
+          "required": true,
+          "semantic": "status",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "logged_in"
+          ],
+          "required": true,
+          "semantic": "logged_in",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "site"
+          ],
+          "required": true,
+          "semantic": "site",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "username"
+          ],
+          "required": true,
+          "semantic": "username",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "id"
+          ],
+          "required": true,
+          "semantic": "id",
+          "target_field": ""
+        }
+      ],
+      "site": "reddit",
+      "source_commands": [
+        "reddit login"
+      ],
+      "status": "discovered",
+      "tests": []
+    },
+    {
+      "access_requirement": "browser",
+      "conflict_reason": null,
+      "description": "Reddit Popular posts (/r/popular)",
+      "docs": [],
+      "effect": "read",
+      "equivalence_classes": [],
+      "evidence": [],
+      "exclusion_reason": null,
+      "fallbacks": [],
+      "id": "reddit.popular.detail.read",
+      "idempotency": "not_applicable",
+      "identity": {
+        "field": "id"
+      },
+      "intent": "detail",
+      "limits": {
+        "max_items": 20
+      },
+      "local_effect": "none",
+      "native": false,
+      "parameters": [],
+      "primary_strategy": "cookie",
+      "priority_score": null,
+      "reference_aliases": [
+        "reddit"
+      ],
+      "resource": "popular",
+      "risk_tier": "read",
+      "semantic_fields": [
+        {
+          "reference_fields": [
+            "rank"
+          ],
+          "required": true,
+          "semantic": "rank",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "id"
+          ],
+          "required": true,
+          "semantic": "id",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "title"
+          ],
+          "required": true,
+          "semantic": "title",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "subreddit"
+          ],
+          "required": true,
+          "semantic": "subreddit",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "score"
+          ],
+          "required": true,
+          "semantic": "score",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "comments"
+          ],
+          "required": true,
+          "semantic": "comments",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "author"
+          ],
+          "required": true,
+          "semantic": "author",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "url"
+          ],
+          "required": true,
+          "semantic": "url",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "created_utc"
+          ],
+          "required": true,
+          "semantic": "created_utc",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "selftext"
+          ],
+          "required": true,
+          "semantic": "selftext",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "post_hint"
+          ],
+          "required": true,
+          "semantic": "post_hint",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "url_overridden_by_dest"
+          ],
+          "required": true,
+          "semantic": "url_overridden_by_dest",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "preview_image_url"
+          ],
+          "required": true,
+          "semantic": "preview_image_url",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "gallery_urls"
+          ],
+          "required": true,
+          "semantic": "gallery_urls",
+          "target_field": ""
+        }
+      ],
+      "site": "reddit",
+      "source_commands": [
+        "reddit popular"
+      ],
+      "status": "discovered",
+      "tests": []
+    },
+    {
+      "access_requirement": "browser",
+      "conflict_reason": null,
+      "description": "Read a Reddit post and its comments",
+      "docs": [],
+      "effect": "read",
+      "equivalence_classes": [],
+      "evidence": [],
+      "exclusion_reason": null,
+      "fallbacks": [],
+      "id": "reddit.read.detail.read",
+      "idempotency": "not_applicable",
+      "identity": {
+        "field": "id"
+      },
+      "intent": "detail",
+      "limits": {
+        "max_items": 20
+      },
+      "local_effect": "none",
+      "native": false,
+      "parameters": [],
+      "primary_strategy": "cookie",
+      "priority_score": null,
+      "reference_aliases": [
+        "reddit"
+      ],
+      "resource": "read",
+      "risk_tier": "read",
+      "semantic_fields": [
+        {
+          "reference_fields": [
+            "type"
+          ],
+          "required": true,
+          "semantic": "type",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "author"
+          ],
+          "required": true,
+          "semantic": "author",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "score"
+          ],
+          "required": true,
+          "semantic": "score",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "text"
+          ],
+          "required": true,
+          "semantic": "text",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "post_hint"
+          ],
+          "required": true,
+          "semantic": "post_hint",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "url_overridden_by_dest"
+          ],
+          "required": true,
+          "semantic": "url_overridden_by_dest",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "preview_image_url"
+          ],
+          "required": true,
+          "semantic": "preview_image_url",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "gallery_urls"
+          ],
+          "required": true,
+          "semantic": "gallery_urls",
+          "target_field": ""
+        }
+      ],
+      "site": "reddit",
+      "source_commands": [
+        "reddit read"
+      ],
+      "status": "discovered",
+      "tests": []
+    },
+    {
+      "access_requirement": "browser",
+      "conflict_reason": null,
+      "description": "Reply to a Reddit comment",
+      "docs": [],
+      "effect": "remote_write",
+      "equivalence_classes": [],
+      "evidence": [],
+      "exclusion_reason": null,
+      "fallbacks": [],
+      "id": "reddit.reply.update.remote_write",
+      "idempotency": "verify_before_retry",
+      "identity": {
+        "field": "id"
+      },
+      "intent": "update",
+      "limits": {
+        "max_items": 20
+      },
+      "local_effect": "none",
+      "native": false,
+      "parameters": [],
+      "primary_strategy": "cookie",
+      "priority_score": null,
+      "reference_aliases": [
+        "reddit"
+      ],
+      "resource": "reply",
+      "risk_tier": "communication",
+      "semantic_fields": [
+        {
+          "reference_fields": [
+            "status"
+          ],
+          "required": true,
+          "semantic": "status",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "message"
+          ],
+          "required": true,
+          "semantic": "message",
+          "target_field": ""
+        }
+      ],
+      "site": "reddit",
+      "source_commands": [
+        "reddit reply"
+      ],
+      "status": "discovered",
+      "tests": []
+    },
+    {
+      "access_requirement": "browser",
+      "conflict_reason": null,
+      "description": "Save or unsave a Reddit post",
+      "docs": [],
+      "effect": "remote_write",
+      "equivalence_classes": [],
+      "evidence": [],
+      "exclusion_reason": null,
+      "fallbacks": [],
+      "id": "reddit.save.update.remote_write",
+      "idempotency": "verify_before_retry",
+      "identity": {
+        "field": "id"
+      },
+      "intent": "update",
+      "limits": {
+        "max_items": 20
+      },
+      "local_effect": "none",
+      "native": false,
+      "parameters": [],
+      "primary_strategy": "cookie",
+      "priority_score": null,
+      "reference_aliases": [
+        "reddit"
+      ],
+      "resource": "save",
+      "risk_tier": "communication",
+      "semantic_fields": [
+        {
+          "reference_fields": [
+            "status"
+          ],
+          "required": true,
+          "semantic": "status",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "message"
+          ],
+          "required": true,
+          "semantic": "message",
+          "target_field": ""
+        }
+      ],
+      "site": "reddit",
+      "source_commands": [
+        "reddit save"
+      ],
+      "status": "discovered",
+      "tests": []
+    },
+    {
+      "access_requirement": "browser",
+      "conflict_reason": null,
+      "description": "Browse your saved Reddit posts",
+      "docs": [],
+      "effect": "read",
+      "equivalence_classes": [],
+      "evidence": [],
+      "exclusion_reason": null,
+      "fallbacks": [],
+      "id": "reddit.saved.detail.read",
+      "idempotency": "not_applicable",
+      "identity": {
+        "field": "id"
+      },
+      "intent": "detail",
+      "limits": {
+        "max_items": 20
+      },
+      "local_effect": "none",
+      "native": false,
+      "parameters": [],
+      "primary_strategy": "cookie",
+      "priority_score": null,
+      "reference_aliases": [
+        "reddit"
+      ],
+      "resource": "saved",
+      "risk_tier": "read",
+      "semantic_fields": [
+        {
+          "reference_fields": [
+            "title"
+          ],
+          "required": true,
+          "semantic": "title",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "subreddit"
+          ],
+          "required": true,
+          "semantic": "subreddit",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "score"
+          ],
+          "required": true,
+          "semantic": "score",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "comments"
+          ],
+          "required": true,
+          "semantic": "comments",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "url"
+          ],
+          "required": true,
+          "semantic": "url",
+          "target_field": ""
+        }
+      ],
+      "site": "reddit",
+      "source_commands": [
+        "reddit saved"
+      ],
+      "status": "discovered",
+      "tests": []
+    },
+    {
+      "access_requirement": "browser",
+      "conflict_reason": null,
+      "description": "Search Reddit Posts",
+      "docs": [],
+      "effect": "read",
+      "equivalence_classes": [],
+      "evidence": [],
+      "exclusion_reason": null,
+      "fallbacks": [],
+      "id": "reddit.search.search.read",
+      "idempotency": "not_applicable",
+      "identity": {
+        "field": "id"
+      },
+      "intent": "search",
+      "limits": {
+        "max_items": 20
+      },
+      "local_effect": "none",
+      "native": false,
+      "parameters": [],
+      "primary_strategy": "cookie",
+      "priority_score": null,
+      "reference_aliases": [
+        "reddit"
+      ],
+      "resource": "search",
+      "risk_tier": "read",
+      "semantic_fields": [
+        {
+          "reference_fields": [
+            "id"
+          ],
+          "required": true,
+          "semantic": "id",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "title"
+          ],
+          "required": true,
+          "semantic": "title",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "subreddit"
+          ],
+          "required": true,
+          "semantic": "subreddit",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "author"
+          ],
+          "required": true,
+          "semantic": "author",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "score"
+          ],
+          "required": true,
+          "semantic": "score",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "comments"
+          ],
+          "required": true,
+          "semantic": "comments",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "url"
+          ],
+          "required": true,
+          "semantic": "url",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "created_utc"
+          ],
+          "required": true,
+          "semantic": "created_utc",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "selftext"
+          ],
+          "required": true,
+          "semantic": "selftext",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "post_hint"
+          ],
+          "required": true,
+          "semantic": "post_hint",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "url_overridden_by_dest"
+          ],
+          "required": true,
+          "semantic": "url_overridden_by_dest",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "preview_image_url"
+          ],
+          "required": true,
+          "semantic": "preview_image_url",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "gallery_urls"
+          ],
+          "required": true,
+          "semantic": "gallery_urls",
+          "target_field": ""
+        }
+      ],
+      "site": "reddit",
+      "source_commands": [
+        "reddit search"
+      ],
+      "status": "discovered",
+      "tests": []
+    },
+    {
+      "access_requirement": "browser",
+      "conflict_reason": null,
+      "description": "Show metadata for a Reddit subreddit (subscribers, description, created date, NSFW)",
+      "docs": [],
+      "effect": "read",
+      "equivalence_classes": [],
+      "evidence": [],
+      "exclusion_reason": null,
+      "fallbacks": [],
+      "id": "reddit.subreddit-info.detail.read",
+      "idempotency": "not_applicable",
+      "identity": {
+        "field": "id"
+      },
+      "intent": "detail",
+      "limits": {
+        "max_items": 20
+      },
+      "local_effect": "none",
+      "native": false,
+      "parameters": [],
+      "primary_strategy": "cookie",
+      "priority_score": null,
+      "reference_aliases": [
+        "reddit"
+      ],
+      "resource": "subreddit-info",
+      "risk_tier": "read",
+      "semantic_fields": [
+        {
+          "reference_fields": [
+            "field"
+          ],
+          "required": true,
+          "semantic": "field",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "value"
+          ],
+          "required": true,
+          "semantic": "value",
+          "target_field": ""
+        }
+      ],
+      "site": "reddit",
+      "source_commands": [
+        "reddit subreddit-info"
+      ],
+      "status": "discovered",
+      "tests": []
+    },
+    {
+      "access_requirement": "browser",
+      "conflict_reason": null,
+      "description": "Get posts from a specific Subreddit",
+      "docs": [],
+      "effect": "read",
+      "equivalence_classes": [],
+      "evidence": [],
+      "exclusion_reason": null,
+      "fallbacks": [],
+      "id": "reddit.subreddit.detail.read",
+      "idempotency": "not_applicable",
+      "identity": {
+        "field": "id"
+      },
+      "intent": "detail",
+      "limits": {
+        "max_items": 20
+      },
+      "local_effect": "none",
+      "native": false,
+      "parameters": [],
+      "primary_strategy": "cookie",
+      "priority_score": null,
+      "reference_aliases": [
+        "reddit"
+      ],
+      "resource": "subreddit",
+      "risk_tier": "read",
+      "semantic_fields": [
+        {
+          "reference_fields": [
+            "id"
+          ],
+          "required": true,
+          "semantic": "id",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "title"
+          ],
+          "required": true,
+          "semantic": "title",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "subreddit"
+          ],
+          "required": true,
+          "semantic": "subreddit",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "author"
+          ],
+          "required": true,
+          "semantic": "author",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "upvotes"
+          ],
+          "required": true,
+          "semantic": "upvotes",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "comments"
+          ],
+          "required": true,
+          "semantic": "comments",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "url"
+          ],
+          "required": true,
+          "semantic": "url",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "created_utc"
+          ],
+          "required": true,
+          "semantic": "created_utc",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "selftext"
+          ],
+          "required": true,
+          "semantic": "selftext",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "post_hint"
+          ],
+          "required": true,
+          "semantic": "post_hint",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "url_overridden_by_dest"
+          ],
+          "required": true,
+          "semantic": "url_overridden_by_dest",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "preview_image_url"
+          ],
+          "required": true,
+          "semantic": "preview_image_url",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "gallery_urls"
+          ],
+          "required": true,
+          "semantic": "gallery_urls",
+          "target_field": ""
+        }
+      ],
+      "site": "reddit",
+      "source_commands": [
+        "reddit subreddit"
+      ],
+      "status": "discovered",
+      "tests": []
+    },
+    {
+      "access_requirement": "browser",
+      "conflict_reason": null,
+      "description": "Subscribe or unsubscribe to a subreddit",
+      "docs": [],
+      "effect": "remote_write",
+      "equivalence_classes": [],
+      "evidence": [],
+      "exclusion_reason": null,
+      "fallbacks": [],
+      "id": "reddit.subscribe.update.remote_write",
+      "idempotency": "verify_before_retry",
+      "identity": {
+        "field": "id"
+      },
+      "intent": "update",
+      "limits": {
+        "max_items": 20
+      },
+      "local_effect": "none",
+      "native": false,
+      "parameters": [],
+      "primary_strategy": "cookie",
+      "priority_score": null,
+      "reference_aliases": [
+        "reddit"
+      ],
+      "resource": "subscribe",
+      "risk_tier": "communication",
+      "semantic_fields": [
+        {
+          "reference_fields": [
+            "status"
+          ],
+          "required": true,
+          "semantic": "status",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "message"
+          ],
+          "required": true,
+          "semantic": "message",
+          "target_field": ""
+        }
+      ],
+      "site": "reddit",
+      "source_commands": [
+        "reddit subscribe"
+      ],
+      "status": "discovered",
+      "tests": []
+    },
+    {
+      "access_requirement": "browser",
+      "conflict_reason": null,
+      "description": "List subreddits you are subscribed to",
+      "docs": [],
+      "effect": "read",
+      "equivalence_classes": [],
+      "evidence": [],
+      "exclusion_reason": null,
+      "fallbacks": [],
+      "id": "reddit.subscribed.detail.read",
+      "idempotency": "not_applicable",
+      "identity": {
+        "field": "id"
+      },
+      "intent": "detail",
+      "limits": {
+        "max_items": 20
+      },
+      "local_effect": "none",
+      "native": false,
+      "parameters": [],
+      "primary_strategy": "cookie",
+      "priority_score": null,
+      "reference_aliases": [
+        "reddit"
+      ],
+      "resource": "subscribed",
+      "risk_tier": "read",
+      "semantic_fields": [
+        {
+          "reference_fields": [
+            "id"
+          ],
+          "required": true,
+          "semantic": "id",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "subreddit"
+          ],
+          "required": true,
+          "semantic": "subreddit",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "title"
+          ],
+          "required": true,
+          "semantic": "title",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "subscribers"
+          ],
+          "required": true,
+          "semantic": "subscribers",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "description"
+          ],
+          "required": true,
+          "semantic": "description",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "url"
+          ],
+          "required": true,
+          "semantic": "url",
+          "target_field": ""
+        }
+      ],
+      "site": "reddit",
+      "source_commands": [
+        "reddit subscribed"
+      ],
+      "status": "discovered",
+      "tests": []
+    },
+    {
+      "access_requirement": "browser",
+      "conflict_reason": null,
+      "description": "Upvote or downvote a Reddit post",
+      "docs": [],
+      "effect": "remote_write",
+      "equivalence_classes": [],
+      "evidence": [],
+      "exclusion_reason": null,
+      "fallbacks": [],
+      "id": "reddit.upvote.update.remote_write",
+      "idempotency": "verify_before_retry",
+      "identity": {
+        "field": "id"
+      },
+      "intent": "update",
+      "limits": {
+        "max_items": 20
+      },
+      "local_effect": "none",
+      "native": false,
+      "parameters": [],
+      "primary_strategy": "cookie",
+      "priority_score": null,
+      "reference_aliases": [
+        "reddit"
+      ],
+      "resource": "upvote",
+      "risk_tier": "communication",
+      "semantic_fields": [
+        {
+          "reference_fields": [
+            "status"
+          ],
+          "required": true,
+          "semantic": "status",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "message"
+          ],
+          "required": true,
+          "semantic": "message",
+          "target_field": ""
+        }
+      ],
+      "site": "reddit",
+      "source_commands": [
+        "reddit upvote"
+      ],
+      "status": "discovered",
+      "tests": []
+    },
+    {
+      "access_requirement": "browser",
+      "conflict_reason": null,
+      "description": "Browse your upvoted Reddit posts",
+      "docs": [],
+      "effect": "read",
+      "equivalence_classes": [],
+      "evidence": [],
+      "exclusion_reason": null,
+      "fallbacks": [],
+      "id": "reddit.upvoted.detail.read",
+      "idempotency": "not_applicable",
+      "identity": {
+        "field": "id"
+      },
+      "intent": "detail",
+      "limits": {
+        "max_items": 20
+      },
+      "local_effect": "none",
+      "native": false,
+      "parameters": [],
+      "primary_strategy": "cookie",
+      "priority_score": null,
+      "reference_aliases": [
+        "reddit"
+      ],
+      "resource": "upvoted",
+      "risk_tier": "read",
+      "semantic_fields": [
+        {
+          "reference_fields": [
+            "title"
+          ],
+          "required": true,
+          "semantic": "title",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "subreddit"
+          ],
+          "required": true,
+          "semantic": "subreddit",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "score"
+          ],
+          "required": true,
+          "semantic": "score",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "comments"
+          ],
+          "required": true,
+          "semantic": "comments",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "url"
+          ],
+          "required": true,
+          "semantic": "url",
+          "target_field": ""
+        }
+      ],
+      "site": "reddit",
+      "source_commands": [
+        "reddit upvoted"
+      ],
+      "status": "discovered",
+      "tests": []
+    },
+    {
+      "access_requirement": "browser",
+      "conflict_reason": null,
+      "description": "View a Reddit user's comment history",
+      "docs": [],
+      "effect": "read",
+      "equivalence_classes": [],
+      "evidence": [],
+      "exclusion_reason": null,
+      "fallbacks": [],
+      "id": "reddit.user-comments.comments.read",
+      "idempotency": "not_applicable",
+      "identity": {
+        "field": "id"
+      },
+      "intent": "comments",
+      "limits": {
+        "max_items": 20
+      },
+      "local_effect": "none",
+      "native": false,
+      "parameters": [],
+      "primary_strategy": "cookie",
+      "priority_score": null,
+      "reference_aliases": [
+        "reddit"
+      ],
+      "resource": "user-comments",
+      "risk_tier": "read",
+      "semantic_fields": [
+        {
+          "reference_fields": [
+            "subreddit"
+          ],
+          "required": true,
+          "semantic": "subreddit",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "score"
+          ],
+          "required": true,
+          "semantic": "score",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "body"
+          ],
+          "required": true,
+          "semantic": "body",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "url"
+          ],
+          "required": true,
+          "semantic": "url",
+          "target_field": ""
+        }
+      ],
+      "site": "reddit",
+      "source_commands": [
+        "reddit user-comments"
+      ],
+      "status": "discovered",
+      "tests": []
+    },
+    {
+      "access_requirement": "browser",
+      "conflict_reason": null,
+      "description": "View a Reddit user's submitted posts",
+      "docs": [],
+      "effect": "read",
+      "equivalence_classes": [],
+      "evidence": [],
+      "exclusion_reason": null,
+      "fallbacks": [],
+      "id": "reddit.user-posts.detail.read",
+      "idempotency": "not_applicable",
+      "identity": {
+        "field": "id"
+      },
+      "intent": "detail",
+      "limits": {
+        "max_items": 20
+      },
+      "local_effect": "none",
+      "native": false,
+      "parameters": [],
+      "primary_strategy": "cookie",
+      "priority_score": null,
+      "reference_aliases": [
+        "reddit"
+      ],
+      "resource": "user-posts",
+      "risk_tier": "read",
+      "semantic_fields": [
+        {
+          "reference_fields": [
+            "title"
+          ],
+          "required": true,
+          "semantic": "title",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "subreddit"
+          ],
+          "required": true,
+          "semantic": "subreddit",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "score"
+          ],
+          "required": true,
+          "semantic": "score",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "comments"
+          ],
+          "required": true,
+          "semantic": "comments",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "url"
+          ],
+          "required": true,
+          "semantic": "url",
+          "target_field": ""
+        }
+      ],
+      "site": "reddit",
+      "source_commands": [
+        "reddit user-posts"
+      ],
+      "status": "discovered",
+      "tests": []
+    },
+    {
+      "access_requirement": "browser",
+      "conflict_reason": null,
+      "description": "View a Reddit user profile",
+      "docs": [],
+      "effect": "read",
+      "equivalence_classes": [],
+      "evidence": [],
+      "exclusion_reason": null,
+      "fallbacks": [],
+      "id": "reddit.user.detail.read",
+      "idempotency": "not_applicable",
+      "identity": {
+        "field": "id"
+      },
+      "intent": "detail",
+      "limits": {
+        "max_items": 20
+      },
+      "local_effect": "none",
+      "native": false,
+      "parameters": [],
+      "primary_strategy": "cookie",
+      "priority_score": null,
+      "reference_aliases": [
+        "reddit"
+      ],
+      "resource": "user",
+      "risk_tier": "read",
+      "semantic_fields": [
+        {
+          "reference_fields": [
+            "field"
+          ],
+          "required": true,
+          "semantic": "field",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "value"
+          ],
+          "required": true,
+          "semantic": "value",
+          "target_field": ""
+        }
+      ],
+      "site": "reddit",
+      "source_commands": [
+        "reddit user"
+      ],
+      "status": "discovered",
+      "tests": []
+    },
+    {
+      "access_requirement": "browser",
+      "conflict_reason": null,
+      "description": "Show the currently logged-in Reddit user",
+      "docs": [],
+      "effect": "read",
+      "equivalence_classes": [],
+      "evidence": [],
+      "exclusion_reason": null,
+      "fallbacks": [],
+      "id": "reddit.whoami.whoami.read",
+      "idempotency": "not_applicable",
+      "identity": {
+        "field": "id"
+      },
+      "intent": "whoami",
+      "limits": {
+        "max_items": 20
+      },
+      "local_effect": "none",
+      "native": false,
+      "parameters": [],
+      "primary_strategy": "cookie",
+      "priority_score": null,
+      "reference_aliases": [
+        "reddit"
+      ],
+      "resource": "whoami",
+      "risk_tier": "read",
+      "semantic_fields": [
+        {
+          "reference_fields": [
+            "field"
+          ],
+          "required": true,
+          "semantic": "field",
+          "target_field": ""
+        },
+        {
+          "reference_fields": [
+            "value"
+          ],
+          "required": true,
+          "semantic": "value",
+          "target_field": ""
+        }
+      ],
+      "site": "reddit",
+      "source_commands": [
+        "reddit whoami"
+      ],
+      "status": "discovered",
+      "tests": []
+    },
+    {
+      "access_requirement": "browser",
+      "conflict_reason": null,
       "description": "淘宝加入购物车",
       "docs": [],
       "effect": "remote_write",
@@ -7125,15 +9014,10 @@
       "access_requirement": "browser",
       "conflict_reason": null,
       "description": "Fetch a Twitter Article (long-form content) and export as Markdown",
-      "docs": [
-        "references/adapters/x.md",
-        "docs/tickets/opencli-programme/T3-browser-read-longform.md"
-      ],
+      "docs": [],
       "effect": "read",
       "equivalence_classes": [],
-      "evidence": [
-        "catalog/evidence/t3/x-article-smoke-20260710T0514Z.json"
-      ],
+      "evidence": [],
       "exclusion_reason": null,
       "fallbacks": [],
       "id": "x.article.detail.read",
@@ -7143,12 +9027,12 @@
       },
       "intent": "detail",
       "limits": {
-        "max_items": 2
+        "max_items": 20
       },
       "local_effect": "none",
       "native": false,
       "parameters": [],
-      "primary_strategy": "dom",
+      "primary_strategy": "cookie",
       "priority_score": null,
       "reference_aliases": [
         "twitter"
@@ -7162,7 +9046,7 @@
           ],
           "required": true,
           "semantic": "title",
-          "target_field": "title"
+          "target_field": ""
         },
         {
           "reference_fields": [
@@ -7170,7 +9054,7 @@
           ],
           "required": true,
           "semantic": "author",
-          "target_field": "author.name"
+          "target_field": ""
         },
         {
           "reference_fields": [
@@ -7178,7 +9062,7 @@
           ],
           "required": true,
           "semantic": "content",
-          "target_field": "full_text"
+          "target_field": ""
         },
         {
           "reference_fields": [
@@ -7186,18 +9070,15 @@
           ],
           "required": true,
           "semantic": "url",
-          "target_field": "url"
+          "target_field": ""
         }
       ],
       "site": "x",
       "source_commands": [
         "twitter article"
       ],
-      "status": "verified",
-      "tests": [
-        "tests/test_action_browser_x.py",
-        "tests/test_x_workflow.py"
-      ]
+      "status": "discovered",
+      "tests": []
     },
     {
       "access_requirement": "browser",
@@ -9953,30 +11834,25 @@
       "access_requirement": "browser",
       "conflict_reason": null,
       "description": "Fetch the logged-in user's home timeline (for-you algorithmic feed by default; pass --type following for the chronological feed of accounts you follow)",
-      "docs": [
-        "references/adapters/x.md",
-        "docs/tickets/opencli-programme/T3-browser-read-longform.md"
-      ],
+      "docs": [],
       "effect": "read",
       "equivalence_classes": [],
-      "evidence": [
-        "catalog/evidence/t3/x-timeline-smoke-20260710T0518Z.json"
-      ],
+      "evidence": [],
       "exclusion_reason": null,
       "fallbacks": [],
-      "id": "x.timeline.list.read",
+      "id": "x.timeline.detail.read",
       "idempotency": "not_applicable",
       "identity": {
         "field": "id"
       },
-      "intent": "list",
+      "intent": "detail",
       "limits": {
-        "max_items": 5
+        "max_items": 20
       },
       "local_effect": "none",
       "native": false,
       "parameters": [],
-      "primary_strategy": "dom",
+      "primary_strategy": "cookie",
       "priority_score": null,
       "reference_aliases": [
         "twitter"
@@ -9990,7 +11866,7 @@
           ],
           "required": true,
           "semantic": "id",
-          "target_field": "id"
+          "target_field": ""
         },
         {
           "reference_fields": [
@@ -9998,13 +11874,13 @@
           ],
           "required": true,
           "semantic": "author",
-          "target_field": "author.name"
+          "target_field": ""
         },
         {
           "reference_fields": [
             "bio"
           ],
-          "required": false,
+          "required": true,
           "semantic": "bio",
           "target_field": ""
         },
@@ -10014,7 +11890,7 @@
           ],
           "required": true,
           "semantic": "text",
-          "target_field": "text_preview"
+          "target_field": ""
         },
         {
           "reference_fields": [
@@ -10022,7 +11898,7 @@
           ],
           "required": true,
           "semantic": "likes",
-          "target_field": "engagement.likes"
+          "target_field": ""
         },
         {
           "reference_fields": [
@@ -10030,7 +11906,7 @@
           ],
           "required": true,
           "semantic": "retweets",
-          "target_field": "engagement.reposts"
+          "target_field": ""
         },
         {
           "reference_fields": [
@@ -10038,7 +11914,7 @@
           ],
           "required": true,
           "semantic": "replies",
-          "target_field": "engagement.replies"
+          "target_field": ""
         },
         {
           "reference_fields": [
@@ -10046,7 +11922,7 @@
           ],
           "required": true,
           "semantic": "views",
-          "target_field": "engagement.views"
+          "target_field": ""
         },
         {
           "reference_fields": [
@@ -10054,7 +11930,7 @@
           ],
           "required": true,
           "semantic": "created_at",
-          "target_field": "published_at"
+          "target_field": ""
         },
         {
           "reference_fields": [
@@ -10062,7 +11938,7 @@
           ],
           "required": true,
           "semantic": "url",
-          "target_field": "url"
+          "target_field": ""
         },
         {
           "reference_fields": [
@@ -10070,7 +11946,7 @@
           ],
           "required": true,
           "semantic": "has_media",
-          "target_field": "has_media"
+          "target_field": ""
         },
         {
           "reference_fields": [
@@ -10078,7 +11954,7 @@
           ],
           "required": true,
           "semantic": "media_urls",
-          "target_field": "media[].url"
+          "target_field": ""
         },
         {
           "reference_fields": [
@@ -10086,7 +11962,7 @@
           ],
           "required": true,
           "semantic": "media_posters",
-          "target_field": "media[].poster_url"
+          "target_field": ""
         },
         {
           "reference_fields": [
@@ -10094,7 +11970,7 @@
           ],
           "required": true,
           "semantic": "card",
-          "target_field": "card"
+          "target_field": ""
         },
         {
           "reference_fields": [
@@ -10102,18 +11978,15 @@
           ],
           "required": true,
           "semantic": "quoted_tweet",
-          "target_field": "quoted_tweet"
+          "target_field": ""
         }
       ],
       "site": "x",
       "source_commands": [
         "twitter timeline"
       ],
-      "status": "verified",
-      "tests": [
-        "tests/test_action_browser_x.py",
-        "tests/test_x_workflow.py"
-      ]
+      "status": "discovered",
+      "tests": []
     },
     {
       "access_requirement": "browser",
@@ -17129,7 +19002,7 @@
   "exclusions": [],
   "execution_baseline": {
     "captured_at": null,
-    "commit": "6027d703c86d1e8e3798212bf1841422a41903fc",
+    "commit": "d9f2c639a454b72121c4189c94601b05ddae2655",
     "worktree_status": "clean"
   },
   "generated_at": null,
@@ -17140,7 +19013,7 @@
   },
   "reference_baseline": {
     "captured_at": null,
-    "commit": "6129bb3953d5eebd8dd67f96802b320c723f50ca",
+    "commit": "c1ad69676f220b5ef382bbf4c387a2486daf8355",
     "repo": "opencli",
     "version": null
   },
@@ -17245,6 +19118,14 @@
       "reason": null,
       "reference_aliases": [
         "boss"
+      ],
+      "support_state": "overlap"
+    },
+    {
+      "id": "reddit",
+      "reason": null,
+      "reference_aliases": [
+        "reddit"
       ],
       "support_state": "overlap"
     }

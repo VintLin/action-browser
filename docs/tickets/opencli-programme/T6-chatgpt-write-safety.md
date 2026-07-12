@@ -32,6 +32,6 @@
 - [ ] Preview Hash 绑定完整 effect，不包含 secret 明文。
 - [ ] batch checkpoint 不重放已成功项。
 - [ ] verifier 仅 dry-run，没有真实 ChatGPT 提交。
-- [ ] General Write Wave 仍保持 blocked，直到 13-site read gate 通过。
+- [ ] General Write Wave 仍保持 blocked，直到 14-site read gate 通过。
 
 Rollback 为 revert T6 atomic commit。因为 clean break 尚未发布，不保留 dual command alias。

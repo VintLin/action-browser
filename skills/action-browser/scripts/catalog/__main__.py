@@ -44,8 +44,8 @@ def main() -> int:
         elif args.command == "inventory-target":
             root = Path.cwd()
             head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip()
-            sites = sorted(path.name.removesuffix("_workflow.py") for path in (root / "scripts" / "adapters").glob("*_workflow.py"))
-            references = sorted(path.stem for path in (root / "references" / "adapters").glob("*.md"))
+            sites = sorted(site for site in CURRENT_SITES if (root / "scripts" / "adapters" / f"{site}_workflow.py").exists())
+            references = sorted(site for site in CURRENT_SITES if (root / "references" / "adapters" / f"{site}.md").exists())
             if head != args.execution_baseline:
                 result = envelope("inventory", "failed", failure={"reason_code": "native_conflict", "message": "current HEAD differs from execution baseline", "retryable": False})
             elif sites != references or sites != sorted(CURRENT_SITES):

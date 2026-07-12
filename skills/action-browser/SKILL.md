@@ -48,6 +48,8 @@ Supported site adapters live in `references/adapters/<site>.md` and `scripts/ada
 
 Current sites: `xiaohongshu`, `x`, `weibo`, `douban`, `zhihu`, `youtube`, `douyin`, `bilibili`, `jd`, `taobao`, `zhipin`, `feishu`, `chatgpt`, `reddit`.
 
+Expansion candidates (implemented but not yet `Supported Website`): `google`, `github`, `stackoverflow`, `hackernews`, `wikipedia`, `linkedin`.
+
 Keep this file site-neutral. Put site command catalogs, payload schemas, DOM details, output trees, login notes, and risk-control quirks in the matching reference.
 
 ## Minimal Commands

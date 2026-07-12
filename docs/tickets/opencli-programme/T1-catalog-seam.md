@@ -1,7 +1,7 @@
 # T1 — Foundation tracer: 打通 Catalog seam
 ## Objective
 
-从冻结 OpenCLI manifest 和 action-browser inventory 生成第一个可验证 Catalog Source、normalized diff 和 Markdown View，覆盖 13 个当前站，并使 conflict/field gap 以 typed record 阻塞。
+从冻结 OpenCLI manifest 和 action-browser inventory 生成第一个可验证 Catalog Source、normalized diff 和 Markdown View，覆盖 14 个当前站，并使 conflict/field gap 以 typed record 阻塞。
 
 ## Blockers and ownership
 
@@ -23,7 +23,7 @@
 - Catalog Source 必须严格验证 top-level/Capability Record schema，unknown fields 失败。
 - `x` 以 `twitter` 为 alias，`zhipin` 以 `boss` 为 alias，不创建重复 site。
 - Feishu 是 Native/Exclusive，reference fields 为空且必须有原因。
-- Output 必须包含 spec 的 13-site gap 矩阵，并将 10 个缺失 focused-test 站点标记为未验证。
+- Output 必须包含 spec 的 14-site gap 矩阵，并将 10 个缺失 focused-test 站点标记为未验证。
 
 ## TDD and verification
 
@@ -34,7 +34,7 @@
 
 ## Acceptance and handoff
 
-- [ ] 13 current sites 均只有一个 canonical record。
+- [ ] 14 current sites 均只有一个 canonical record。
 - [ ] Reference/Execution Baseline hashes 出现在 source 和 generated view。
 - [ ] 每个 capability 有 access/effect/strategy/limits/fields/status/evidence slots。
 - [ ] conflict 和 field gap 使 `validate` 非零退出，不产生假 parity。

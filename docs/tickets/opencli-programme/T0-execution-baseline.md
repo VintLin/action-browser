@@ -11,7 +11,7 @@
 
 ## Baselines and blockers
 
-- Reference Baseline: `6129bb3953d5eebd8dd67f96802b320c723f50ca`.
+- Reference Baseline: `c1ad69676f220b5ef382bbf4c387a2486daf8355`.
 - Execution Baseline: 本票产出。
 - 当前 blocker: `.gitignore`, `AGENTS.md`, `CONTEXT.md`, `docs/` 尚未被审核为已落盘 baseline。
 - 需要用户授权 commit 后才能完成本票的 clean commit。

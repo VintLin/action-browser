@@ -12,6 +12,13 @@ def _current_sites() -> set[str]:
     return set(re.findall(r"`([^`]+)`", match.group(1)))
 
 
+def _candidate_sites() -> set[str]:
+    skill_text = (ROOT_DIR / "SKILL.md").read_text(encoding="utf-8")
+    match = re.search(r"^Expansion candidates.*?:\s*(.+)$", skill_text, flags=re.MULTILINE)
+    assert match, "SKILL.md must declare Expansion candidates"
+    return set(re.findall(r"`([^`]+)`", match.group(1)))
+
+
 def test_current_sites_match_adapter_files() -> None:
     reference_sites = {
         path.stem for path in (ROOT_DIR / "references" / "adapters").glob("*.md")
@@ -21,12 +28,15 @@ def test_current_sites_match_adapter_files() -> None:
         for path in (ROOT_DIR / "scripts" / "adapters").glob("*_workflow.py")
     }
 
-    assert _current_sites() == reference_sites == script_sites
+    candidates = _candidate_sites()
+    assert _current_sites() == reference_sites - candidates == script_sites - candidates
 
 
 def test_workflows_use_the_shared_runtime_without_legacy_bootstrap() -> None:
     for path in (ROOT_DIR / "scripts" / "adapters").glob("*_workflow.py"):
         source = path.read_text(encoding="utf-8")
+        if "from scripts.adapters.public_read_runtime import" in source:
+            continue
         assert "from scripts.workflow_runtime import" in source, path
         assert "scripts.adapter_runtime" not in source, path
         assert "prepare_task_book" not in source, path
