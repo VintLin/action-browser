@@ -102,7 +102,7 @@ failures.json
 - 原始行：保留页面可见文本，方便排查 DOM 解析。
 - 文章详情正文：如果文章详情已补全，同步写入详情正文、正文行数、图片数和图片位置标记。
 
-`download` 时，如果列表页帖子的 DOM 明确包含 `显示更多` / `Show more`，脚本会打开详情页：详情页仍有展开控件时点击，否则直接读取详情页已完整渲染的正文。只有展开标记消失后才将补全结果写入 `metadata.json`、`content.md` 和 `raw.txt`。外链显示文本末尾的 `…` 不视为长文截断。`view` 会执行同样的正文补全，但不创建单帖目录。
+`download` 时，如果列表页帖子的 DOM 明确包含 `显示更多` / `Show more`，脚本会先尝试点击列表页控件，再打开固定 Tweet URL 做详情页取证。X 偶尔会让列表页控件停留在旧 DOM 状态；这不再单独阻断任务，而是记录 `parent_show_more_unsettled` 后继续走详情页兜底。详情页正文必须明确长于列表预览才会写入 `metadata.json`、`content.md` 和 `raw.txt`；仍无法证明正文已补全时才返回 typed `page_not_ready`。单次运行最多补全 2 条长帖，超过上限也会返回 typed `page_not_ready`，不会静默把 preview 当全文写出。外链显示文本末尾的 `…` 不视为长文截断。`view` 会执行同样的正文补全，但不创建单帖目录。
 
 ## Bookmarks
 
@@ -185,6 +185,8 @@ python3 scripts/adapters/x_workflow.py search download \
 
 `--filter` 可选：`live`、`top`、`user`、`image`、`video`。默认 `live`。
 
+X 搜索适合作为候选发现，不应作为企业案例的唯一取证入口。推荐先用搜索或其他搜索引擎发现 Tweet URL，再用 `tweet view/download` 读取固定链接；登录态、动态 DOM、引用帖、长帖和媒体仍可能导致正文或上下文不完整，最终结论应回到官方案例、技术博客、GitHub 或招聘/架构资料交叉验证。
+
 默认输出：
 
 ```text
@@ -240,7 +242,7 @@ python3 scripts/action_browser.py run --site x --resource timeline --intent list
 python3 scripts/action_browser.py run --site x --resource article --intent detail --item-id <timeline-id> --task-id <task> --session <session> --tab <owned-tab> --output-root <root>
 ```
 
-Timeline writes `artifacts/timeline.json`; article writes `artifacts/article.json`. Both write versioned `contract/summary.json` and `contract/progress.json`. Article detail uses a temporary tab and must verify the timeline expansion control disappeared before accepting its full-text artifact. `author bio` is outside the T3 DOM tracer and is intentionally unmapped.
+Timeline writes `artifacts/timeline.json`; article writes `artifacts/article.json`. Both write versioned `contract/summary.json` and `contract/progress.json`. Article detail uses a temporary tab and must verify usable full text from the fixed Tweet URL before accepting its artifact; a stale parent-tab expansion control is recorded as a recoverable warning rather than treated as a hard failure. `author bio` is outside the T3 DOM tracer and is intentionally unmapped.
 
 `summary.json` 是 `TweetPayload[]`，每条包含：
 
@@ -293,7 +295,7 @@ Timeline writes `artifacts/timeline.json`; article writes `artifacts/article.jso
 
 - 页面未登录或风控：停止任务，让用户在当前 Chrome 完成验证。
 - 文章详情页跳转登录：记录 `article_detail_failed`，保留原预览数据。
-- 字段缺失但仍可保存：写入 `extraction_warnings`，并汇总到 `failures.json`。
+- 字段缺失但仍可保存：写入 `extraction_warnings`；不可恢复的 warning 汇总到 `failures.json`。`parent_show_more_unsettled` 等已成功走详情页兜底的可恢复 warning 仍保留在 `summary.json`、单帖 `metadata.json` 和日志中，但不计为失败。
 - 媒体下载失败：保留 metadata 中的原始 URL，并在终端输出失败原因。
 - X DOM 变化：优先根据 `raw.txt`、`metadata.json` 和 `failures.json` 调整解析模板。
 

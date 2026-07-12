@@ -268,7 +268,7 @@ def test_show_more_click_activates_the_observed_browser_control() -> None:
     assert "button.click()" in book.calls[1][1][0]
 
 
-def test_show_more_expansion_rejects_when_parent_control_remains(monkeypatch) -> None:
+def test_show_more_expansion_falls_back_to_detail_when_parent_control_remains(monkeypatch) -> None:
     payload = x_workflow.TweetPayload(
         tweet_id="1", source_url="https://x.com/user/status/1", source_page="home",
         author_name="A", author_handle="@a", author_profile_url="", author_avatar_url="",
@@ -276,8 +276,48 @@ def test_show_more_expansion_rejects_when_parent_control_remains(monkeypatch) ->
         reply_to={}, quoted_tweet={}, media=[], links=[], card={}, article={}, metrics={}, social_context={},
         is_bookmarked=False, raw_text_lines=["preview", "显示更多"], extraction_warnings=[],
     )
+    expanded = x_workflow.TweetPayload(
+        **{**payload.__dict__, "text": "preview with the full final paragraph", "raw_text_lines": ["preview", "with the full final paragraph"]}
+    )
+
+    @contextmanager
+    def fake_tab(_book, _url):
+        yield "temporary"
+
+    monkeypatch.setattr(x_workflow, "temporary_tab", fake_tab)
+    monkeypatch.setattr(x_workflow, "wait_tab_articles", lambda *_args: None)
     monkeypatch.setattr(x_workflow, "click_show_more_for_payload", lambda *_args: True)
     monkeypatch.setattr(x_workflow, "wait_for_parent_expansion", lambda *_args: payload)
+    monkeypatch.setattr(x_workflow, "wait_for_expanded_payload", lambda *_args: expanded)
 
-    with pytest.raises(x_workflow.ShowMoreExpansionError, match="page_not_ready"):
-        x_workflow.expand_show_more_payloads(object(), [payload])
+    x_workflow.expand_show_more_payloads(object(), [payload])
+
+    assert payload.text.endswith("final paragraph")
+    assert "parent_show_more_unsettled" in payload.extraction_warnings
+
+
+def test_show_more_expansion_does_not_silently_keep_preview_after_limit() -> None:
+    payload = x_workflow.TweetPayload(
+        tweet_id="1", source_url="https://x.com/user/status/1", source_page="search",
+        author_name="A", author_handle="@a", author_profile_url="", author_avatar_url="",
+        text="preview", created_at_text="", created_at_iso="", tweet_type="tweet",
+        reply_to={}, quoted_tweet={}, media=[], links=[], card={}, article={}, metrics={}, social_context={},
+        is_bookmarked=False, raw_text_lines=["preview", "Show more"], extraction_warnings=[],
+    )
+
+    with pytest.raises(x_workflow.ShowMoreExpansionError, match="expansion limit reached"):
+        x_workflow.expand_show_more_payloads(object(), [payload], max_expansions=0)
+
+
+def test_write_summary_keeps_recovered_parent_warning_out_of_failures(tmp_path) -> None:
+    payload = x_workflow.TweetPayload(
+        tweet_id="1", source_url="https://x.com/user/status/1", source_page="search",
+        author_name="A", author_handle="@a", author_profile_url="", author_avatar_url="",
+        text="full text", created_at_text="", created_at_iso="", tweet_type="tweet",
+        reply_to={}, quoted_tweet={}, media=[], links=[], card={}, article={}, metrics={}, social_context={},
+        is_bookmarked=False, raw_text_lines=["full text"], extraction_warnings=["parent_show_more_unsettled"],
+    )
+
+    x_workflow.write_summary([payload], tmp_path, "search", "download")
+
+    assert json.loads((tmp_path / "failures.json").read_text(encoding="utf-8")) == []

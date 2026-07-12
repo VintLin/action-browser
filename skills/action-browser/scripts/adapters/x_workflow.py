@@ -41,6 +41,10 @@ BOOKMARKS_URL = "https://x.com/i/bookmarks"
 SEARCH_URL = "https://x.com/search"
 SKILL_DIR = Path(__file__).resolve().parents[2]
 ASSETS_DIR = SKILL_DIR / "assets" / "x"
+RECOVERABLE_EXTRACTION_WARNINGS = {
+    "parent_show_more_unsettled",
+    "detail_text_accepted_with_stale_show_more",
+}
 
 
 @dataclass
@@ -527,7 +531,16 @@ def click_show_more_for_payload(book: ActionBook, payload: TweetPayload) -> int:
                 )
             );
             if (!article) return false;
+            const visible = node => {{
+                if (!node) return false;
+                const rect = node.getBoundingClientRect();
+                const style = getComputedStyle(node);
+                return rect.width > 0 && rect.height > 0
+                    && style.display !== 'none' && style.visibility !== 'hidden';
+            }};
             return [...article.querySelectorAll('button, a, div[role="button"], span')].some(candidate =>
+                visible(candidate)
+                &&
                 /^(显示更多|Show more)$/i.test(normalize(candidate.innerText || candidate.textContent || candidate.getAttribute('aria-label') || ''))
             );
         }})()""",
@@ -542,14 +555,29 @@ def click_show_more_for_payload(book: ActionBook, payload: TweetPayload) -> int:
         "eval",
         f"""(() => {{
             const statusId = {json.dumps(payload.tweet_id)};
+            const normalize = value => String(value || '').replace(/\\s+/g, ' ').trim();
             const article = [...document.querySelectorAll('article[data-testid="tweet"], article')].find(node =>
                 [...node.querySelectorAll('a[href*="/status/"]')].some(anchor =>
                     String(anchor.getAttribute('href') || '').includes(`/status/${{statusId}}`)
                 )
             );
-            const button = article?.querySelector('button[data-testid="tweet-text-show-more-link"]');
-            if (!button) return false;
-            button.click();
+            if (!article) return false;
+            const visible = node => {{
+                if (!node) return false;
+                const rect = node.getBoundingClientRect();
+                const style = getComputedStyle(node);
+                return rect.width > 0 && rect.height > 0
+                    && style.display !== 'none' && style.visibility !== 'hidden';
+            }};
+            const button = article.querySelector('button[data-testid="tweet-text-show-more-link"]')
+                || [...article.querySelectorAll('button, a, div[role="button"], span')].find(node =>
+                    visible(node)
+                    && /^(显示更多|Show more)$/i.test(normalize(node.innerText || node.textContent || node.getAttribute('aria-label') || ''))
+                );
+            if (!button || !visible(button)) return false;
+            const target = button.closest('button, a, div[role="button"]') || button;
+            if (target === button) button.click();
+            else target.click();
             return true;
         }})()""",
         timeout=10.0,
@@ -881,8 +909,19 @@ def enrich_article_payloads(book: ActionBook, payloads: list[TweetPayload]) -> N
 
 
 def needs_show_more_expansion(payload: TweetPayload) -> bool:
+    if "detail_text_accepted_with_stale_show_more" in payload.extraction_warnings:
+        return False
     lines = [str(line) for line in payload.raw_text_lines or []]
     return any(line.strip() in {"显示更多", "Show more"} for line in lines)
+
+
+def has_usable_expanded_text(
+    payload: TweetPayload,
+    *,
+    baseline_text_length: int,
+) -> bool:
+    text = str(payload.text or "").strip()
+    return bool(text) and len(text) > baseline_text_length
 
 
 class ShowMoreExpansionError(RuntimeError):
@@ -917,22 +956,28 @@ def merge_expanded_payload(original: TweetPayload, expanded: TweetPayload) -> No
 
 def expand_show_more_payloads(book: ActionBook, payloads: list[TweetPayload], *, max_expansions: int = 2) -> None:
     expanded_count = 0
+    expansion_limit_urls: list[str] = []
     for index, payload in enumerate(payloads, start=1):
         if not needs_show_more_expansion(payload):
             continue
         if expanded_count >= max_expansions:
-            break
+            expansion_limit_urls.append(payload.source_url or payload.tweet_id)
+            continue
         if not payload.source_url:
             raise ShowMoreExpansionError("selector_failed: show more post has no source URL")
         log(f"展开显示更多: {index}/{len(payloads)} {payload.source_url}")
         try:
+            baseline_text_length = len(str(payload.text or "").strip())
             clicked = click_show_more_for_payload(book, payload)
             if not clicked:
                 raise ShowMoreExpansionError("selector_failed: show more control was not clicked")
             parent_expanded = wait_for_parent_expansion(book, payload)
-            if parent_expanded is None or needs_show_more_expansion(parent_expanded):
-                raise ShowMoreExpansionError("page_not_ready: parent show more control did not disappear")
-            merge_expanded_payload(payload, parent_expanded)
+            parent_ready = bool(parent_expanded and not needs_show_more_expansion(parent_expanded))
+            if parent_ready:
+                merge_expanded_payload(payload, parent_expanded)
+            else:
+                payload.extraction_warnings.append("parent_show_more_unsettled")
+                log("父级显示更多状态未确认，转入 Tweet 详情页兜底: " + payload.source_url)
             with temporary_tab(book, payload.source_url) as tab_id:
                 wait_tab_articles(book, tab_id)
                 expanded = wait_for_expanded_payload(book, payload, tab_id)
@@ -943,15 +988,27 @@ def expand_show_more_payloads(book: ActionBook, payloads: list[TweetPayload], *,
                         expanded = candidates[0]
                 if expanded is None:
                     raise ShowMoreExpansionError("page_not_ready: expanded post was not found")
+                detail_text_usable = has_usable_expanded_text(
+                    expanded,
+                    baseline_text_length=baseline_text_length,
+                )
                 merge_expanded_payload(payload, expanded)
-                if needs_show_more_expansion(payload) or len(payload.text) <= 0:
+                if not detail_text_usable:
                     raise ShowMoreExpansionError("page_not_ready: expanded text is still unavailable")
+                if needs_show_more_expansion(payload):
+                    payload.extraction_warnings.append("detail_text_accepted_with_stale_show_more")
                 expanded_count += 1
                 log(f"详情正文已补全: clicked_show_more={bool(clicked)} chars={len(payload.text)}")
         except ShowMoreExpansionError:
             raise
         except Exception as exc:  # noqa: BLE001
             raise ShowMoreExpansionError(f"selector_failed: show more expansion failed: {exc}") from exc
+    if expansion_limit_urls:
+        urls = ", ".join(expansion_limit_urls[:3])
+        suffix = "..." if len(expansion_limit_urls) > 3 else ""
+        raise ShowMoreExpansionError(
+            f"page_not_ready: expansion limit reached; preview not accepted for {urls}{suffix}"
+        )
 
 
 def collect_tweets(book: ActionBook, source: str, count: int, max_scrolls: int) -> list[TweetPayload]:
@@ -1269,7 +1326,10 @@ def write_summary(payloads: list[TweetPayload], output_dir: Path, source: str, a
             "raw_text_preview": "\n".join(payload.raw_text_lines[:12]),
         }
         for index, payload in enumerate(payloads, start=1)
-        if payload.extraction_warnings
+        if any(
+            warning not in RECOVERABLE_EXTRACTION_WARNINGS
+            for warning in payload.extraction_warnings
+        )
     ]
     (output_dir / "failures.json").write_text(json.dumps(failures, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     type_counts: dict[str, int] = {}
