@@ -21,6 +21,7 @@ from scripts.workflow_runtime import add_workflow_args, attach_workflow, evaluat
 
 
 GOOGLE_SEARCH = "https://www.google.com/search"
+GOOGLE_HOME = "https://www.google.com/"
 GOOGLE_NEWS = "https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en"
 GOOGLE_SUGGEST = "https://suggestqueries.google.com/complete/search?client=firefox"
 GOOGLE_TRENDS = "https://trends.google.com/trending/rss?geo=US"
@@ -134,8 +135,20 @@ def load_search_browser(args: argparse.Namespace, count: int) -> ReadResult:
         if "chrome-extension://" not in str(exc):
             raise
         raise FetchError("needs_user_action", str(exc), retryable=False) from exc
-    url = GOOGLE_SEARCH + "?" + urllib.parse.urlencode({"q": args.query, "num": count, "hl": "en"})
-    book.goto(url)
+    book.goto(GOOGLE_HOME)
+    wait_until_stable(book, timeout_secs=12)
+    # ponytail: Google currently exposes the search box as textarea/input[name=q]; keep only these two selectors.
+    filled = False
+    for selector in ("textarea[name='q']", "input[name='q']"):
+        try:
+            book.browser("fill", selector, args.query, timeout=20.0)
+            filled = True
+            break
+        except RuntimeError:
+            continue
+    if not filled:
+        raise FetchError("field_gap", "Google Search page has no usable search input", retryable=False)
+    book.browser("press", "Enter", timeout=20.0)
     wait_until_stable(book, timeout_secs=12)
     payload = evaluate(
         book,

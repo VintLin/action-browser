@@ -14,7 +14,7 @@
   },
   "smokes": [
     {"capability_id": "google.news.view.read", "command": "news", "status": "completed", "strategy": "public_http", "count": 1, "artifact_schema": "site-artifact-v1"},
-    {"capability_id": "google.search.view.read", "command": "search", "status": "completed", "strategy": "public_http -> dom", "fallback_used": true, "fallback_reason": "public HTTP returned SG_REL retry interstitial", "count": 1, "artifact_schema": "site-artifact-v1"},
+    {"capability_id": "google.search.view.read", "command": "search", "status": "completed", "strategy": "public_http -> dom_ui", "fallback_used": true, "fallback_reason": "public HTTP returned SG_REL retry interstitial; ActionBook filled search box and pressed Enter", "count": 3, "artifact_schema": "site-artifact-v1"},
     {"capability_id": "google.suggest.view.read", "command": "suggest", "status": "completed", "strategy": "public_http", "count": 1, "artifact_schema": "site-artifact-v1"},
     {"capability_id": "google.trends.view.read", "command": "trends", "status": "completed", "strategy": "public_http", "count": 1, "artifact_schema": "site-artifact-v1"},
     {"capability_id": "stackoverflow.bounties.view.read", "command": "bounties", "status": "completed", "strategy": "public_http", "count": 1, "artifact_schema": "site-artifact-v1"},
@@ -43,6 +43,6 @@
   "result": "26/26 canonical read smoke runs completed",
   "notes": [
     "Stack Overflow read and related smoke used question 231767 returned by the live public search endpoint.",
-    "No credentials, browser cookies, private data, or write operations were used."
+    "No credentials were entered; the Google UI fallback reused the existing browser session only for public Search, with no private-data or write operation."
   ]
 }

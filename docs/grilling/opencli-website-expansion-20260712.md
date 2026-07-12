@@ -31,9 +31,9 @@
 - 当前站点索引位于 `skills/action-browser/SKILL.md`，站点文档和 workflow 分别位于 `references/adapters/<site>.md` 与 `scripts/adapters/<site>_workflow.py`。
 - 项目现有 ADR 已规定只读优先、用户门禁、单一 Result Envelope、Capability Catalog、真实 smoke 和按站点并行边界。
 - 本次决策沿用 ADR 0001、0002、0005、0008、0009、0010、0012、0018、0020、0021，不新增与其冲突的架构规则。
-- OpenCLI 远端已刷新到 `c1ad69676f220b5ef382bbf4c387a2486daf8355`；Batch 1 已完成 26/26 smoke，GitHub `trending` 与 `whoami` 已完成，LinkedIn 21 个 read capability 仍为 `waiting_user`。
+- OpenCLI 远端已刷新到 `c1ad69676f220b5ef382bbf4c387a2486daf8355`；Batch 1 已完成 26/26 smoke，Google Search 的 ActionBook 模拟填写/提交流程已通过，GitHub `trending` 与 `whoami` 已完成，LinkedIn `whoami` 已完成。
 
 ## 实现后的待办
 
-- 恢复 ActionBook/Chrome 会话后，执行 GitHub `whoami` 与 LinkedIn 21 个 read capability 的 assisted smoke。
+- 恢复 ActionBook/Chrome 会话后，执行 LinkedIn 剩余 20 个 read capability 的 assisted smoke。
 - 为六个候选站点补齐以参考字段为依据的 semantic catalog records，再将已满足闭环的站点从 `Expansion candidates` 提升为当前 Supported Website。

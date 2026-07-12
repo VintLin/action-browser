@@ -14,7 +14,7 @@ python3 scripts/adapters/google_workflow.py suggest --query "OpenAI" --count 10
 python3 scripts/adapters/google_workflow.py trends --count 10
 ```
 
-这些能力优先使用公开 HTTP/RSS，默认不获取浏览器 tab。Google Search 出现 SG_REL retry interstitial 时，只有显式提供已领取的 owned tab 才使用 DOM fallback；验证码、访问限制或无法解释的页面仍立即失败，不绕过风控。
+这些能力优先使用公开 HTTP/RSS，默认不获取浏览器 tab。Google Search 出现 SG_REL retry interstitial 时，只有显式提供已领取的 owned tab 才进入模拟操作 fallback：打开 Google 首页、填写搜索框并按 Enter，再读取结果页；验证码、访问限制或无法解释的页面仍立即失败，不绕过风控。
 
 ## 输出
 

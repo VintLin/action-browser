@@ -35,8 +35,8 @@ Total: 49 read capabilities. OpenCLI write commands, login-assistance writes, an
 
 ## Current delivery state
 
-- Batch 1 has 26/26 smoke runs recorded per capability in `catalog/evidence/opencli-website-expansion-batch1-20260712.json`; the latest Google Search canary used the explicit owned-tab DOM fallback after a public HTTP `SG_REL` retry interstitial.
-- GitHub Trending and `whoami` have completed smoke; all LinkedIn capabilities remain `waiting_user` because the owned tab is at the login page and the current ActionBook extension reports a cross-extension attach error. LinkedIn semantic parity is intentionally not promoted from its visible-page artifact until assisted smoke is available.
+- Batch 1 has 26/26 smoke runs recorded per capability in `catalog/evidence/opencli-website-expansion-batch1-20260712.json`; Google Search has also passed a real simulated UI flow: fill the search box, press Enter, and read the result page after the public HTTP `SG_REL` retry interstitial.
+- GitHub Trending and `whoami` have completed smoke; LinkedIn `whoami` now passes after login, while the other LinkedIn capabilities remain `waiting_user` pending assisted semantic smoke. LinkedIn semantic parity is intentionally not promoted from its visible-page artifact until that smoke is available.
 - The six adapters are listed as `Expansion candidates` in `skills/action-browser/SKILL.md`; the current-site catalog remains the verified 14-site catalog until the candidate capabilities have their semantic fields, focused fixtures, and independent smoke evidence.
 
 ## Acceptance

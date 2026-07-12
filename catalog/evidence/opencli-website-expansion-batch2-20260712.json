@@ -31,7 +31,7 @@
       "services-read": "waiting_user",
       "thread-snapshot": "waiting_user",
       "timeline": "waiting_user",
-      "whoami": "waiting_user"
+      "whoami": "completed"
     }
   },
   "smokes": [
@@ -57,16 +57,16 @@
     {"site": "linkedin", "resource": "services-read", "status": "waiting_user", "strategy": "dom", "count": 0, "artifact_schema": "adapter-contract-v1"},
     {"site": "linkedin", "resource": "thread-snapshot", "status": "waiting_user", "strategy": "dom", "count": 0, "artifact_schema": "adapter-contract-v1"},
     {"site": "linkedin", "resource": "timeline", "status": "waiting_user", "strategy": "dom", "count": 0, "artifact_schema": "adapter-contract-v1"},
-    {"site": "linkedin", "resource": "whoami", "status": "waiting_user", "strategy": "dom", "count": 0, "artifact_schema": "adapter-contract-v1"}
+    {"site": "linkedin", "resource": "whoami", "status": "completed", "strategy": "dom", "count": 1, "artifact_schema": "site-artifact-v1"}
   ],
   "blocker": {
     "reason_code": "needs_user_action",
-    "message": "LinkedIn is at the login page and ActionBook cannot attach the owned tab because it reports a different chrome-extension URL.",
-    "next_step": "Use the active ActionBook extension/profile, complete LinkedIn login if needed, then rerun the assisted smoke window."
+    "message": "LinkedIn whoami smoke passed after login; the remaining 20 read capabilities still need assisted semantic smoke.",
+    "next_step": "Run the remaining LinkedIn read resources with the same owned tab and verify their semantic fields."
   },
   "notes": [
     "GitHub Trending has a completed public HTTP smoke.",
     "No credentials were entered and no write operation was attempted.",
-    "LinkedIn command surface and focused URL/contract tests pass, but semantic field parity and real smoke remain unverified."
+    "LinkedIn whoami and focused URL/contract tests pass, but the remaining semantic field parity and real smoke remain unverified."
   ]
 }

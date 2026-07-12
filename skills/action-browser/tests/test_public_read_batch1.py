@@ -40,14 +40,24 @@ def test_google_search_browser_fallback_preserves_dom_strategy(monkeypatch):
     args = argparse.Namespace(query="OpenAI", count=1, task_id="google", session="s", tab="t")
     monkeypatch.setattr(google_workflow, "load_search", lambda *args, **kwargs: (_ for _ in ()).throw(FetchError("risk_control", "retry")))
     class FakeBook:
+        def __init__(self):
+            self.actions = []
+
         def goto(self, _url):
             return None
-    monkeypatch.setattr(google_workflow, "attach_workflow", lambda *args, **kwargs: FakeBook())
+
+        def browser(self, command, *args, **kwargs):
+            self.actions.append((command, *args))
+            return None
+
+    fake_book = FakeBook()
+    monkeypatch.setattr(google_workflow, "attach_workflow", lambda *args, **kwargs: fake_book)
     monkeypatch.setattr(google_workflow, "wait_until_stable", lambda *args, **kwargs: {})
     monkeypatch.setattr(google_workflow, "evaluate", lambda *args, **kwargs: {"url": "https://www.google.com/search?q=OpenAI", "title": "OpenAI - Google Search", "results": [{"title": "Example", "url": "https://example.com"}]})
     result = google_workflow.load_search_or_browser(args)
     assert result.strategy_used == "dom"
     assert result.records[0]["url"] == "https://example.com"
+    assert fake_book.actions == [("fill", "textarea[name='q']", "OpenAI"), ("press", "Enter")]
 
 
 def test_stackoverflow_loaders_map_api_items(monkeypatch):
