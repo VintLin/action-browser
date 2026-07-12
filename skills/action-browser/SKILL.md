@@ -11,7 +11,7 @@ Use ActionBook for real browser pages. Prefer `extension` mode when the task nee
 
 - First-run setup is not optional for most adapters: no API key is needed, use `actionbook-extension-v0.5.0.zip`, and ask the user to install the unpacked extension in `chrome://extensions/`.
 - If setup, extension, daemon, bridge, session, or tab state is unclear, read `references/initialization.md` or `references/status-check.md` before site work.
-- Do not steal foreground focus by default. Never `activate` Chrome, `open -a` Chrome repeatedly, or create/raise a visible Chrome window unless the task explicitly requires user-visible interaction or the user confirms it. Session repair must prefer background-safe checks first.
+- Do not steal foreground focus by default. Reuse an existing Chrome process/window without repeatedly activating it. If a live browser task has no Chrome process or browser window, one cold-start launch/window creation is allowed; session repair must still prefer background-safe checks first.
 - If a supported site or capability is named, read `references/adapters/<site>.md` before running commands.
 - If a supported site's UI drift breaks the documented workflow, or an unsupported site is likely to be reused, the agent may update this skill's adapter script and reference docs. Read `references/adapter-authoring.md` first and keep the patch scoped to observed site behavior.
 - Treat `session` as the browser container and `tab` as the task page. Give every independent task a stable task id and acquire one owned tab with `acquire-tab`; tasks may run concurrently in separate tabs of the same healthy session.

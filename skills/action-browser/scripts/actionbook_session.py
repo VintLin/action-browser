@@ -39,7 +39,7 @@ except ModuleNotFoundError:  # pragma: no cover - exercised when imported as scr
 
 DEFAULT_SESSION = "task-1"
 CHROME_APP_NAME = "Google Chrome"
-DEFAULT_ALLOW_VISIBLE_RECOVERY = False
+DEFAULT_ALLOW_VISIBLE_RECOVERY = True
 TASK_TABS_SCHEMA_VERSION = 1
 
 CHROME_CLOSE_EXACT_TAB_SCRIPT = r"""
@@ -1069,7 +1069,8 @@ def build_parser() -> argparse.ArgumentParser:
     ensure.add_argument(
         "--allow-visible-recovery",
         action="store_true",
-        help="Allow helper recovery to launch Chrome or create a visible Chrome window when needed",
+        default=DEFAULT_ALLOW_VISIBLE_RECOVERY,
+        help="Allow cold-start recovery to launch Chrome or create one visible window (default)",
     )
     ensure.add_argument("--json", action="store_true", help="Print final session state as JSON")
 
@@ -1094,7 +1095,8 @@ def build_parser() -> argparse.ArgumentParser:
     new_tab.add_argument(
         "--allow-visible-recovery",
         action="store_true",
-        help="Allow helper recovery to create a visible Chrome window when the session has no current window",
+        default=DEFAULT_ALLOW_VISIBLE_RECOVERY,
+        help="Allow cold-start recovery to create one visible Chrome window (default)",
     )
     new_tab.add_argument("--json", action="store_true", help="Print the new tab state as JSON")
 
@@ -1120,7 +1122,8 @@ def build_parser() -> argparse.ArgumentParser:
     acquire_tab.add_argument(
         "--allow-visible-recovery",
         action="store_true",
-        help="Allow helper recovery to launch Chrome or create a visible Chrome window when needed",
+        default=DEFAULT_ALLOW_VISIBLE_RECOVERY,
+        help="Allow cold-start recovery to launch Chrome or create one visible window (default)",
     )
     acquire_tab.add_argument("--json", action="store_true", help="Print the task tab record as JSON")
 

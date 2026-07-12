@@ -252,8 +252,8 @@ def test_start_retries_after_extension_connectivity_delay(monkeypatch) -> None:
     assert waits == [12.0]
 
 
-def test_start_does_not_launch_visible_chrome_by_default(monkeypatch) -> None:
-    book = ActionBookSession("s1", allow_adopt=False)
+def test_start_does_not_launch_visible_chrome_when_recovery_is_disabled(monkeypatch) -> None:
+    book = ActionBookSession("s1", allow_adopt=False, allow_visible_recovery=False)
 
     monkeypatch.setattr(actionbook_session, "is_chrome_running", lambda: False)
 
@@ -433,7 +433,7 @@ def test_current_actionbook_extension_hint_reports_selected_profile_broken_path(
 
 
 def test_start_new_session_retries_after_creating_window(monkeypatch) -> None:
-    book = ActionBookSession("s1", allow_visible_recovery=True)
+    book = ActionBookSession("s1")
     calls = {"count": 0}
 
     monkeypatch.setattr(actionbook_session, "sleep_between", lambda *args, **kwargs: None)
