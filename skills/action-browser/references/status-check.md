@@ -276,6 +276,22 @@ actionbook browser start --session task-check --open-url "about:blank" --json
 `browser start` / `actionbook_session.py ensure` 返回成功，但下一条命令立刻 `SESSION_NOT_FOUND`、`list-tabs: []`、`EXTENSION_NOT_CONNECTED`、`bridge: not_listening`，或 `extension_connected: false`：
 
 - 不要把第一次成功当成可用 session；先停止真实业务发送或下载。
+- 先判断失败是否只发生在外层 exec 调用结束之后：如果同一个脚本或同一个持久 shell 内的 `acquire -> status -> title/snapshot` 全部成功，而下一次顶层 exec 才出现 `SESSION_NOT_FOUND`，根因是宿主回收了 ActionBook daemon 子进程，不是扩展损坏。`actionbook_diagnose.py` 的 fresh-shell 检查仍共享诊断脚本父进程，不能模拟父进程退出。
+- 预期无需用户交互即可完成的单个 workflow 使用原子运行器，让 acquire、子 workflow 和 release 保持同一父进程：
+
+```bash
+python3 scripts/actionbook_task.py \
+  --task task-check \
+  --session shared-browser \
+  --url "https://example.com" \
+  --adopt-running-session \
+  --cwd "$PWD" \
+  -- \
+  python3 scripts/adapters/<site>_workflow.py ...
+```
+
+- 原子运行器会在子命令结束后释放 tab。如果多个独立命令必须复用同一个 session/tab，或可能出现 User Gate（登录、验证码、MFA、风控），启动一个持久 PTY；在 PTY 内完成 `acquire-tab`、第二条 CLI 验证和后续页面命令，通过 stdin 持续发送命令，最后在退出 PTY 前 `release-tab`。不要在不同的一次性 exec 调用间传递 session/tab。
+- 只有在同一父进程或持久 PTY 内也复现连接丢失时，才继续下面的 extension / daemon 修复流程。
 - 先停本任务的 tracked run，不要直接关 Chrome 登录态：
 
 ```bash

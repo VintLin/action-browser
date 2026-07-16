@@ -41,3 +41,21 @@ def test_workflows_use_the_shared_runtime_without_legacy_bootstrap() -> None:
         assert "scripts.adapter_runtime" not in source, path
         assert "prepare_task_book" not in source, path
         assert "add_session_tab_args" not in source, path
+
+
+def test_skill_documents_atomic_runner_for_reaped_daemons() -> None:
+    skill_text = (ROOT_DIR / "SKILL.md").read_text(encoding="utf-8")
+    status_text = (ROOT_DIR / "references" / "status-check.md").read_text(encoding="utf-8")
+    lifecycle_text = (ROOT_DIR / "references" / "task-lifecycle.md").read_text(encoding="utf-8")
+
+    for text in (skill_text, status_text, lifecycle_text):
+        assert "scripts/actionbook_task.py" in text
+    for text in (skill_text, status_text):
+        assert "SESSION_NOT_FOUND" in text
+        assert "持久 PTY" in text
+        assert "可能出现 User Gate" in text
+
+
+def test_extracted_extension_directory_is_ignored() -> None:
+    gitignore = (ROOT_DIR.parents[1] / ".gitignore").read_text(encoding="utf-8")
+    assert "/skills/action-browser/actionbook-extension-v0.5.0/" in gitignore

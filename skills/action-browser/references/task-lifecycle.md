@@ -139,6 +139,7 @@ Example:
 
 - In extension mode first pass, the scheduler should prefer one stable browser session and multiple leased tabs inside it, but only after session persistence has been proven across commands.
 - Scheduler and future executors should acquire and release session/tab state through `scripts/actionbook_session.py`, not by open-coding raw `browser start/new-tab/list-tabs/close-tab` calls in control-plane code.
+- Executors whose outer command runner reaps daemon children must launch one workflow through `scripts/actionbook_task.py`, which keeps acquire, workflow execution, and release in one parent-process lifetime. Such executors must not persist a lease across separate ephemeral exec calls; use a persistent executor process when a task genuinely needs a long-lived tab.
 - Scheduler-managed tasks must request a fresh tab and must not adopt an
   arbitrary existing tab.
 - One `running` task owns exactly one `lease_id` and one `tab_id`.
