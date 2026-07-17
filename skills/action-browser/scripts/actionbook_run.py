@@ -198,12 +198,34 @@ def stop_one(path: Path, grace_seconds: float) -> dict[str, Any]:
     if status in TERMINAL_STATUSES or not process_alive(pid):
         return {"run_id": state.get("run_id") or path.stem, "status": state.get("status"), "pid": pid, "pgid": pgid}
     result = terminate_group(pgid, grace_seconds)
-    state["status"] = "stopped"
-    state["exit_code"] = -signal.SIGKILL if result == "killed" else -signal.SIGTERM
-    state["stop_result"] = result
+    latest = load_state(path)
+    graceful_stop_codes = {-signal.SIGINT, -signal.SIGTERM, 130, 143}
+    if (
+        isinstance(latest, dict)
+        and latest.get("status") == "stopped"
+        and latest.get("exit_code") in graceful_stop_codes
+    ):
+        state = latest
+        state["stop_result"] = "terminated"
+        if result not in {"terminated", "not_found"}:
+            state["descendant_stop_result"] = result
+    else:
+        state["status"] = "stopped"
+        state["exit_code"] = -signal.SIGKILL if result == "killed" else -signal.SIGTERM
+        state["stop_result"] = result
     state["stopped_at"] = utc_now()
     write_state(path, state)
-    return {"run_id": state.get("run_id") or path.stem, "status": "stopped", "pid": pid, "pgid": pgid, "stop_result": result}
+    response = {
+        "run_id": state.get("run_id") or path.stem,
+        "status": "stopped",
+        "pid": pid,
+        "pgid": pgid,
+        "exit_code": state.get("exit_code"),
+        "stop_result": state.get("stop_result"),
+    }
+    if state.get("descendant_stop_result"):
+        response["descendant_stop_result"] = state["descendant_stop_result"]
+    return response
 
 
 def stop_command(args: argparse.Namespace) -> int:

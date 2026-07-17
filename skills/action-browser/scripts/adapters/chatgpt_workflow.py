@@ -19,7 +19,7 @@ import subprocess
 import sys
 import time
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 if __package__ in {None, ""}:
@@ -29,6 +29,7 @@ if __package__ in {None, ""}:
 from typing import Any
 
 from scripts.actionbook_interrupts import install_interrupt_handlers
+from scripts.foundation_contracts import validate_adapter_contract, validate_result_envelope
 from scripts.workflow_runtime import add_workflow_args, attach_workflow, evaluate, wait_until_stable, write_json
 from scripts.actionbook_session import ActionBookSession as ActionBook
 from scripts.script_common import log
@@ -42,6 +43,8 @@ SKILL_DIR = Path(__file__).resolve().parents[2]
 ASSETS_DIR = SKILL_DIR / "assets" / "chatgpt"
 ASK_CAPABILITY_ID = "chatgpt.prompt.message.write"
 BATCH_ASK_CAPABILITY_ID = "chatgpt.prompt-batch.message.write"
+REFERENCE_BASELINE = "c1ad69676f220b5ef382bbf4c387a2486daf8355"
+EXECUTION_BASELINE = "d9f2c639a454b72121c4189c94601b05ddae2655"
 
 
 @dataclass(frozen=True)
@@ -111,10 +114,70 @@ def require_read_back(conversation_url: str | None) -> str:
     return conversation_url
 
 
-def emit_preview(preview: dict[str, object], output_dir: Path) -> int:
-    output_dir.mkdir(parents=True, exist_ok=True)
-    write_json(output_dir / "preview.json", preview)
-    print(json.dumps({"status": "preview", "preview_hash": preview["preview_hash"], "preview": preview}, ensure_ascii=False))
+def emit_preview(preview: dict[str, object], output_dir: Path, *, task_id: str, command: str) -> int:
+    started_at = datetime.now(timezone.utc).isoformat()
+    finished_at = datetime.now(timezone.utc).isoformat()
+    capability_id = str(preview["capability_id"])
+    items = list(preview.get("items") or [])
+    artifact = {"schema_version": 1, **preview}
+    artifact_ref = "artifacts/preview.json"
+    contract_ref = "contract/summary.json"
+    contract = {
+        "schema_version": 1,
+        "run_id": task_id,
+        "task_id": task_id,
+        "reference_baseline": REFERENCE_BASELINE,
+        "execution_baseline": EXECUTION_BASELINE,
+        "capability_id": capability_id,
+        "site": "chatgpt",
+        "status": "completed",
+        "stage": "completed",
+        "result_quality": "full",
+        "requested_count": len(items),
+        "collected_count": len(items),
+        "access": "local",
+        "strategy_used": "dry_run",
+        "fallback_reason": None,
+        "limits": {"max_actions": int(preview["max_actions"])},
+        "artifacts": [artifact_ref],
+        "warnings": [],
+        "failure": None,
+        "progress": {
+            "status": "completed",
+            "completed": len(items),
+            "requested": len(items),
+            "last_url": "",
+            "last_title": "",
+        },
+        "started_at": started_at,
+        "updated_at": finished_at,
+        "finished_at": finished_at,
+        "ok": True,
+        "needs_user_action": False,
+        "reason_code": None,
+    }
+    envelope = {
+        "schema_version": 1,
+        "run_id": task_id,
+        "task_id": task_id,
+        "capability_id": capability_id,
+        "site": "chatgpt",
+        "command": command,
+        "status": "completed",
+        "result_quality": "full",
+        "contract_ref": contract_ref,
+        "artifact_refs": [artifact_ref],
+        "strategy_used": "dry_run",
+        "fallback_reason": None,
+        "failure": None,
+        "started_at": started_at,
+        "finished_at": finished_at,
+    }
+    validate_adapter_contract(contract)
+    validate_result_envelope(envelope)
+    write_json(output_dir / artifact_ref, artifact)
+    write_json(output_dir / contract_ref, contract)
+    print(json.dumps(envelope, ensure_ascii=False))
     return 0
 def sanitize_name(value: str, fallback: str = "conversation", max_length: int = 90) -> str:
     cleaned = re.sub(r"[^\w\u4e00-\u9fff.-]+", "-", value or "").strip("._-")
@@ -1395,7 +1458,12 @@ def run_ask(args: argparse.Namespace) -> int:
         max_actions=1,
     )
     if not args.execute:
-        return emit_preview(preview, output_dir)
+        return emit_preview(
+            preview,
+            output_dir,
+            task_id=str(args.task_id or "chatgpt-ask-preview"),
+            command="ask",
+        )
     try:
         require_write_approval(True, args.preview_hash, str(preview["preview_hash"]))
     except WriteSafetyError as error:
@@ -1443,7 +1511,12 @@ def run_batch_ask(args: argparse.Namespace) -> int:
         max_actions=args.max_actions,
     )
     if not args.execute:
-        return emit_preview(preview, output_dir)
+        return emit_preview(
+            preview,
+            output_dir,
+            task_id=str(args.task_id or "chatgpt-batch-ask-preview"),
+            command="batch-ask",
+        )
     try:
         require_write_approval(True, args.preview_hash, str(preview["preview_hash"]))
     except WriteSafetyError as error:

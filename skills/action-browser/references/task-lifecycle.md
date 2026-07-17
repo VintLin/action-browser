@@ -73,6 +73,15 @@ Completed tasks may still be partial:
 }
 ```
 
+## Tracked Run Stop Results
+
+`actionbook_run.py stop` records the primary workflow outcome separately from
+residual process-group cleanup. If the workflow handles SIGTERM and exits with
+130/143, the run remains `stopped` with that exit code and
+`stop_result: terminated`. If a daemon or other descendant still needs
+SIGKILL, record that detail as `descendant_stop_result: killed`; do not replace
+the workflow's graceful exit with `-9`.
+
 ## Stages
 
 Stages are progress hints, not a second status system:

@@ -22,6 +22,7 @@ from scripts.adapters.chatgpt_workflow import (
     write_checkpoint,
     submission_record,
 )
+from scripts.foundation_contracts import validate_adapter_contract, validate_result_envelope
 
 
 def test_submission_record_tracks_new_chat_defaults() -> None:
@@ -69,9 +70,13 @@ def test_ask_defaults_to_dry_run_without_attaching_a_browser(tmp_path: Path, mon
     assert chatgpt_workflow.main(["ask", "--title", "T1", "--question", "Draft", "--output-dir", str(tmp_path)]) == 0
 
     preview = json.loads(capsys.readouterr().out)
+    validate_result_envelope(preview)
     assert preview["status"] == "completed"
     assert preview["capability_id"] == "chatgpt.prompt.message.write"
     assert preview["contract_ref"] == "contract/summary.json"
+    contract = json.loads((tmp_path / "contract" / "summary.json").read_text(encoding="utf-8"))
+    validate_adapter_contract(contract)
+    assert contract["strategy_used"] == "dry_run"
     artifact = json.loads((tmp_path / "artifacts" / "preview.json").read_text(encoding="utf-8"))
     assert artifact["items"][0]["question"] == {"length": 5}
     assert artifact["preview_hash"]

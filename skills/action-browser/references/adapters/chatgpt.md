@@ -29,23 +29,31 @@ clipboard does not change but the latest assistant message DOM text is readable,
 
 ## Commands
 
-Ask one question and record the submitted conversation URL:
+Preview one question without changing ChatGPT:
 
 ```bash
 python3 scripts/adapters/chatgpt_workflow.py ask \
   --title "Q13：示例问题" \
   --question "这里是问题正文" \
-  --require-web-search
+  --require-web-search \
+  --output-dir assets/chatgpt/runs/q13-preview
 ```
 
-Ask many questions from JSONL or JSON:
+Preview many questions from JSONL or JSON:
 
 ```bash
 python3 scripts/adapters/chatgpt_workflow.py batch-ask \
   --tasks-file /path/to/tasks.jsonl \
   --require-web-search \
+  --max-actions 10 \
   --delay 60
 ```
+
+Both commands default to dry-run and write a Result Envelope,
+`contract/summary.json`, and `artifacts/preview.json`. Read the Preview Hash
+from the artifact. A real message write additionally requires explicit
+`--execute --preview-hash <hash>` with the same inputs; changing any material
+input invalidates the hash.
 
 `batch-ask` defaults to a 60 second delay between questions. Increase
 `--delay` when ChatGPT shows rate limits or temporary access restrictions.
@@ -90,7 +98,8 @@ python3 scripts/actionbook_run.py run \
   python3 scripts/adapters/chatgpt_workflow.py export --limit 20
 ```
 
-Use the same wrapper for `batch-ask` because it sends multiple real prompts:
+Use the same wrapper for an explicitly approved real `batch-ask` because it
+sends multiple prompts:
 
 ```bash
 python3 scripts/actionbook_run.py run \
@@ -99,6 +108,9 @@ python3 scripts/actionbook_run.py run \
   -- \
   python3 scripts/adapters/chatgpt_workflow.py batch-ask \
     --tasks-file /path/to/tasks.jsonl \
+    --max-actions 10 \
+    --execute \
+    --preview-hash <hash> \
     --delay 60
 ```
 
@@ -126,7 +138,15 @@ Markdown files.
 
 ## Output
 
-Default ask / batch-ask output:
+Default dry-run output:
+
+```text
+assets/chatgpt/runs/yyyyMMdd-HHmmss/
+  contract/summary.json
+  artifacts/preview.json
+```
+
+Explicitly executed ask / batch-ask output:
 
 ```text
 assets/chatgpt/runs/yyyyMMdd-HHmmss/
