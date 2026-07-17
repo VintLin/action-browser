@@ -17,7 +17,7 @@ python3 scripts/actionbook_session.py acquire-tab \
 
 默认规则：
 
-- 任务流程里的 session/tab 生命周期统一走 `acquire-tab` / `list-task-tabs` / `release-tab`
+- 任务流程里的 session/tab 生命周期统一走 `acquire-tab` / `list-owned-tabs` / `release-tab`
 - 原生 `actionbook browser start/new-tab/list-tabs/close-tab` 只用于诊断、对照实验、或 helper 自己的底层实现排查
 
 任务完成后释放；只有登录、验证码、MFA 等必须保留原 tab 的用户操作可以暂缓：
@@ -240,7 +240,7 @@ python3 scripts/actionbook_session.py acquire-tab \
   --url "https://example.com" \
   --adopt-running-session \
   --json
-python3 scripts/actionbook_session.py list-task-tabs --json
+python3 scripts/actionbook_session.py list-owned-tabs --json
 ```
 
 这里不要先写死 `ACTIONBOOK_TAB_ID=t1`。从 `acquire-tab` 返回值取得真实 session/tab，并在后续 workflow 显式传入。任务结束后用 task id 释放，不要直接关闭未知 tab。

@@ -15,8 +15,10 @@ if __package__ in {None, ""}:
 
 from scripts.actionbook_interrupts import install_interrupt_handlers
 from scripts.actionbook_session import ActionBookSession
+from scripts.actionbook_errors import ActionBookFailure, has_failure_code
 from scripts.adapters.public_read_runtime import FetchError, ReadResult, clean_text, emit_read, read_count
-from scripts.workflow_runtime import add_workflow_args, attach_workflow, evaluate, wait_until_stable
+from scripts.owned_tab_lifecycle import add_workflow_args, attach_workflow
+from scripts.workflow_runtime import evaluate, wait_until_stable
 
 
 LINKEDIN = "https://www.linkedin.com"
@@ -114,8 +116,8 @@ def load_resource(args: argparse.Namespace) -> ReadResult:
         book = attach_workflow(args, LINKEDIN, ActionBookSession)
     except ValueError as exc:
         raise FetchError("needs_user_action", str(exc), retryable=False) from exc
-    except RuntimeError as exc:
-        if "chrome-extension://" not in str(exc):
+    except ActionBookFailure as exc:
+        if not has_failure_code(exc, {"CHROME_URL_BLOCKED", "OWNED_TAB_NOT_FOUND", "OWNED_TAB_MISMATCH"}):
             raise
         raise FetchError("needs_user_action", str(exc), retryable=False) from exc
     url = target_url(args)

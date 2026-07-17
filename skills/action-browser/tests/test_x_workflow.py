@@ -15,23 +15,30 @@ from scripts.adapters import x_workflow
 
 @pytest.fixture(autouse=True)
 def owned_tab_registry(tmp_path, monkeypatch) -> None:
-    path = tmp_path / "task-tabs.json"
+    path = tmp_path / "owned-tabs.json"
     path.write_text(
         json.dumps(
             {
-                "schema_version": 1,
-                "tasks": {
+                "schema_version": 2,
+                "leases": {
                     "task-a": {
+                        "lease_id": "lease-a",
                         "task_id": "task-a",
+                        "requested_session_id": "s1",
                         "session_id": "s1",
                         "tab_id": "leased-tab",
+                        "status": "active",
+                        "url": "https://x.com/home",
+                        "title": "X",
+                        "created_at": "2026-07-17T00:00:00+00:00",
+                        "updated_at": "2026-07-17T00:00:00+00:00",
                     }
                 },
             }
         ),
         encoding="utf-8",
     )
-    monkeypatch.setenv("ACTION_BROWSER_TASK_TABS_FILE", str(path))
+    monkeypatch.setenv("ACTION_BROWSER_OWNED_TABS_FILE", str(path))
 
 
 class FakeBook:
@@ -44,6 +51,10 @@ class FakeBook:
         self.events: list[tuple[str, str]] = []
         self.tabs = [{"tab_id": tab or "main-tab", "url": "https://x.com/home", "title": "X"}]
         FakeBook.instances.append(self)
+
+    @classmethod
+    def owned(cls, session: str, tab: str) -> "FakeBook":
+        return cls(session, tab, allow_adopt=False)
 
     def start(self, url: str, force_new_tab: bool = False) -> None:
         self.events.append(("start", f"{url}|force={force_new_tab}"))

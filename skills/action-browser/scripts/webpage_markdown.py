@@ -241,7 +241,7 @@ def run_defuddle(payload: dict[str, Any], node_prefix: Path = DEFAULT_NODE_PREFI
 def capture_current_page(session: str, tab: str) -> dict[str, Any]:
     if not tab:
         raise RuntimeError("--tab is required for current-page capture")
-    book = ActionBook(session, tab, allow_adopt=False)
+    book = ActionBook.owned(session, tab)
     value = book.eval(CAPTURE_PAGE_JS, timeout=20.0)
     if not isinstance(value, dict):
         raise RuntimeError(f"unexpected ActionBook eval result: {value!r}")
@@ -249,7 +249,7 @@ def capture_current_page(session: str, tab: str) -> dict[str, Any]:
 
 
 def capture_url(url: str, session: str, tab: str = "") -> dict[str, Any]:
-    book = ActionBook(session, tab, allow_adopt=False)
+    book = ActionBook.owned(session, tab)
     book.start(url)
     book.goto(url)
     time.sleep(1.0)

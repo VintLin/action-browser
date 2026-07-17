@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+from types import SimpleNamespace
 
 # `pytest tests/test_scheduler_cli.py -v` does not place the repo root on sys.path here.
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -208,7 +209,9 @@ def test_reconcile_updates_non_terminal_task_from_summary(tmp_path: Path, monkey
     task_path.write_text(json.dumps(task, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     capsys.readouterr()
     monkeypatch.setattr(scheduler, "load_run_state", lambda run_id: None)
-    monkeypatch.setattr(scheduler, "task_tab_is_alive", lambda task, run_state: False)
+    monkeypatch.setattr(scheduler, "get_owned_tab", lambda current_task_id: SimpleNamespace(lease_id="lease-1"))
+    released: list[str] = []
+    monkeypatch.setattr(scheduler, "release_owned_tab", lambda current_task_id: released.append(current_task_id))
 
     assert scheduler.main(["reconcile"]) == 0
     reconcile_payload = parse_json_output(capsys.readouterr().out)
@@ -218,3 +221,5 @@ def test_reconcile_updates_non_terminal_task_from_summary(tmp_path: Path, monkey
     persisted = json.loads(task_path.read_text(encoding="utf-8"))
     assert persisted["status"] == "completed"
     assert persisted["result_quality"] == "partial"
+    assert "lease_id" not in persisted
+    assert released == [task_id]

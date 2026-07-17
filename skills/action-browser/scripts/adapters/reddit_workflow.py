@@ -22,7 +22,8 @@ if __package__ in {None, ""}:
 from scripts.actionbook_interrupts import install_interrupt_handlers
 from scripts.actionbook_session import ActionBookSession as ActionBook
 from scripts.script_common import log
-from scripts.workflow_runtime import add_workflow_args, attach_workflow, evaluate, write_json
+from scripts.owned_tab_lifecycle import add_workflow_args, attach_workflow
+from scripts.workflow_runtime import evaluate, write_json
 
 
 REDDIT_HOME_URL = "https://www.reddit.com"

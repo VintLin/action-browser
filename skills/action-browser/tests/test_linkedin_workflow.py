@@ -39,7 +39,13 @@ def test_linkedin_auth_wall_is_never_promoted_to_a_success(monkeypatch):
 
 
 def test_linkedin_owned_tab_extension_gate_is_explicit(monkeypatch):
-    monkeypatch.setattr(linkedin_workflow, "attach_workflow", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("chrome-extension:// mismatch")))
+    monkeypatch.setattr(
+        linkedin_workflow,
+        "attach_workflow",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            linkedin_workflow.ActionBookFailure("CHROME_URL_BLOCKED", "chrome-extension:// mismatch")
+        ),
+    )
     args = linkedin_workflow.argparse.Namespace(resource="whoami")
     with pytest.raises(linkedin_workflow.FetchError) as error:
         linkedin_workflow.load_resource(args)

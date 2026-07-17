@@ -28,11 +28,21 @@ def test_store_writes_schema_and_snapshot(tmp_path: Path) -> None:
 
     snapshot = store.load_snapshot()
 
-    assert snapshot["schema_version"] == 1
+    assert snapshot["schema_version"] == 2
     assert task["status"] == "queued"
     assert snapshot["tasks"][task["task_id"]] == {"status": "queued", "stage": "triaging"}
     assert (tmp_path / "state.json").exists()
     assert (tmp_path / "tasks" / f"{task['task_id']}.json").exists()
+
+
+def test_schema_v1_snapshot_is_rejected_without_compatibility_path(tmp_path: Path) -> None:
+    (tmp_path / "state.json").write_text(
+        json.dumps({"schema_version": 1, "tasks": {}, "leases": {}}),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="invalid scheduler snapshot"):
+        SchedulerStore(tmp_path).load_snapshot()
 
 
 def test_duplicate_create_task_calls_produce_distinct_task_ids(tmp_path: Path) -> None:

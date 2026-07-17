@@ -15,7 +15,7 @@ Use ActionBook for real browser pages. Prefer `extension` mode when the task nee
 - If a supported site or capability is named, read `references/adapters/<site>.md` before running commands.
 - If a supported site's UI drift breaks the documented workflow, or an unsupported site is likely to be reused, the agent may update this skill's adapter script and reference docs. Read `references/adapter-authoring.md` first and keep the patch scoped to observed site behavior.
 - Treat `session` as the browser container and `tab` as the task page. Give every independent task a stable task id and acquire one owned tab with `acquire-tab`; tasks may run concurrently in separate tabs of the same healthy session.
-- Use `scripts/actionbook_session.py` for `acquire-tab`, `list-task-tabs`, and `release-tab`. Managed tab opens and closes share a short mutation lock, while page operations remain parallel. If ActionBook reattaches a closed page under a replacement id, the helper closes the unique Chrome tab matching its URL/title and verifies that the replacement disappeared. Ambiguous duplicate URLs remain a safe failure for manual `chrome:control-chrome` cleanup. Keep `ensure`, raw tab commands, and raw `actionbook browser start/new-tab/list-tabs/close-tab` for one-off work or diagnostics.
+- Use `scripts/actionbook_session.py` for `acquire-tab`, `list-owned-tabs`, and `release-tab`. The deep owned-tab lifecycle module persists a schema-v2 lease before browser I/O, keeps persistence locks short, and serializes only tab mutations. If ActionBook reattaches a closed page under a replacement id, the module closes the unique Chrome tab matching its URL/title and verifies that the replacement disappeared. Ambiguous duplicate URLs remain a safe failure for manual `chrome:control-chrome` cleanup. Keep `ensure`, raw tab commands, and raw `actionbook browser start/new-tab/list-tabs/close-tab` for one-off work or diagnostics.
 - If `acquire-tab` cannot create the named extension session but another running extension session is healthy, opt in with `--adopt-running-session` before falling back to diagnostics.
 - Continue only after a second CLI command proves the session and selected tab are still accessible.
 - If the host may reap child processes when one exec call returns, do not split acquire and workflow work across exec calls. A successful acquire followed by `SESSION_NOT_FOUND` only after the outer call exits is a process-lifetime failure, not proof that the extension is broken. Use `scripts/actionbook_task.py` for one atomic workflow that is expected to finish without user interaction; use a 持久 PTY when several commands must reuse the same session/tab or 可能出现 User Gate。
@@ -60,7 +60,7 @@ Keep this file site-neutral. Put site command catalogs, payload schemas, DOM det
 ```bash
 python3 scripts/actionbook_session.py acquire-tab --task task-a --session shared --url "https://example.com" --adopt-running-session --json
 python3 scripts/actionbook_session.py acquire-tab --task task-b --session shared --url "https://example.org" --adopt-running-session --json
-python3 scripts/actionbook_session.py list-task-tabs --json
+python3 scripts/actionbook_session.py list-owned-tabs --json
 actionbook browser snapshot --session shared --tab <task-a-tab-id>
 python3 scripts/actionbook_session.py release-tab --task task-a --json
 python3 scripts/actionbook_session.py release-tab --task task-b --json

@@ -33,7 +33,7 @@ if __package__ in {None, ""}:
 from typing import Any
 
 from scripts.actionbook_interrupts import check_interrupt, install_interrupt_handlers, is_interrupted
-from scripts.workflow_runtime import add_workflow_args, attach_workflow
+from scripts.owned_tab_lifecycle import add_workflow_args, attach_workflow
 from scripts.actionbook_session import ActionBookSession as ActionBook
 from scripts.script_common import log
 

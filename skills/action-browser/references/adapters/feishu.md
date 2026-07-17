@@ -75,7 +75,7 @@ In a folder file list, a single click often only selects the row. Double-click t
 After opening a file, run `list-tabs` and choose the newly opened tab whose title or URL matches the target file:
 
 ```bash
-python3 scripts/actionbook_session.py list-task-tabs --json
+python3 scripts/actionbook_session.py list-owned-tabs --json
 ```
 
 Common content URL prefixes include:

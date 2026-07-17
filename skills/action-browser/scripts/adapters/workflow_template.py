@@ -14,7 +14,8 @@ if __package__ in {None, ""}:
 
 from scripts.actionbook_interrupts import install_interrupt_handlers
 from scripts.actionbook_session import ActionBookSession
-from scripts.workflow_runtime import add_workflow_args, attach_workflow, evaluate, wait_until_stable, write_json
+from scripts.owned_tab_lifecycle import add_workflow_args, attach_workflow
+from scripts.workflow_runtime import evaluate, wait_until_stable, write_json
 
 
 HOME_URL = "https://example.com"

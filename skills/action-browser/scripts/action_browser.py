@@ -17,8 +17,9 @@ if __package__ in {None, ""}:
 from scripts.adapters.douban_public import CHART_URL, PageStateError, parse_movie_chart
 from scripts.adapters import douban_workflow
 from scripts.adapters import x_workflow
+from scripts.actionbook_errors import failure_code
 from scripts.foundation_contracts import validate_adapter_contract as validate_shared_contract, validate_download_manifest, validate_result_envelope, validate_site_artifact, write_json_atomic
-from scripts.workflow_runtime import attach_workflow, temporary_tab
+from scripts.owned_tab_lifecycle import attach_workflow, temporary_tab
 
 
 CAPABILITY_ID = "douban.movie-ranking.trending.read"
@@ -221,18 +222,26 @@ def x_envelope(args: argparse.Namespace, capability_id: str, started_at: str, *,
 
 
 def x_failure_reason(error: Exception) -> str:
-    message = str(error).lower()
     if isinstance(error, x_workflow.ShowMoreExpansionError):
         return str(error).split(":", 1)[0]
-    if "login" in message:
+    code = failure_code(error)
+    if code == "NEEDS_LOGIN":
         return "needs_login"
-    if "captcha" in message:
+    if code == "CAPTCHA":
         return "captcha"
-    if "mfa" in message:
+    if code == "MFA_REQUIRED":
         return "mfa_required"
-    if "ownership" in message or "require" in message or "task tab" in message:
+    if isinstance(error, ValueError) or code in {"OWNED_TAB_NOT_FOUND", "OWNED_TAB_MISMATCH"}:
         return "invalid_input"
-    if "tab" in message or "session" in message:
+    if code in {
+        "SESSION_CLOSED",
+        "SESSION_NOT_FOUND",
+        "SESSION_NOT_READY",
+        "TAB_NOT_FOUND",
+        "TAB_NOT_READY",
+        "TARGET_CLOSED",
+        "TARGET_DETACHED",
+    }:
         return "tab_lost"
     return "page_not_ready"
 

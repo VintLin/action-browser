@@ -1,52 +1,21 @@
 from __future__ import annotations
 
-import argparse
-from contextlib import contextmanager
 import json
 import os
 from pathlib import Path
 import time
-from typing import Any, Iterator
-from urllib.parse import urlparse
+from typing import Any
 
-from scripts.actionbook_session import ActionBookSession, close_and_verify_tab, require_owned_task_tab, tab_mutation_lock
+from scripts.actionbook_errors import ActionBookFailure, failure_code
 from scripts.script_common import unwrap_eval
 
 
-TRANSIENT_EVAL_ERRORS = (
-    "Execution context was destroyed",
-    "Cannot find context with specified id",
-    "Detached",
-    "Target closed",
-)
-
-
-def add_workflow_args(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--task-id", default=os.environ.get("ACTIONBOOK_TASK_ID", ""), help="Stable task id that owns the browser tab")
-    parser.add_argument("--session", default=os.environ.get("ACTIONBOOK_SESSION_ID", ""), help="Session id returned by acquire-tab")
-    parser.add_argument("--tab", default=os.environ.get("ACTIONBOOK_TAB_ID", ""), help="Owned tab id returned by acquire-tab")
-
-
-def attach_workflow(
-    args: argparse.Namespace,
-    expected_url: str = "",
-    action_book_cls: type[ActionBookSession] = ActionBookSession,
-) -> ActionBookSession:
-    required = {
-        "--task-id": getattr(args, "task_id", ""),
-        "--session": getattr(args, "session", ""),
-        "--tab": getattr(args, "tab", ""),
-    }
-    missing = [name for name, value in required.items() if not str(value or "").strip()]
-    if missing:
-        raise ValueError(f"workflow browser commands require {', '.join(missing)} from acquire-tab")
-    require_owned_task_tab(str(args.task_id), str(args.session), str(args.tab))
-    book = action_book_cls(args.session, args.tab, allow_adopt=False)
-    state = book.use_tab(args.tab)
-    current_url = str(state.get("url") or "") if isinstance(state, dict) else ""
-    if expected_url and _origin(current_url) != _origin(expected_url):
-        book.goto(expected_url)
-    return book
+TRANSIENT_EVAL_CODES = {
+    "EXECUTION_CONTEXT_DESTROYED",
+    "CONTEXT_NOT_FOUND",
+    "TARGET_DETACHED",
+    "TARGET_CLOSED",
+}
 
 
 def evaluate(
@@ -65,7 +34,10 @@ def evaluate(
                 raise RuntimeError(str(value.get("error")))
             return value
         except Exception as exc:
-            if attempt >= retries or not any(term in str(exc) for term in TRANSIENT_EVAL_ERRORS):
+            if attempt >= retries or failure_code(exc) not in TRANSIENT_EVAL_CODES:
+                if isinstance(exc, ActionBookFailure):
+                    exc.add_note(label)
+                    raise
                 raise RuntimeError(f"{label}: {exc}") from exc
             time.sleep(retry_delay)
     raise AssertionError("unreachable")
@@ -106,23 +78,6 @@ def wait_until_stable(
         raise RuntimeError(f"page did not settle within {timeout_secs}s: {last_state}")
     return last_state
 
-
-@contextmanager
-def temporary_tab(book: Any, url: str) -> Iterator[str]:
-    with tab_mutation_lock():
-        tab_id = book.open_new_tab(url)
-    try:
-        yield tab_id
-    except BaseException as primary_error:
-        try:
-            close_and_verify_tab(book, tab_id)
-        except Exception as cleanup_error:
-            primary_error.add_note(f"temporary tab cleanup failed: {cleanup_error}")
-        raise
-    else:
-        close_and_verify_tab(book, tab_id)
-
-
 def write_json(path: Path, data: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
@@ -131,8 +86,3 @@ def write_json(path: Path, data: Any) -> None:
         output.flush()
         os.fsync(output.fileno())
     tmp.replace(path)
-
-
-def _origin(value: str) -> str:
-    parsed = urlparse(value)
-    return f"{parsed.scheme}://{parsed.netloc}" if parsed.scheme and parsed.netloc else ""

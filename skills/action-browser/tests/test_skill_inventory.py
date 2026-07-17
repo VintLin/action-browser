@@ -37,7 +37,7 @@ def test_workflows_use_the_shared_runtime_without_legacy_bootstrap() -> None:
         source = path.read_text(encoding="utf-8")
         if "from scripts.adapters.public_read_runtime import" in source:
             continue
-        assert "from scripts.workflow_runtime import" in source, path
+        assert "from scripts.owned_tab_lifecycle import" in source, path
         assert "scripts.adapter_runtime" not in source, path
         assert "prepare_task_book" not in source, path
         assert "add_session_tab_args" not in source, path

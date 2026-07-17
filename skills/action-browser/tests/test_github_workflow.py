@@ -37,7 +37,13 @@ def test_github_help_exposes_only_read_surface():
 
 
 def test_github_owned_tab_extension_gate_is_explicit(monkeypatch):
-    monkeypatch.setattr(github_workflow, "attach_workflow", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("chrome-extension:// mismatch")))
+    monkeypatch.setattr(
+        github_workflow,
+        "attach_workflow",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            github_workflow.ActionBookFailure("CHROME_URL_BLOCKED", "chrome-extension:// mismatch")
+        ),
+    )
     with pytest.raises(github_workflow.FetchError) as error:
         github_workflow.load_whoami(argparse.Namespace())
     assert error.value.reason_code == "needs_user_action"

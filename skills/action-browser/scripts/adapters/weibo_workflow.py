@@ -31,7 +31,8 @@ if __package__ in {None, ""}:
 from typing import Any
 
 from scripts.actionbook_interrupts import install_interrupt_handlers
-from scripts.workflow_runtime import add_workflow_args, attach_workflow, evaluate, wait_until_stable
+from scripts.owned_tab_lifecycle import add_workflow_args, attach_workflow
+from scripts.workflow_runtime import evaluate, wait_until_stable
 from scripts.actionbook_session import ActionBookSession as ActionBook
 from scripts.script_common import log, unwrap_eval
 
@@ -836,7 +837,7 @@ def write_summary(payloads: list[WeiboPayload], output_dir: Path, source: str, a
     (output_dir / "summary.md").write_text("\n".join(lines).strip() + "\n", encoding="utf-8")
 
 
-def write_records(records: Any, output_dir: Path, title: str, result_key: str = "items") -> None:
+def write_records(records: Any, output_dir: Path, title: str) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "summary.json").write_text(json.dumps(records, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     (output_dir / "failures.json").write_text("[]\n", encoding="utf-8")

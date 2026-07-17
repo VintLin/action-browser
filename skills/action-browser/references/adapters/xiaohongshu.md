@@ -195,7 +195,7 @@ python3 scripts/actionbook_session.py acquire-tab \
 
 ```bash
 actionbook extension status --json
-python3 scripts/actionbook_session.py list-task-tabs --json
+python3 scripts/actionbook_session.py list-owned-tabs --json
 actionbook browser url --session <returned-session-id> --tab <returned-tab-id> --json
 actionbook browser title --session <returned-session-id> --tab <returned-tab-id> --json
 ```

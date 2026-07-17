@@ -17,7 +17,9 @@ if __package__ in {None, ""}:
 
 from scripts.adapters.public_read_runtime import FetchError, ReadResult, clean_text, emit_read, fetch_json, fetch_text, read_count
 from scripts.actionbook_session import ActionBookSession
-from scripts.workflow_runtime import add_workflow_args, attach_workflow, evaluate, wait_until_stable
+from scripts.actionbook_errors import ActionBookFailure, has_failure_code
+from scripts.owned_tab_lifecycle import add_workflow_args, attach_workflow
+from scripts.workflow_runtime import evaluate, wait_until_stable
 
 
 GOOGLE_SEARCH = "https://www.google.com/search"
@@ -131,8 +133,8 @@ def load_search_browser(args: argparse.Namespace, count: int) -> ReadResult:
         book = attach_workflow(args, "https://www.google.com", ActionBookSession)
     except ValueError as exc:
         raise FetchError("needs_user_action", str(exc), retryable=False) from exc
-    except RuntimeError as exc:
-        if "chrome-extension://" not in str(exc):
+    except ActionBookFailure as exc:
+        if not has_failure_code(exc, {"CHROME_URL_BLOCKED", "OWNED_TAB_NOT_FOUND", "OWNED_TAB_MISMATCH"}):
             raise
         raise FetchError("needs_user_action", str(exc), retryable=False) from exc
     book.goto(GOOGLE_HOME)

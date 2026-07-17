@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 STATUS_QUEUED = "queued"
 STATUS_RUNNING = "running"
@@ -35,7 +35,6 @@ def build_scheduler_snapshot(*, updated_at: str, limits: dict[str, int] | None =
         "schema_version": SCHEMA_VERSION,
         "limits": dict(limits or DEFAULT_LIMITS),
         "tasks": {},
-        "leases": {},
         "updated_at": updated_at,
     }
 
@@ -76,20 +75,6 @@ def build_task_created_event(*, task: dict[str, Any], at: str) -> dict[str, Any]
         "stage": task["stage"],
         "at": at,
     }
-
-
-def build_lease_record(*, lease_id: str, session_id: str, tab_id: str, task_id: str, now: str) -> dict[str, str | int]:
-    return {
-        "schema_version": SCHEMA_VERSION,
-        "lease_id": lease_id,
-        "session_id": session_id,
-        "tab_id": tab_id,
-        "task_id": task_id,
-        "opened_at": now,
-        "last_active_at": now,
-        "updated_at": now,
-    }
-
 
 def set_task_status(
     task: dict[str, Any],

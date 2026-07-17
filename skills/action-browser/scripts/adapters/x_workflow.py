@@ -31,7 +31,7 @@ if __package__ in {None, ""}:
 from typing import Any
 
 from scripts.actionbook_interrupts import install_interrupt_handlers
-from scripts.workflow_runtime import add_workflow_args, attach_workflow, temporary_tab
+from scripts.owned_tab_lifecycle import add_workflow_args, attach_workflow, temporary_tab
 from scripts.actionbook_session import ActionBookSession as ActionBook
 from scripts.script_common import log, unwrap_eval
 

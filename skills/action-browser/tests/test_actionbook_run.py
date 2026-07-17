@@ -13,6 +13,11 @@ if str(ROOT_DIR) not in sys.path:
 from scripts import actionbook_run
 
 
+def test_main_accepts_argv_for_scheduler_delegation(tmp_path: Path, capsys) -> None:
+    assert actionbook_run.main(["--runs-dir", str(tmp_path), "status", "--id", "missing"]) == 1
+    assert json.loads(capsys.readouterr().out)["status"] == "missing"
+
+
 def test_stop_preserves_graceful_wrapper_exit_when_descendants_need_kill(
     tmp_path: Path, monkeypatch
 ) -> None:

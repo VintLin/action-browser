@@ -15,8 +15,9 @@ if __package__ in {None, ""}:
     if str(ROOT_DIR) not in sys.path:
         sys.path.insert(0, str(ROOT_DIR))
 
-from scripts.actionbook_session import DEFAULT_SESSION, acquire_task_tab, release_task_tab
+from scripts.actionbook_session import DEFAULT_SESSION
 from scripts.actionbook_interrupts import install_interrupt_handlers
+from scripts.owned_tab_lifecycle import acquire_owned_tab, release_owned_tab
 
 
 def normalize_command(command: list[str]) -> list[str]:
@@ -32,16 +33,14 @@ def run_task(args: argparse.Namespace) -> int:
     owns_tab = False
     exit_code = 1
     try:
-        record = acquire_task_tab(
-            argparse.Namespace(
-                task=args.task,
-                session=args.session,
-                url=args.url,
-                adopt_running_session=args.adopt_running_session,
-                allow_visible_recovery=not args.no_visible_recovery,
-            )
+        record = acquire_owned_tab(
+            task_id=args.task,
+            session_id=args.session,
+            url=args.url,
+            adopt_running_session=args.adopt_running_session,
+            allow_visible_recovery=not args.no_visible_recovery,
         )
-        if record.get("status") == "reused":
+        if record.get("acquisition") == "reused":
             raise ValueError(
                 f"task {args.task!r} already owns a live tab; release it or use a unique task id"
             )
@@ -66,7 +65,7 @@ def run_task(args: argparse.Namespace) -> int:
     finally:
         if owns_tab:
             try:
-                release_task_tab(argparse.Namespace(task=args.task))
+                release_owned_tab(args.task)
             except Exception as exc:  # noqa: BLE001
                 print(f"ActionBook task-tab cleanup failed: {exc}", file=sys.stderr)
                 if exit_code == 0:

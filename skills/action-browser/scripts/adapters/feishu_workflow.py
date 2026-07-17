@@ -33,7 +33,8 @@ from urllib.parse import quote, urlparse
 import requests
 
 from scripts.actionbook_interrupts import install_interrupt_handlers
-from scripts.workflow_runtime import add_workflow_args, attach_workflow, temporary_tab, wait_until_stable, write_json
+from scripts.owned_tab_lifecycle import add_workflow_args, attach_workflow, temporary_tab
+from scripts.workflow_runtime import wait_until_stable, write_json
 from scripts.actionbook_session import ActionBookSession as ActionBook
 from scripts.script_common import log, unwrap_eval
 
@@ -652,10 +653,8 @@ def ui_menu_export_one(book: ActionBook, item: dict[str, Any], output_dir: Path,
         return {"status": "skipped_exists", "kind": kind, "path": item["path"], "local_path": str(target), "size": target.stat().st_size}
     target.parent.mkdir(parents=True, exist_ok=True)
     before = stable_download_files(download_dir)
-    previous_tab = book.tab
     try:
         with temporary_tab(book, item["url"]) as tab:
-            book.use_tab(tab)
             wait_until_stable(book)
             if not open_download_submenu(book.session, tab, config["menu_text"]):
                 raise RuntimeError("could not open 下载为 submenu")
@@ -691,8 +690,6 @@ def ui_menu_export_one(book: ActionBook, item: dict[str, Any], output_dir: Path,
             }
     except Exception as exc:
         return {"status": "failed", "kind": kind, "path": item["path"], "url": item["url"], "local_path": str(target), "error": str(exc), "download_dir": str(download_dir)}
-    finally:
-        book.tab = previous_tab
 
 
 def run_workers(label: str, items: list[dict[str, Any]], workers: int, func: Any, status_path: Path) -> Counter:

@@ -14,7 +14,6 @@ if __package__ in {None, ""}:
         sys.path.insert(0, str(ROOT_DIR))
 
 from scripts import actionbook_run
-from scripts.actionbook_session import ActionBookSession
 from scripts.scheduler_lib.contracts import TERMINAL_STATUSES
 from scripts.scheduler_lib.executor import has_active_run, load_run_state
 from scripts.scheduler_lib.lifecycle import has_task_record, load_task_record, task_run_id
@@ -25,6 +24,12 @@ from scripts.scheduler_lib.reconcile import (
     resolve_summary_path,
 )
 from scripts.scheduler_lib.state import SchedulerStore
+from scripts.owned_tab_lifecycle import (
+    get_owned_tab,
+    owned_tab_is_alive,
+    release_owned_tab,
+    set_owned_tab_paused,
+)
 
 
 def scheduler_root() -> Path:
@@ -39,22 +44,6 @@ def emit_json(payload: dict[str, object]) -> None:
 
 def stop_missing_payload(task_id: str, run_id: str) -> dict[str, object]:
     return {"error": "run_not_found", "task_id": task_id, "run_id": run_id}
-
-
-def task_tab_is_alive(task: dict[str, object], run_state: dict[str, object] | None) -> bool:
-    if not isinstance(run_state, dict) or run_state.get("status") != "running":
-        return False
-    session_id = str(task.get("session_id") or "").strip()
-    tab_id = str(task.get("tab_id") or "").strip()
-    if not session_id or not tab_id:
-        # ponytail: current task records do not always persist leased tab ids yet.
-        return True
-    try:
-        session = ActionBookSession(session_id, tab_id, allow_adopt=False)
-        session.use_tab(tab_id)
-    except Exception:
-        return False
-    return True
 
 
 def cmd_submit(args: argparse.Namespace) -> int:
@@ -125,7 +114,17 @@ def cmd_reconcile(_args: argparse.Namespace) -> int:
         output_dir = resolve_output_dir(task)
         summary_path = resolve_summary_path(task)
         progress_path = resolve_progress_path(task, root)
-        tab_alive = task_tab_is_alive(task, run_state)
+        lease = get_owned_tab(str(task["task_id"]))
+        if lease is None:
+            task.pop("lease_id", None)
+        else:
+            task["lease_id"] = lease.lease_id
+        tab_alive = bool(
+            isinstance(run_state, dict)
+            and run_state.get("status") == "running"
+            and lease is not None
+            and owned_tab_is_alive(str(task["task_id"]), lease_id=lease.lease_id)
+        )
         next_task = reconcile_task_state(
             dict(task),
             run_state=run_state,
@@ -134,6 +133,20 @@ def cmd_reconcile(_args: argparse.Namespace) -> int:
             progress_path=progress_path,
             output_dir=output_dir,
         )
+        next_status = str(next_task.get("status") or "")
+        if lease is not None:
+            try:
+                if next_status == "waiting_user":
+                    set_owned_tab_paused(str(task["task_id"]), True)
+                elif next_status == "running":
+                    set_owned_tab_paused(str(task["task_id"]), False)
+                elif next_status in TERMINAL_STATUSES:
+                    release_owned_tab(str(task["task_id"]))
+                    next_task.pop("lease_id", None)
+            except Exception:
+                next_task["status"] = "blocked"
+                next_task["stage"] = None
+                next_task["reason_code"] = "tab_cleanup_failed"
         persisted = store.save_task_record(next_task, event_type="task_reconciled")
         rows.append(
             {

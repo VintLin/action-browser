@@ -55,7 +55,7 @@ If the fix is only a one-time workaround, record it in the run output or
 ## Required Inputs
 
 Every browser workflow command must accept these through
-`workflow_runtime.add_workflow_args()`:
+`owned_tab_lifecycle.add_workflow_args()`:
 
 - `--task-id`
 - `--session`
@@ -83,7 +83,7 @@ Input semantics:
 
 - The adapter works inside the tab assigned by the scheduler.
 - Multiple tasks may share the same `--session`, but one adapter run owns only its assigned `--tab`.
-- The caller must acquire the tab through `actionbook_session.py acquire-tab`; the workflow attaches through `workflow_runtime.attach_workflow` and never bootstraps or adopts a session.
+- The caller must acquire the tab through `actionbook_session.py acquire-tab`; the workflow attaches through `owned_tab_lifecycle.attach_workflow` and never bootstraps or adopts a session.
 - The adapter must not open a replacement tab on its own after failure.
 - The adapter must not adopt a different current tab implicitly.
 - Retry logic belongs to the scheduler. The adapter reports failures; it does

@@ -61,7 +61,7 @@ class SchedulerStore:
             snapshot = json.loads(self.snapshot_path.read_text(encoding="utf-8"))
         except FileNotFoundError:
             return build_scheduler_snapshot(updated_at=utc_now(), limits=DEFAULT_LIMITS)
-        if not isinstance(snapshot, dict):
+        if not isinstance(snapshot, dict) or snapshot.get("schema_version") != SCHEMA_VERSION:
             raise ValueError(f"invalid scheduler snapshot: {self.snapshot_path}")
         return snapshot
 
@@ -110,14 +110,18 @@ class SchedulerStore:
         return self.task_path(task_id).exists()
 
     def load_task_record(self, task_id: str) -> dict[str, Any]:
-        return json.loads(self.task_path(task_id).read_text(encoding="utf-8"))
+        payload = json.loads(self.task_path(task_id).read_text(encoding="utf-8"))
+        if not isinstance(payload, dict) or payload.get("schema_version") != SCHEMA_VERSION:
+            raise ValueError(f"invalid scheduler task record: {self.task_path(task_id)}")
+        return payload
 
     def list_task_records(self) -> list[dict[str, Any]]:
         records: list[dict[str, Any]] = []
         for path in sorted(self.tasks_dir.glob("*.json")):
             payload = json.loads(path.read_text(encoding="utf-8"))
-            if isinstance(payload, dict):
-                records.append(payload)
+            if not isinstance(payload, dict) or payload.get("schema_version") != SCHEMA_VERSION:
+                raise ValueError(f"invalid scheduler task record: {path}")
+            records.append(payload)
         return records
 
     def save_task_record(self, task: dict[str, Any], *, event_type: str) -> dict[str, Any]:

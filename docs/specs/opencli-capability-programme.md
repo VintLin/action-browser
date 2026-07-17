@@ -254,7 +254,7 @@ Parallelism 只在同 batch 的不同站点之间开放。每站一个 Site Owne
 
 现有稳定 prior-art modules/interfaces 如下，Foundation 先为它们定义 clean-break replacement 而不是新建平行 runtime：
 
-- `ActionBookSession`, `require_owned_task_tab`, `tab_mutation_lock`, `temporary_tab`, `write_json_atomic` 约束 tab ownership、mutation serialization、cleanup 和 atomic files。
+- `owned_tab_lifecycle` module、`ActionBookSession` adapter、`temporary_tab` 与 `write_json_atomic` 约束 tab ownership、mutation serialization、cleanup 和 atomic files；scheduler 只保存 derived `lease_id`，不维护第二份 lease 真相。
 - `SchedulerStore`, lifecycle/reconcile/contracts interfaces 约束 queued/running/waiting-user/blocked/completed/failed/canceled 状态与持久化。
 - Taobao contract tests 证明 summary/progress artifact 入口，但其 legacy records/writer 必须在 cutover 移除。
 - X focused tests 证明 owned tab、User Gate、page-ready 和长文 `show more` 语义；长文验收必须点击展开，保存展开后的全文，并以展开控件消失/全文容器存在作为 smoke assertion，不能只清除 warning。

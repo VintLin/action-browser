@@ -7,8 +7,8 @@
 ```text
 actionbook_session.py acquire-tab
   -> workflow receives task-id/session/tab
-  -> attach_workflow verifies the owned tab
-  -> site logic uses evaluate/wait/temporary_tab/write_json
+  -> owned_tab_lifecycle.attach_workflow verifies the owned tab
+  -> site logic uses evaluate/wait/write_json plus owned_tab_lifecycle.temporary_tab
   -> actionbook_session.py release-tab
 ```
 
@@ -18,11 +18,11 @@ Acquire and release stay outside the workflow so user gates can keep the exact t
 
 | Helper | Responsibility |
 | --- | --- |
-| `add_workflow_args(parser)` | Add `--task-id`, `--session`, and `--tab` consistently |
-| `attach_workflow(args, expected_url)` | Require and verify the owned tab; navigate only when its origin is wrong |
+| `owned_tab_lifecycle.add_workflow_args(parser)` | Add `--task-id`, `--session`, and `--tab` consistently |
+| `owned_tab_lifecycle.attach_workflow(args, expected_url)` | Require and verify the owned tab; navigate only when its origin is wrong |
 | `evaluate(book, script, label)` | Unwrap ActionBook results and retry transient context loss |
 | `wait_until_stable(book)` | Return stable page state, or the last state at timeout; set `require_stable=True` only when stability is a hard precondition |
-| `temporary_tab(book, url)` | Open a local detail tab and run verified close, including unique Chrome replacement cleanup, without hiding the primary workflow error |
+| `owned_tab_lifecycle.temporary_tab(book, url)` | Open and activate a detail tab, then verify close and restore the parent owned tab without hiding the primary workflow error |
 | `write_json(path, data)` | Atomically replace durable JSON output |
 
 Site-specific selectors, payload parsing, user-gate detection, output presentation, and domain naming remain in the matching workflow.

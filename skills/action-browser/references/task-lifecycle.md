@@ -21,7 +21,18 @@ Minimum scheduler files:
   progress/<task_id>.json
 ```
 
-Every scheduler-owned JSON file must include `schema_version`. The scheduler
+Owned browser tabs use one separate source of truth:
+
+```text
+~/.action-browser/owned-tabs.json
+```
+
+The owned-tab lease store uses `schema_version: 2`. The former
+`task-tabs.json` shape is intentionally unsupported after the clean break.
+Scheduler task records may mirror `lease_id`, but do not persist a second lease
+map or duplicate session/tab ownership.
+
+Every scheduler-owned JSON file uses `schema_version: 2` after this clean break. The scheduler
 must take `state.lock` before updating snapshot files, append the transition to
 `events.jsonl`, and then atomically replace the latest snapshot.
 
@@ -147,7 +158,7 @@ Example:
 ## Lease Rules
 
 - In extension mode first pass, the scheduler should prefer one stable browser session and multiple leased tabs inside it, but only after session persistence has been proven across commands.
-- Scheduler and future executors should acquire and release session/tab state through `scripts/actionbook_session.py`, not by open-coding raw `browser start/new-tab/list-tabs/close-tab` calls in control-plane code.
+- Scheduler and future executors should acquire and release session/tab state through the `scripts/owned_tab_lifecycle.py` module, exposed by `scripts/actionbook_session.py acquire-tab|release-tab`, not by open-coding raw `browser start/new-tab/list-tabs/close-tab` calls in control-plane code.
 - Executors whose outer command runner reaps daemon children must launch one workflow through `scripts/actionbook_task.py`, which keeps acquire, workflow execution, and release in one parent-process lifetime. The atomic runner must refuse an existing live lease, and any same-tab retry must complete inside its child workflow before that process exits. Such executors must not persist a lease across separate ephemeral exec calls; use a persistent executor process when a task genuinely needs a long-lived tab.
 - Scheduler-managed tasks must request a fresh tab and must not adopt an
   arbitrary existing tab.

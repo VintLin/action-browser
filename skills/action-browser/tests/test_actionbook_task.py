@@ -22,17 +22,17 @@ def test_task_runner_acquires_exports_and_releases(monkeypatch) -> None:
 
     monkeypatch.setattr(
         actionbook_task,
-        "acquire_task_tab",
-        lambda args: {
-            "task_id": args.task,
+        "acquire_owned_tab",
+        lambda **kwargs: {
+            "task_id": kwargs["task_id"],
             "session_id": "shared",
             "tab_id": "t7",
         },
     )
     monkeypatch.setattr(
         actionbook_task,
-        "release_task_tab",
-        lambda args: events.append(("release", args.task)) or {"status": "released"},
+        "release_owned_tab",
+        lambda task_id: events.append(("release", task_id)) or {"status": "released"},
     )
 
     def fake_run(command, *, cwd, env, check):
@@ -84,13 +84,13 @@ def test_task_runner_releases_after_child_failure(monkeypatch) -> None:
     released: list[str] = []
     monkeypatch.setattr(
         actionbook_task,
-        "acquire_task_tab",
-        lambda args: {"task_id": args.task, "session_id": "s1", "tab_id": "t1"},
+        "acquire_owned_tab",
+        lambda **kwargs: {"task_id": kwargs["task_id"], "session_id": "s1", "tab_id": "t1"},
     )
     monkeypatch.setattr(
         actionbook_task,
-        "release_task_tab",
-        lambda args: released.append(args.task) or {"status": "released"},
+        "release_owned_tab",
+        lambda task_id: released.append(task_id) or {"status": "released"},
     )
     monkeypatch.setattr(
         actionbook_task.subprocess,
@@ -107,10 +107,10 @@ def test_task_runner_preserves_existing_environment(monkeypatch) -> None:
     monkeypatch.setenv("EXISTING_VALUE", "kept")
     monkeypatch.setattr(
         actionbook_task,
-        "acquire_task_tab",
-        lambda args: {"task_id": args.task, "session_id": "s1", "tab_id": "t1"},
+        "acquire_owned_tab",
+        lambda **kwargs: {"task_id": kwargs["task_id"], "session_id": "s1", "tab_id": "t1"},
     )
-    monkeypatch.setattr(actionbook_task, "release_task_tab", lambda args: {"status": "released"})
+    monkeypatch.setattr(actionbook_task, "release_owned_tab", lambda task_id: {"status": "released"})
 
     def fake_run(command, *, cwd, env, check):
         captured.update(env)
@@ -133,17 +133,17 @@ def test_task_runner_releases_after_sigterm(tmp_path: Path) -> None:
     if pid == 0:
         os.setsid()
 
-        def acquire(args):
+        def acquire(**kwargs):
             ready.write_text("ready", encoding="utf-8")
             return {
-                "task_id": args.task,
+                "task_id": kwargs["task_id"],
                 "session_id": "s1",
                 "tab_id": "t1",
-                "status": "acquired",
+                "acquisition": "acquired",
             }
 
-        actionbook_task.acquire_task_tab = acquire
-        actionbook_task.release_task_tab = lambda args: released.write_text(args.task, encoding="utf-8")
+        actionbook_task.acquire_owned_tab = acquire
+        actionbook_task.release_owned_tab = lambda task_id: released.write_text(task_id, encoding="utf-8")
         code = actionbook_task.main(
             ["--task", "signal-test", "--", sys.executable, "-c", "import time; time.sleep(30)"]
         )
@@ -166,18 +166,18 @@ def test_task_runner_refuses_to_reuse_existing_tab(monkeypatch, capsys) -> None:
     released: list[str] = []
     monkeypatch.setattr(
         actionbook_task,
-        "acquire_task_tab",
-        lambda args: {
-            "task_id": args.task,
+        "acquire_owned_tab",
+        lambda **kwargs: {
+            "task_id": kwargs["task_id"],
             "session_id": "s1",
             "tab_id": "t1",
-            "status": "reused",
+            "acquisition": "reused",
         },
     )
     monkeypatch.setattr(
         actionbook_task,
-        "release_task_tab",
-        lambda args: released.append(args.task),
+        "release_owned_tab",
+        lambda task_id: released.append(task_id),
     )
     monkeypatch.setattr(
         actionbook_task.subprocess,

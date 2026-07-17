@@ -29,7 +29,8 @@ if __package__ in {None, ""}:
 from typing import Any
 
 from scripts.actionbook_interrupts import install_interrupt_handlers
-from scripts.workflow_runtime import add_workflow_args, attach_workflow, evaluate, wait_until_stable, write_json
+from scripts.owned_tab_lifecycle import add_workflow_args, attach_workflow
+from scripts.workflow_runtime import evaluate, wait_until_stable, write_json
 from scripts.actionbook_session import ActionBookSession as ActionBook
 from scripts.download_primitive import download_image
 from scripts.script_common import log
