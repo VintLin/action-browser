@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import os
 from pathlib import Path
+import signal
 import subprocess
 import sys
 
@@ -15,6 +16,7 @@ if __package__ in {None, ""}:
         sys.path.insert(0, str(ROOT_DIR))
 
 from scripts.actionbook_session import DEFAULT_SESSION, acquire_task_tab, release_task_tab
+from scripts.actionbook_interrupts import install_interrupt_handlers
 
 
 def normalize_command(command: list[str]) -> list[str]:
@@ -27,25 +29,31 @@ def normalize_command(command: list[str]) -> list[str]:
 
 def run_task(args: argparse.Namespace) -> int:
     command = normalize_command(args.command)
-    record = acquire_task_tab(
-        argparse.Namespace(
-            task=args.task,
-            session=args.session,
-            url=args.url,
-            adopt_running_session=args.adopt_running_session,
-            allow_visible_recovery=not args.no_visible_recovery,
-        )
-    )
-    env = os.environ.copy()
-    env.update(
-        {
-            "ACTIONBOOK_TASK_ID": str(record["task_id"]),
-            "ACTIONBOOK_SESSION_ID": str(record["session_id"]),
-            "ACTIONBOOK_TAB_ID": str(record["tab_id"]),
-        }
-    )
+    owns_tab = False
     exit_code = 1
     try:
+        record = acquire_task_tab(
+            argparse.Namespace(
+                task=args.task,
+                session=args.session,
+                url=args.url,
+                adopt_running_session=args.adopt_running_session,
+                allow_visible_recovery=not args.no_visible_recovery,
+            )
+        )
+        if record.get("status") == "reused":
+            raise ValueError(
+                f"task {args.task!r} already owns a live tab; release it or use a unique task id"
+            )
+        owns_tab = True
+        env = os.environ.copy()
+        env.update(
+            {
+                "ACTIONBOOK_TASK_ID": str(record["task_id"]),
+                "ACTIONBOOK_SESSION_ID": str(record["session_id"]),
+                "ACTIONBOOK_TAB_ID": str(record["tab_id"]),
+            }
+        )
         result = subprocess.run(
             command,
             cwd=str(Path(args.cwd).expanduser()) if args.cwd else None,
@@ -56,12 +64,13 @@ def run_task(args: argparse.Namespace) -> int:
     except KeyboardInterrupt:
         exit_code = 130
     finally:
-        try:
-            release_task_tab(argparse.Namespace(task=args.task))
-        except Exception as exc:  # noqa: BLE001
-            print(f"ActionBook task-tab cleanup failed: {exc}", file=sys.stderr)
-            if exit_code == 0:
-                exit_code = 1
+        if owns_tab:
+            try:
+                release_task_tab(argparse.Namespace(task=args.task))
+            except Exception as exc:  # noqa: BLE001
+                print(f"ActionBook task-tab cleanup failed: {exc}", file=sys.stderr)
+                if exit_code == 0:
+                    exit_code = 1
     return exit_code
 
 
@@ -89,11 +98,18 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    previous_sigint = signal.getsignal(signal.SIGINT)
+    previous_sigterm = signal.getsignal(signal.SIGTERM)
+    install_interrupt_handlers()
     try:
-        return run_task(args)
-    except ValueError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
-        return 2
+        try:
+            return run_task(args)
+        except ValueError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return 2
+    finally:
+        signal.signal(signal.SIGINT, previous_sigint)
+        signal.signal(signal.SIGTERM, previous_sigterm)
 
 
 if __name__ == "__main__":

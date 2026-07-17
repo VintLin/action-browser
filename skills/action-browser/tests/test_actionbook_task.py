@@ -2,8 +2,12 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import signal
 import subprocess
 import sys
+import time
+
+import pytest
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -120,3 +124,67 @@ def test_task_runner_preserves_existing_environment(monkeypatch) -> None:
     assert captured["ACTIONBOOK_SESSION_ID"] == "s1"
     assert captured["ACTIONBOOK_TAB_ID"] == "t1"
     assert os.environ.get("ACTIONBOOK_TASK_ID") != "research-c"
+
+
+def test_task_runner_releases_after_sigterm(tmp_path: Path) -> None:
+    ready = tmp_path / "ready"
+    released = tmp_path / "released"
+    pid = os.fork()
+    if pid == 0:
+        os.setsid()
+
+        def acquire(args):
+            ready.write_text("ready", encoding="utf-8")
+            return {
+                "task_id": args.task,
+                "session_id": "s1",
+                "tab_id": "t1",
+                "status": "acquired",
+            }
+
+        actionbook_task.acquire_task_tab = acquire
+        actionbook_task.release_task_tab = lambda args: released.write_text(args.task, encoding="utf-8")
+        code = actionbook_task.main(
+            ["--task", "signal-test", "--", sys.executable, "-c", "import time; time.sleep(30)"]
+        )
+        os._exit(code)
+
+    deadline = time.monotonic() + 5.0
+    while not ready.exists() and time.monotonic() < deadline:
+        time.sleep(0.02)
+    assert ready.exists()
+
+    os.killpg(pid, signal.SIGTERM)
+    _, status = os.waitpid(pid, 0)
+
+    assert os.WIFEXITED(status)
+    assert os.WEXITSTATUS(status) == 130
+    assert released.read_text(encoding="utf-8") == "signal-test"
+
+
+def test_task_runner_refuses_to_reuse_existing_tab(monkeypatch, capsys) -> None:
+    released: list[str] = []
+    monkeypatch.setattr(
+        actionbook_task,
+        "acquire_task_tab",
+        lambda args: {
+            "task_id": args.task,
+            "session_id": "s1",
+            "tab_id": "t1",
+            "status": "reused",
+        },
+    )
+    monkeypatch.setattr(
+        actionbook_task,
+        "release_task_tab",
+        lambda args: released.append(args.task),
+    )
+    monkeypatch.setattr(
+        actionbook_task.subprocess,
+        "run",
+        lambda *_args, **_kwargs: pytest.fail("existing task tab must not run a second workflow"),
+    )
+
+    assert actionbook_task.main(["--task", "research-active", "--", "true"]) == 2
+    assert "already owns a live tab" in capsys.readouterr().err
+    assert released == []

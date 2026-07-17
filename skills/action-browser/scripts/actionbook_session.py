@@ -990,7 +990,7 @@ def acquire_task_tab(args: argparse.Namespace) -> dict[str, Any]:
             with tab_mutation_lock():
                 session.start(args.url, force_new_tab=True)
             state = session.describe()
-        except Exception as exc:
+        except (Exception, KeyboardInterrupt) as exc:
             if session.tab:
                 try:
                     close_and_verify_tab(session, session.tab)

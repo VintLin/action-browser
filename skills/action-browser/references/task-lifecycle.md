@@ -139,15 +139,16 @@ Example:
 
 - In extension mode first pass, the scheduler should prefer one stable browser session and multiple leased tabs inside it, but only after session persistence has been proven across commands.
 - Scheduler and future executors should acquire and release session/tab state through `scripts/actionbook_session.py`, not by open-coding raw `browser start/new-tab/list-tabs/close-tab` calls in control-plane code.
-- Executors whose outer command runner reaps daemon children must launch one workflow through `scripts/actionbook_task.py`, which keeps acquire, workflow execution, and release in one parent-process lifetime. Such executors must not persist a lease across separate ephemeral exec calls; use a persistent executor process when a task genuinely needs a long-lived tab.
+- Executors whose outer command runner reaps daemon children must launch one workflow through `scripts/actionbook_task.py`, which keeps acquire, workflow execution, and release in one parent-process lifetime. The atomic runner must refuse an existing live lease, and any same-tab retry must complete inside its child workflow before that process exits. Such executors must not persist a lease across separate ephemeral exec calls; use a persistent executor process when a task genuinely needs a long-lived tab.
 - Scheduler-managed tasks must request a fresh tab and must not adopt an
   arbitrary existing tab.
 - One `running` task owns exactly one `lease_id` and one `tab_id`.
 - Multiple running tasks may share one browser `session_id` as long as each task has its own leased `tab_id`.
 - The lease belongs to the task until the task reaches a terminal status or
   enters `waiting_user`.
-- Releasing a lease should close only that task tab. If close fails, record a
-  warning and release the lease anyway.
+- Releasing a lease should close only that task tab. If exact close cannot be
+  verified, report the cleanup failure and retain the task-tab ownership record
+  until exact cleanup succeeds or the resource is confirmed missing.
 - A task in `waiting_user` keeps a paused lease by default when the required
   user action must happen in that exact tab, such as login, CAPTCHA, MFA, or a
   site challenge bound to current page state.

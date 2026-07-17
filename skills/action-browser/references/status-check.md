@@ -291,6 +291,7 @@ python3 scripts/actionbook_task.py \
 ```
 
 - 原子运行器会在子命令结束后释放 tab。如果多个独立命令必须复用同一个 session/tab，或可能出现 User Gate（登录、验证码、MFA、风控），启动一个持久 PTY；在 PTY 内完成 `acquire-tab`、第二条 CLI 验证和后续页面命令，通过 stdin 持续发送命令，最后在退出 PTY 前 `release-tab`。不要在不同的一次性 exec 调用间传递 session/tab。
+- 原子运行器只接管本次新领取的 tab；如果 task id 已有健康 lease，它会退出且保持原 tab 不变。先完成或释放旧任务，或改用唯一 task id。需要自动重试时，由同一个 child workflow 在退出前完成，确保重试仍使用原 tab。
 - 只有在同一父进程或持久 PTY 内也复现连接丢失时，才继续下面的 extension / daemon 修复流程。
 - 先停本任务的 tracked run，不要直接关 Chrome 登录态：
 

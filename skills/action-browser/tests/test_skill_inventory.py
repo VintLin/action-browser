@@ -54,8 +54,3 @@ def test_skill_documents_atomic_runner_for_reaped_daemons() -> None:
         assert "SESSION_NOT_FOUND" in text
         assert "持久 PTY" in text
         assert "可能出现 User Gate" in text
-
-
-def test_extracted_extension_directory_is_ignored() -> None:
-    gitignore = (ROOT_DIR.parents[1] / ".gitignore").read_text(encoding="utf-8")
-    assert "/skills/action-browser/actionbook-extension-v0.5.0/" in gitignore

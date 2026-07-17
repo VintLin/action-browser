@@ -19,6 +19,7 @@ Use ActionBook for real browser pages. Prefer `extension` mode when the task nee
 - If `acquire-tab` cannot create the named extension session but another running extension session is healthy, opt in with `--adopt-running-session` before falling back to diagnostics.
 - Continue only after a second CLI command proves the session and selected tab are still accessible.
 - If the host may reap child processes when one exec call returns, do not split acquire and workflow work across exec calls. A successful acquire followed by `SESSION_NOT_FOUND` only after the outer call exits is a process-lifetime failure, not proof that the extension is broken. Use `scripts/actionbook_task.py` for one atomic workflow that is expected to finish without user interaction; use a 持久 PTY when several commands must reuse the same session/tab or 可能出现 User Gate。
+- `actionbook_task.py` requires a task id without an existing live lease. If that task already owns a tab, it exits without running or releasing it; finish or release the existing task, or choose a unique task id. Any automatic retry must happen inside the child workflow so it keeps the same tab.
 - For page operations, take a fresh `snapshot` after structure changes, use current refs, and verify URL/title/key elements after each click, fill, press, navigation, or list/detail transition.
 - If login, CAPTCHA, MFA, or risk-control appears, keep the same Chrome window and ask the user to complete it there.
 - If the task is public-page reading, archival, or content extraction and does not need login state, extension cookies, live clicking, or dynamic postback behavior, prefer a non-interactive fetch/extract path first. Use ActionBook only when static HTTP fetch is blocked, incomplete, or loses required data.
@@ -75,7 +76,7 @@ python3 scripts/actionbook_run.py run --id <run-id> --cwd "$PWD" -- \
 python3 scripts/actionbook_run.py stop --id <run-id>
 ```
 
-`actionbook_task.py` exports `ACTIONBOOK_TASK_ID`, `ACTIONBOOK_SESSION_ID`, and `ACTIONBOOK_TAB_ID` to the child workflow and releases the owned tab on success, failure, or interruption. Use it only when the child can finish without user interaction. When several separate commands must share one tab or 可能出现 User Gate，start a 持久 PTY, run `acquire-tab` and the second CLI verification inside it, send later commands through that PTY, then release before exiting.
+`actionbook_task.py` exports `ACTIONBOOK_TASK_ID`, `ACTIONBOOK_SESSION_ID`, and `ACTIONBOOK_TAB_ID` to the child workflow and releases its newly acquired tab on success, failure, SIGINT, or SIGTERM. It refuses to take over an existing task tab. Use it only when the child can finish without user interaction, including any same-tab retries. When several separate commands must share one tab or 可能出现 User Gate，start a 持久 PTY, run `acquire-tab` and the second CLI verification inside it, send later commands through that PTY, then release before exiting.
 
 For manual checks:
 

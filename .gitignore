@@ -18,4 +18,3 @@ build/
 
 # Skill workflows write site data here; keep durable programme evidence in catalog/evidence/.
 /skills/action-browser/assets/
-/skills/action-browser/actionbook-extension-v0.5.0/

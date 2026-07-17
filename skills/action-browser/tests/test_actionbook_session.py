@@ -651,6 +651,38 @@ def test_task_tab_failures_do_not_leave_untracked_or_unverified_tabs(tmp_path: P
     assert "task-a" in json.loads(registry_path.read_text(encoding="utf-8"))["tasks"]
 
 
+def test_interrupted_task_tab_acquire_closes_partially_opened_tab(tmp_path: Path, monkeypatch) -> None:
+    registry_path = tmp_path / "task-tabs.json"
+    events: list[tuple[str, str]] = []
+    snapshots = iter([[{"tab_id": "partial-tab"}], []])
+
+    class InterruptedAcquireSession:
+        def __init__(self, session: str, tab: str = "", **_kwargs) -> None:
+            self.session = session
+            self.tab = tab
+
+        def start(self, url: str, force_new_tab: bool = False) -> None:
+            self.tab = "partial-tab"
+            raise KeyboardInterrupt
+
+        def close_tab(self, tab_id: str) -> dict[str, str]:
+            events.append(("close", tab_id))
+            return {"status": "closed"}
+
+        def list_tabs(self) -> list[dict[str, str]]:
+            events.append(("list", self.tab))
+            return next(snapshots)
+
+    monkeypatch.setattr(actionbook_session, "ActionBookSession", InterruptedAcquireSession)
+    monkeypatch.setenv("ACTION_BROWSER_TASK_TABS_FILE", str(registry_path))
+
+    with pytest.raises(KeyboardInterrupt):
+        actionbook_session.main(["acquire-tab", "--task", "task-a", "--session", "shared"])
+
+    assert events == [("list", "partial-tab"), ("close", "partial-tab"), ("list", "partial-tab")]
+    assert not registry_path.exists()
+
+
 def test_release_tab_drops_stale_record_when_actionbook_reports_tab_not_found(tmp_path: Path, monkeypatch) -> None:
     registry_path = tmp_path / "task-tabs.json"
     registry_path.write_text(
