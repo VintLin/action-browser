@@ -49,7 +49,7 @@ Use ActionBook for real browser pages. Prefer `extension` mode when the task nee
 
 Supported site adapters live in `references/adapters/<site>.md` and `scripts/adapters/<site>_workflow.py`.
 
-Current sites: `xiaohongshu`, `x`, `weibo`, `douban`, `zhihu`, `youtube`, `douyin`, `bilibili`, `jd`, `taobao`, `zhipin`, `feishu`, `chatgpt`, `reddit`.
+Current sites: `xiaohongshu`, `x`, `weibo`, `douban`, `zhihu`, `youtube`, `douyin`, `bilibili`, `jd`, `taobao`, `zhipin`, `feishu`, `chatgpt`, `reddit`, `xianyu`.
 
 Expansion candidates (implemented but not yet `Supported Website`): `google`, `github`, `stackoverflow`, `hackernews`, `wikipedia`, `linkedin`.
 
