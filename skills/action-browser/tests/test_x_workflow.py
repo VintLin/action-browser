@@ -167,6 +167,97 @@ def test_x_page_ready_state_rejects_user_gates() -> None:
     )
 
 
+def test_opencli_graphql_urls_keep_profile_media_variables() -> None:
+    url = x_workflow.build_user_media_url("42", 50, "cursor-xyz")
+    assert url.startswith("/i/api/graphql/9EovraBTXJYGSEQXZqlLmQ/UserMedia?")
+    variables = json.loads(x_workflow.urllib.parse.parse_qs(url.split("?", 1)[1])["variables"][0])
+    assert variables == {
+        "userId": "42",
+        "count": 50,
+        "includePromotedContent": False,
+        "withClientEventToken": False,
+        "withBirdwatchNotes": False,
+        "withVoice": True,
+        "cursor": "cursor-xyz",
+    }
+
+
+def test_opencli_media_extractor_prefers_mp4_variant_and_keeps_poster() -> None:
+    media = x_workflow.extract_graphql_media(
+        {
+            "extended_entities": {
+                "media": [
+                    {
+                        "type": "video",
+                        "media_url_https": "https://pbs.twimg.com/tweet_video_thumb/a.jpg",
+                        "video_info": {
+                            "variants": [
+                                {"content_type": "application/x-mpegURL", "url": "https://video.twimg.com/a.m3u8"},
+                                {"content_type": "video/mp4", "bitrate": 832000, "url": "https://video.twimg.com/a-low.mp4"},
+                                {"content_type": "video/mp4", "bitrate": 2176000, "url": "https://video.twimg.com/a.mp4"},
+                            ]
+                        },
+                    }
+                ]
+            }
+        }
+    )
+    assert media == [{
+        "kind": "video",
+        "url": "https://video.twimg.com/a.mp4",
+        "poster_url": "https://pbs.twimg.com/tweet_video_thumb/a.jpg",
+        "duration_text": "",
+    }]
+
+
+def test_parse_user_media_items_extracts_real_video_url() -> None:
+    tweet = {
+        "rest_id": "123",
+        "legacy": {
+            "extended_entities": {"media": [{
+                "type": "video",
+                "media_url_https": "https://pbs.twimg.com/tweet_video_thumb/v.jpg",
+                "video_info": {"variants": [{"content_type": "video/mp4", "url": "https://video.twimg.com/v.mp4"}]},
+            }]}
+        },
+    }
+    instructions = [{
+        "entries": [
+            {"content": {"itemContent": {"tweet_results": {"result": tweet}}}},
+            {"content": {"entryType": "TimelineTimelineCursor", "cursorType": "Bottom", "value": "next"}},
+        ]
+    }]
+    data = {"data": {"user": {"result": {"timeline_v2": {"timeline": {"instructions": instructions}}}}}}
+    items, cursor = x_workflow.parse_user_media_items(data, "demo")
+    assert cursor == "next"
+    assert items[0]["source_url"] == "https://x.com/demo/status/123"
+    assert items[0]["media"][0]["url"] == "https://video.twimg.com/v.mp4"
+
+
+def test_parse_tweet_detail_media_extracts_target_tweet_only() -> None:
+    data = {
+        "data": {"threaded_conversation_with_injections_v2": {"instructions": [{"entries": [{
+            "content": {"itemContent": {"tweet_results": {"result": {
+                "rest_id": "target",
+                "legacy": {"entities": {"media": [{
+                    "type": "video",
+                    "media_url_https": "https://pbs.twimg.com/tweet_video_thumb/t.jpg",
+                    "video_info": {"variants": [{"content_type": "video/mp4", "url": "https://video.twimg.com/t.mp4"}]},
+                }]}}
+            }}}
+        }}] }]}}
+    }
+    assert x_workflow.parse_tweet_detail_media(data, "target")[0]["url"] == "https://video.twimg.com/t.mp4"
+
+
+def test_merge_media_items_replaces_dom_poster_with_graphql_video() -> None:
+    merged = x_workflow.merge_media_items(
+        [{"kind": "video", "url": "", "poster_url": "https://pbs.twimg.com/p.jpg"}],
+        [{"kind": "video", "url": "https://video.twimg.com/v.mp4", "poster_url": "https://pbs.twimg.com/p.jpg"}],
+    )
+    assert merged == [{"kind": "video", "url": "https://video.twimg.com/v.mp4", "poster_url": "https://pbs.twimg.com/p.jpg"}]
+
+
 def test_tweet_extractor_excludes_virtualized_offscreen_articles() -> None:
     assert "rect.bottom > 0 && rect.top < window.innerHeight" in x_workflow.EXTRACT_VISIBLE_TWEETS_JS
     assert not x_workflow.is_x_page_ready_state(

@@ -102,6 +102,26 @@ failures.json
 - 原始行：保留页面可见文本，方便排查 DOM 解析。
 - 文章详情正文：如果文章详情已补全，同步写入详情正文、正文行数、图片数和图片位置标记。
 
+## 视频抓取与下载
+
+本适配器参考 OpenCLI `twitter/download.js` 与 `twitter/shared.js`（参考基线
+`6129bb3953d5eebd8dd67f96802b320c723f50ca`）迁入了真实视频变体补全，而不是把
+`video.currentSrc` 当作唯一来源：
+
+1. `profile` / `me` 的 `download` 先在当前 owned tab 内调用 `UserByScreenName`
+   和带 cursor 的 `UserMedia` GraphQL，按 Tweet ID 将 `video_info.variants` 中最高
+   bitrate 的 `video/mp4` 变体合并回已收集帖子。
+2. 其它来源以及 profile API 未覆盖的帖子，调用 `TweetDetail` GraphQL 补全同一
+   Tweet 的 MP4 变体。请求在当前 X 页面上下文中使用 `credentials: include` 沿用
+   浏览器登录态，不读取账号 cookie/token，也不创建新 session/tab。
+3. `download` 用带 `Referer: https://x.com/` 的 HTTP 请求把 `video.twimg.com` MP4
+   写入该帖子的 `media/`；`metadata.json` 同时保留 `url` 和 `poster_url`。
+
+如果 GraphQL 没有返回 MP4，仍会保留 poster 并写入
+`video_variant_unavailable` 或 `video_variant_fetch_failed` warning；这类结果不能
+宣称已经下载真实视频。OpenCLI 的 yt-dlp 兜底没有直接复制进来，因为当前 skill
+保持 Python/ActionBook 单一运行时，且本机未将 yt-dlp 作为必需依赖。
+
 `download` 时，如果列表页帖子的 DOM 明确包含 `显示更多` / `Show more`，脚本会先尝试点击列表页控件，再打开固定 Tweet URL 做详情页取证。X 偶尔会让列表页控件停留在旧 DOM 状态；这不再单独阻断任务，而是记录 `parent_show_more_unsettled` 后继续走详情页兜底。详情页正文必须明确长于列表预览才会写入 `metadata.json`、`content.md` 和 `raw.txt`；仍无法证明正文已补全时才返回 typed `page_not_ready`。单次运行最多补全 2 条长帖，超过上限也会返回 typed `page_not_ready`，不会静默把 preview 当全文写出。外链显示文本末尾的 `…` 不视为长文截断。`view` 会执行同样的正文补全，但不创建单帖目录。
 
 ## Bookmarks
@@ -276,7 +296,8 @@ Timeline writes `artifacts/timeline.json`; article writes `artifacts/article.jso
 - 引用帖：识别引用块或 `引用` marker，写入 `quoted_tweet`
 - 转帖：识别 `转帖了` / `Reposted`
 - 图片帖：`media[].kind=image`
-- 视频帖：`media[].kind=video`，优先保存可读视频 URL 或 poster
+- 视频帖：`media[].kind=video`；成功补全时 `media[].url` 为 `video.twimg.com` 的 MP4，
+  `media[].poster_url` 为封面；无法补全时只保存 poster 并保留 warning
 - 文章帖：识别 X 文章 marker 或文章链接，写入 `article.title` / `article.preview_text` / `article.url`
 - 外链卡片：写入 `card.url` / `card.title` / `card.description` / `card.image_url`
 

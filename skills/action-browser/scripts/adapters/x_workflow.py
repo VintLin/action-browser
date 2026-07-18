@@ -41,6 +41,99 @@ BOOKMARKS_URL = "https://x.com/i/bookmarks"
 SEARCH_URL = "https://x.com/search"
 SKILL_DIR = Path(__file__).resolve().parents[2]
 ASSETS_DIR = SKILL_DIR / "assets" / "x"
+
+# Reference: opencli @ 6129bb3953d5eebd8dd67f96802b320c723f50ca,
+# clis/twitter/download.js and clis/twitter/shared.js.  These are the public
+# web-client values used from the owned X tab; they are not account secrets.
+TWITTER_BEARER_TOKEN = (
+    "AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D"
+    "1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA"
+)
+USER_MEDIA_QUERY_ID = "9EovraBTXJYGSEQXZqlLmQ"
+USER_BY_SCREEN_NAME_QUERY_ID = "IGgvgiOx4QZndDHuD3x9TQ"
+TWEET_DETAIL_QUERY_ID = "nBS-WpgA6ZG0CyNHD517JQ"
+USER_MEDIA_MAX_PAGES = 5
+
+USER_MEDIA_FEATURES = {
+    "rweb_video_screen_enabled": True,
+    "rweb_cashtags_enabled": True,
+    "profile_label_improvements_pcf_label_in_post_enabled": True,
+    "responsive_web_profile_redirect_enabled": True,
+    "rweb_tipjar_consumption_enabled": True,
+    "verified_phone_label_enabled": False,
+    "creator_subscriptions_tweet_preview_api_enabled": True,
+    "responsive_web_graphql_timeline_navigation_enabled": True,
+    "responsive_web_graphql_skip_user_profile_image_extensions_enabled": False,
+    "premium_content_api_read_enabled": False,
+    "communities_web_enable_tweet_community_results_fetch": True,
+    "c9s_tweet_anatomy_moderator_badge_enabled": True,
+    "responsive_web_grok_analyze_button_fetch_trends_enabled": False,
+    "responsive_web_grok_analyze_post_followups_enabled": True,
+    "rweb_cashtags_composer_attachment_enabled": True,
+    "responsive_web_jetfuel_frame": True,
+    "responsive_web_grok_share_attachment_enabled": True,
+    "responsive_web_grok_annotations_enabled": True,
+    "articles_preview_enabled": True,
+    "responsive_web_edit_tweet_api_enabled": True,
+    "rweb_conversational_replies_downvote_enabled": True,
+    "graphql_is_translatable_rweb_tweet_is_translatable_enabled": True,
+    "view_counts_everywhere_api_enabled": True,
+    "longform_notetweets_consumption_enabled": True,
+    "responsive_web_twitter_article_tweet_consumption_enabled": True,
+    "content_disclosure_indicator_enabled": True,
+    "content_disclosure_ai_generated_indicator_enabled": True,
+    "responsive_web_grok_show_grok_translated_post": False,
+    "responsive_web_grok_analysis_button_from_backend": True,
+    "post_ctas_fetch_enabled": False,
+    "freedom_of_speech_not_reach_fetch_enabled": True,
+    "standardized_nudges_misinfo": True,
+    "tweet_with_visibility_results_prefer_gql_limited_actions_policy_enabled": True,
+    "longform_notetweets_rich_text_read_enabled": True,
+    "longform_notetweets_inline_media_enabled": True,
+    "responsive_web_grok_image_annotation_enabled": True,
+    "responsive_web_grok_imagine_annotation_enabled": True,
+    "responsive_web_grok_community_note_auto_translation_is_enabled": False,
+    "responsive_web_enhance_cards_enabled": False,
+}
+USER_MEDIA_FIELD_TOGGLES = {
+    "withPayments": True,
+    "withAuxiliaryUserLabels": True,
+    "withArticleRichContentState": True,
+    "withArticlePlainText": True,
+    "withArticleSummaryText": True,
+    "withArticleVoiceOver": True,
+    "withGrokAnalyze": True,
+    "withDisallowedReplyControls": True,
+}
+USER_BY_SCREEN_NAME_FEATURES = {
+    "hidden_profile_subscriptions_enabled": True,
+    "profile_label_improvements_pcf_label_enabled": True,
+    "responsive_web_profile_redirect_enabled": True,
+    "rweb_tipjar_consumption_enabled": True,
+    "responsive_web_graphql_exclude_directive_enabled": True,
+    "verified_phone_label_enabled": False,
+    "subscriptions_verification_info_is_identity_verified_enabled": True,
+    "subscriptions_verification_info_verified_since_enabled": True,
+    "highlights_tweets_tab_ui_enabled": True,
+    "responsive_web_twitter_article_notes_tab_enabled": True,
+    "subscriptions_feature_can_gift_premium": True,
+    "creator_subscriptions_tweet_preview_api_enabled": True,
+    "responsive_web_graphql_skip_user_profile_image_extensions_enabled": False,
+    "responsive_web_graphql_timeline_navigation_enabled": True,
+}
+USER_BY_SCREEN_NAME_FIELD_TOGGLES = {"withPayments": True, "withAuxiliaryUserLabels": True}
+TWEET_DETAIL_FEATURES = {
+    "responsive_web_graphql_exclude_directive_enabled": True,
+    "verified_phone_label_enabled": False,
+    "creator_subscriptions_tweet_preview_api_enabled": True,
+    "responsive_web_graphql_timeline_navigation_enabled": True,
+    "responsive_web_graphql_skip_user_profile_image_extensions_enabled": False,
+    "longform_notetweets_consumption_enabled": True,
+    "longform_notetweets_rich_text_read_enabled": True,
+    "longform_notetweets_inline_media_enabled": True,
+    "freedom_of_speech_not_reach_fetch_enabled": True,
+}
+TWEET_DETAIL_FIELD_TOGGLES = {"withArticleRichContentState": True, "withArticlePlainText": False}
 RECOVERABLE_EXTRACTION_WARNINGS = {
     "parent_show_more_unsettled",
     "detail_text_accepted_with_stale_show_more",
@@ -332,6 +425,278 @@ EXTRACT_VISIBLE_TWEETS_JS = r"""
     .filter(item => item.source_url || item.text || item.media.length || item.card.url);
 })()
 """
+
+
+def build_graphql_url(
+    query_id: str,
+    operation: str,
+    variables: dict[str, Any],
+    features: dict[str, bool],
+    field_toggles: dict[str, bool] | None = None,
+) -> str:
+    params = {
+        "variables": json.dumps(variables, separators=(",", ":"), ensure_ascii=False),
+        "features": json.dumps(features, separators=(",", ":"), ensure_ascii=False),
+    }
+    if field_toggles:
+        params["fieldToggles"] = json.dumps(field_toggles, separators=(",", ":"), ensure_ascii=False)
+    return f"/i/api/graphql/{query_id}/{operation}?{urllib.parse.urlencode(params)}"
+
+
+def build_user_by_screen_name_url(screen_name: str) -> str:
+    return build_graphql_url(
+        USER_BY_SCREEN_NAME_QUERY_ID,
+        "UserByScreenName",
+        {"screen_name": screen_name, "withSafetyModeUserFields": True},
+        USER_BY_SCREEN_NAME_FEATURES,
+        USER_BY_SCREEN_NAME_FIELD_TOGGLES,
+    )
+
+
+def build_user_media_url(user_id: str, count: int, cursor: str = "") -> str:
+    variables: dict[str, Any] = {
+        "userId": user_id,
+        "count": count,
+        "includePromotedContent": False,
+        "withClientEventToken": False,
+        "withBirdwatchNotes": False,
+        "withVoice": True,
+    }
+    if cursor:
+        variables["cursor"] = cursor
+    return build_graphql_url(
+        USER_MEDIA_QUERY_ID,
+        "UserMedia",
+        variables,
+        USER_MEDIA_FEATURES,
+        USER_MEDIA_FIELD_TOGGLES,
+    )
+
+
+def build_tweet_detail_url(tweet_id: str) -> str:
+    return build_graphql_url(
+        TWEET_DETAIL_QUERY_ID,
+        "TweetDetail",
+        {
+            "focalTweetId": tweet_id,
+            "referrer": "tweet",
+            "with_rux_injections": False,
+            "includePromotedContent": False,
+            "rankingMode": "Recency",
+            "withCommunity": True,
+            "withQuickPromoteEligibilityTweetFields": True,
+            "withBirdwatchNotes": True,
+            "withVoice": True,
+        },
+        TWEET_DETAIL_FEATURES,
+        TWEET_DETAIL_FIELD_TOGGLES,
+    )
+
+
+def extract_graphql_media(legacy: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """Adapt opencli's shared.extractMedia to the local TweetPayload schema."""
+    if not isinstance(legacy, dict):
+        return []
+    media = (legacy.get("extended_entities") or {}).get("media")
+    if not isinstance(media, list) or not media:
+        media = (legacy.get("entities") or {}).get("media")
+    if not isinstance(media, list):
+        return []
+
+    result: list[dict[str, Any]] = []
+    for item in media:
+        if not isinstance(item, dict):
+            continue
+        media_type = str(item.get("type") or "")
+        poster = str(item.get("media_url_https") or "")
+        if media_type in {"video", "animated_gif"}:
+            variants = item.get("video_info", {}).get("variants", [])
+            mp4_variants = [
+                variant for variant in variants
+                if isinstance(variant, dict) and variant.get("content_type") == "video/mp4" and variant.get("url")
+            ]
+            # X often returns the variants from low to high bitrate. Select the
+            # best known MP4 while retaining the poster as evidence/fallback.
+            selected = max(mp4_variants, key=lambda value: int(value.get("bitrate") or 0), default={})
+            result.append({
+                "kind": "video",
+                "url": str(selected.get("url") or ""),
+                "poster_url": poster,
+                "duration_text": "",
+            })
+        elif poster:
+            result.append({"kind": "image", "url": poster, "alt_text": ""})
+    return result
+
+
+def _walk_graphql_tweets(value: Any):
+    if isinstance(value, dict):
+        container = value.get("tweet_results")
+        raw = container.get("result") if isinstance(container, dict) else None
+        if isinstance(raw, dict):
+            tweet = raw.get("tweet") if raw.get("__typename") == "TweetWithVisibilityResults" else raw
+            if isinstance(tweet, dict) and tweet.get("rest_id"):
+                yield tweet
+        for child in value.values():
+            yield from _walk_graphql_tweets(child)
+    elif isinstance(value, list):
+        for child in value:
+            yield from _walk_graphql_tweets(child)
+
+
+def parse_tweet_detail_media(data: dict[str, Any], tweet_id: str) -> list[dict[str, Any]]:
+    seen: set[str] = set()
+    for tweet in _walk_graphql_tweets(data):
+        current_id = str(tweet.get("rest_id") or "")
+        if current_id != str(tweet_id) or current_id in seen:
+            continue
+        seen.add(current_id)
+        return extract_graphql_media(tweet.get("legacy"))
+    return []
+
+
+def parse_user_media_items(data: dict[str, Any], screen_name: str = "") -> tuple[list[dict[str, Any]], str]:
+    items: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    next_cursor = ""
+
+    def visit(value: Any) -> None:
+        nonlocal next_cursor
+        if isinstance(value, dict):
+            if value.get("entryType") in {"TimelineTimelineCursor"} or value.get("__typename") == "TimelineTimelineCursor":
+                if value.get("cursorType") in {"Bottom", "ShowMore"} and value.get("value"):
+                    next_cursor = str(value["value"])
+            container = value.get("tweet_results")
+            raw = container.get("result") if isinstance(container, dict) else None
+            if isinstance(raw, dict):
+                tweet = raw.get("tweet") if raw.get("__typename") == "TweetWithVisibilityResults" else raw
+                tweet_id = str(tweet.get("rest_id") or "") if isinstance(tweet, dict) else ""
+                if tweet_id and tweet_id not in seen:
+                    seen.add(tweet_id)
+                    media = extract_graphql_media(tweet.get("legacy"))
+                    if media:
+                        items.append({
+                            "tweet_id": tweet_id,
+                            "source_url": f"https://x.com/{screen_name}/status/{tweet_id}" if screen_name else "",
+                            "media": media,
+                        })
+            for child in value.values():
+                visit(child)
+        elif isinstance(value, list):
+            for child in value:
+                visit(child)
+
+    visit(data)
+    return items, next_cursor
+
+
+def merge_media_items(current: list[dict[str, Any]], remote: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    merged = [dict(item) for item in current if isinstance(item, dict)]
+    for item in remote:
+        if not isinstance(item, dict):
+            continue
+        kind = str(item.get("kind") or "")
+        if kind == "video":
+            index = next((i for i, existing in enumerate(merged) if existing.get("kind") == "video"), None)
+            if index is not None:
+                replacement = dict(merged[index])
+                replacement.update({key: value for key, value in item.items() if value})
+                merged[index] = replacement
+                continue
+        key = (kind, str(item.get("url") or item.get("poster_url") or ""))
+        if not any((str(existing.get("kind") or ""), str(existing.get("url") or existing.get("poster_url") or "")) == key for existing in merged):
+            merged.append(dict(item))
+    return merged
+
+
+def _fetch_graphql(book: ActionBook, url: str) -> dict[str, Any]:
+    script = f"""(async () => {{
+        try {{
+            const response = await fetch({json.dumps(url)}, {{
+                credentials: 'include',
+                headers: {{
+                    'Authorization': 'Bearer ' + decodeURIComponent({json.dumps(TWITTER_BEARER_TOKEN)}),
+                    'X-Twitter-Auth-Type': 'OAuth2Session',
+                    'X-Twitter-Active-User': 'yes'
+                }}
+            }});
+            if (!response.ok) return {{ ok: false, status: response.status }};
+            return {{ ok: true, payload: await response.json() }};
+        }} catch (error) {{
+            return {{ ok: false, error: String(error?.message || error) }};
+        }}
+    }})()"""
+    value = unwrap_eval(book.eval(script, timeout=30.0))
+    if not isinstance(value, dict) or value.get("ok") is not True:
+        status = value.get("status") if isinstance(value, dict) else ""
+        error = value.get("error") if isinstance(value, dict) else "malformed response"
+        raise RuntimeError(f"X GraphQL fetch failed: HTTP {status or 'unknown'} {error}")
+    payload = value.get("payload")
+    if not isinstance(payload, dict):
+        raise RuntimeError("X GraphQL returned malformed payload")
+    return payload
+
+
+def fetch_profile_media(book: ActionBook, profile_url: str, limit: int) -> list[dict[str, Any]]:
+    match = re.search(r"https?://(?:www\.)?x\.com/([A-Za-z0-9_]{1,20})", profile_url or "")
+    screen_name = match.group(1) if match else ""
+    if not screen_name:
+        return []
+    lookup = _fetch_graphql(book, build_user_by_screen_name_url(screen_name))
+    user_id = str((((lookup.get("data") or {}).get("user") or {}).get("result") or {}).get("rest_id") or "")
+    if not user_id:
+        raise RuntimeError(f"X UserByScreenName could not resolve @{screen_name}")
+
+    all_items: list[dict[str, Any]] = []
+    cursor = ""
+    seen_cursors: set[str] = set()
+    for _ in range(USER_MEDIA_MAX_PAGES):
+        page = _fetch_graphql(book, build_user_media_url(user_id, min(max(limit * 2, 20), 100), cursor))
+        page_items, next_cursor = parse_user_media_items(page, screen_name)
+        all_items.extend(page_items)
+        if not next_cursor or next_cursor in seen_cursors or len(all_items) >= limit * 2:
+            break
+        seen_cursors.add(next_cursor)
+        cursor = next_cursor
+    return all_items[: max(limit * 2, limit)]
+
+
+def enrich_profile_media(book: ActionBook, profile_url: str, payloads: list[TweetPayload], limit: int) -> None:
+    try:
+        remote_items = fetch_profile_media(book, profile_url, limit)
+    except Exception as exc:  # noqa: BLE001
+        log(f"X UserMedia 媒体补全跳过: {exc}")
+        return
+    by_tweet_id = {str(item.get("tweet_id")): item for item in remote_items if item.get("tweet_id")}
+    for payload in payloads:
+        remote = by_tweet_id.get(payload.tweet_id)
+        if remote:
+            payload.media = merge_media_items(payload.media, remote.get("media") or [])
+
+
+def enrich_video_media(book: ActionBook, payloads: list[TweetPayload]) -> None:
+    pending = [
+        payload for payload in payloads
+        if payload.tweet_id and any(
+            str(media.get("kind") or "") == "video"
+            and not str(media.get("url") or "").startswith("https://video.twimg.com/")
+            for media in payload.media
+            if isinstance(media, dict)
+        )
+    ]
+    if not pending:
+        return
+    for payload in pending:
+        try:
+            detail = _fetch_graphql(book, build_tweet_detail_url(payload.tweet_id))
+            remote_media = parse_tweet_detail_media(detail, payload.tweet_id)
+            if remote_media:
+                payload.media = merge_media_items(payload.media, remote_media)
+            else:
+                payload.extraction_warnings.append("video_variant_unavailable")
+        except Exception as exc:  # noqa: BLE001
+            payload.extraction_warnings.append("video_variant_fetch_failed")
+            log(f"X 视频变体补全失败: tweet={payload.tweet_id} reason={exc}")
 
 
 def extract_visible_tweets(book: ActionBook, source: str, tab_id: str | None = None) -> list[TweetPayload]:
@@ -1381,6 +1746,12 @@ def run_download(args: argparse.Namespace, source: str, url: str) -> int:
     payloads = collect_tweets(book, source, args.count, args.max_scrolls)
     expand_show_more_payloads(book, payloads)
     enrich_article_payloads(book, payloads)
+    if source in {"profile", "me"}:
+        # OpenCLI's profile downloader uses UserByScreenName + UserMedia to
+        # avoid relying on the virtualized media DOM. Use it as an enrichment
+        # pass so the existing post-oriented output contract stays intact.
+        enrich_profile_media(book, url, payloads, args.count)
+    enrich_video_media(book, payloads)
     output_dir.mkdir(parents=True, exist_ok=True)
     for index, payload in enumerate(payloads, start=1):
         folder = write_tweet(payload, output_dir, index)
