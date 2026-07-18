@@ -18,6 +18,55 @@ def test_main_accepts_argv_for_scheduler_delegation(tmp_path: Path, capsys) -> N
     assert json.loads(capsys.readouterr().out)["status"] == "missing"
 
 
+def test_run_writes_monitor_files_and_mirrors_current_post(tmp_path: Path) -> None:
+    progress = tmp_path / "contract" / "progress.json"
+    progress.parent.mkdir(parents=True)
+    progress.write_text(
+        json.dumps(
+            {
+                "status": "running",
+                "stage": "downloading",
+                "current_post": "post-001",
+                "completed_items": 2,
+                "requested_items": 5,
+                "updated_at": "2026-07-18T12:00:00+00:00",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert (
+        actionbook_run.main(
+            [
+                "--runs-dir",
+                str(tmp_path / "runs"),
+                "run",
+                "--id",
+                "download-001",
+                "--progress-file",
+                str(progress),
+                "--heartbeat-interval",
+                "0.01",
+                "--heartbeat-stale-seconds",
+                "1",
+                "--",
+                sys.executable,
+                "-c",
+                "import time; time.sleep(0.2)",
+            ]
+        )
+        == 0
+    )
+
+    state_path = actionbook_run.state_path("download-001", tmp_path / "runs")
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    assert state["current_post"] == "post-001"
+    assert state["completed_items"] == 2
+    assert Path(state["heartbeat_file"]).exists()
+    assert Path(state["pid_file"]).exists()
+    assert Path(state["status_file"]).read_text(encoding="utf-8").strip() == "EXITED"
+
+
 def test_stop_preserves_graceful_wrapper_exit_when_descendants_need_kill(
     tmp_path: Path, monkeypatch
 ) -> None:

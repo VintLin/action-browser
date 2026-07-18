@@ -113,7 +113,11 @@ python3 scripts/adapters/xiaohongshu_workflow.py likes download \
 - `profile.json`：主页元数据，`profile` 与 `me` 模式产生。
 - `view` 默认写入 `assets/xiaohongshu/views/<channel>/...`。
 - `download` 默认写入 `assets/xiaohongshu/downloads/<channel>/...`。
-- `download` 模式会为每条帖子保存 `content.md`、`content.txt`、`raw.txt`、`metadata.json`、`media/img-*` 图片。
+- `download` 模式会为每条帖子保存 `content.md`、`content.txt`、`raw.txt`、`metadata.json`、`download_manifest.json`；图片写入 `media/img-*`，可解析到真实直链的视频写入 `media/video-01.mp4`。
+- 下载运行会在输出根目录持续写入 `progress.json` 与 `heartbeat`，其中记录当前帖子、阶段、完成/失败数量和最后进度时间；中断后保留 `<帖子目录>.partial/` 与媒体 `.partial` 文件，下一次运行只跳过校验通过的媒体。
+- 视频下载参考 opencli 的提取顺序：优先 `__INITIAL_STATE__` 的 `video.url`、`originVideoKey`、`media.stream.h264[].masterUrl`，再回退到内联脚本和非 `blob:` 的 `<video>` 地址；只有 `video/*` 直连响应会落盘。
+- 下载默认限制单个媒体 100 MB、每条笔记合计 1024 MB，可用 `--max-item-mb` 与 `--max-total-mb` 调整；失败原因与校验信息写入 `download_manifest.json`。
+- 长任务建议通过 `scripts/actionbook_run.py run --progress-file <output>/progress.json` 启动；wrapper 负责 PID/PGID、心跳和停止，adapter 负责帖子级断点与最终 `failures.json`。
 - 下载目录名采用 `<index>_<note|video>_<media_flags>_<author>_<note_id>`，便于从文件名判断图文、视频、评论配图等类型。
 - 如需指定每条笔记的目录格式，传 `--folder-template`。模板相对 `--output-dir` 生效，支持字段：`index`、`index3`、`author`、`title`、`note_id`、`type`、`media_flags`。例如用户要求 `/博主名称/00x_笔记标题/` 时，使用 `--output-dir "$PWD" --folder-template "{author}/{index:03d}_{title}"`。
 - 如需控制图片保存位置，传 `--media-layout media|flat`。默认 `media` 会保存为 `media/img-*`；`flat` 会把 `img-*` 和 `content.md`、`metadata.json` 放在同一个笔记目录下。
@@ -169,7 +173,7 @@ python3 scripts/adapters/xiaohongshu_workflow.py likes download \
 
 - `image_urls` 只保留帖子内容图，不包含作者头像、评论头像、评论配图、平台图标。
 - `comment_image_urls` 只保留评论区图片，不混入帖子主图。
-- `video_url` 为尽力提取值。当前优先取页面 `video.currentSrc/src`。若页面播放器只暴露 `blob:`，则该值仅在当前浏览器会话内可用，不是长期可复用直链。
+- `video_url` 为尽力提取值。当前优先取页面状态中的真实视频字段，再回退到内联脚本和页面 `video.currentSrc/src`；`blob:` 地址会被丢弃，不会伪装成可下载直链。
 - `video_cover_url` 优先取 `video.poster`；若为空，再尝试从视频区域图片里兜底提取。
 - `content` 只保留帖子正文，不混入 `关注`、`评论`、`发送`、页码、评论计数等界面文本。
 - `tags` 优先取详情正文区域的标签节点，再补正文中的 `#标签` 文本。

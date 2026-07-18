@@ -13,15 +13,13 @@ from __future__ import annotations
 
 import argparse
 import json
-import mimetypes
+import os
 import random
 import re
 import shutil
 import sys
 import time
-import urllib.error
 import urllib.parse
-import urllib.request
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
@@ -35,6 +33,8 @@ from typing import Any
 from scripts.actionbook_interrupts import check_interrupt, install_interrupt_handlers, is_interrupted
 from scripts.owned_tab_lifecycle import add_workflow_args, attach_workflow
 from scripts.actionbook_session import ActionBookSession as ActionBook
+from scripts.download_primitive import download_image, download_video
+from scripts.foundation_contracts import write_json_atomic
 from scripts.script_common import log
 
 
@@ -43,6 +43,8 @@ XHS_EXPLORE = "https://www.xiaohongshu.com/explore"
 SKILL_DIR = Path(__file__).resolve().parents[2]
 ASSETS_DIR = SKILL_DIR / "assets" / "xiaohongshu"
 AI_SEARCH_SOURCE = "web_explore_feed"
+DEFAULT_MAX_ITEM_BYTES = 100 * 1024 * 1024
+DEFAULT_MAX_TOTAL_BYTES = 1024 * 1024 * 1024
 SECURITY_TERMS = (
     "website-login/error",
     "error_code=300012",
@@ -1416,17 +1418,39 @@ def extract_payload(book: ActionBook, candidate_href: str) -> NotePayload | None
                 };
                 const stateVideo = stateNote.video || {};
                 const stateVideoMedia = stateVideo.media || {};
+                const resolveVideoUrl = value => {
+                    const raw = String(value || '').replace(/\\\\u002F/g, '/').trim();
+                    if (!raw || raw.startsWith('blob:')) return '';
+                    if (/^https?:\\/\\//i.test(raw)) return normalizeUrl(raw);
+                    return `https://sns-video-bd.xhscdn.com/${raw.replace(/^\\/+/, '')}`;
+                };
                 const posterNode =
                     container.querySelector('.xgplayer-poster')
                     || containerDoc.querySelector('.xgplayer-poster')
                     || container.querySelector('[class*="poster"]')
                     || containerDoc.querySelector('[class*="poster"]');
-                const videoUrl =
-                    normalizeUrl(stateVideoMedia.stream?.h264?.[0]?.masterUrl)
-                    || normalizeUrl(stateVideo.consumer?.originVideoKey)
-                    || normalizeUrl(videoNode?.currentSrc)
-                    || videoNode?.src
-                    || '';
+                let videoUrl =
+                    resolveVideoUrl(stateVideo.url)
+                    || resolveVideoUrl(stateVideo.originVideoKey)
+                    || resolveVideoUrl(stateVideo.consumer?.originVideoKey)
+                    || resolveVideoUrl(stateVideoMedia.stream?.h264?.[0]?.masterUrl)
+                    || resolveVideoUrl(videoNode?.currentSrc)
+                    || resolveVideoUrl(videoNode?.src);
+                if (!videoUrl) {
+                    try {
+                        for (const script of document.querySelectorAll('script')) {
+                            const text = script.textContent || '';
+                            const matches = text.match(/https?:\\/\\/sns-video[^"'\\s]+\\.mp4[^"'\\s]*/g)
+                                || text.match(/https?:\\/\\/[^"'\\s]*xhscdn[^"'\\s]*\\.mp4[^"'\\s]*/g)
+                                || [];
+                            const candidate = matches.map(resolveVideoUrl).find(Boolean);
+                            if (candidate) {
+                                videoUrl = candidate;
+                                break;
+                            }
+                        }
+                    } catch (e) {}
+                }
                 const videoCoverUrl =
                     normalizeUrl(stateVideo.image?.urlDefault)
                     || normalizeUrl(stateVideo.image?.urlPre)
@@ -1666,28 +1690,6 @@ def close_detail(book: ActionBook) -> str:
     return "still_open"
 
 
-def download_image(url: str, output_dir: Path, index: int) -> str | None:
-    headers = {
-        "User-Agent": "Mozilla/5.0",
-        "Referer": "https://www.xiaohongshu.com/",
-    }
-    request = urllib.request.Request(url, headers=headers)
-    try:
-        with urllib.request.urlopen(request, timeout=30) as response:
-            data = response.read()
-            content_type = response.headers.get("Content-Type", "").split(";", 1)[0].strip()
-    except (urllib.error.URLError, TimeoutError, OSError) as exc:
-        log(f"图片下载失败: index={index} reason={exc}")
-        return None
-    ext = mimetypes.guess_extension(content_type) or Path(url.split("?", 1)[0]).suffix or ".jpg"
-    if ext == ".jpe":
-        ext = ".jpg"
-    name = f"img-{index:02d}{ext}"
-    output_dir.mkdir(parents=True, exist_ok=True)
-    (output_dir / name).write_bytes(data)
-    return name
-
-
 def note_media_flags(payload: NotePayload) -> str:
     flags: list[str] = []
     if payload.image_urls:
@@ -1699,6 +1701,13 @@ def note_media_flags(payload: NotePayload) -> str:
     if not flags:
         flags.append("text")
     return "_".join(flags)
+
+
+def media_suffix(url: str, fallback: str) -> str:
+    suffix = Path(urllib.parse.urlparse(url).path).suffix.lower()
+    if suffix in {".jpg", ".jpeg", ".png", ".gif", ".webp", ".avif", ".bmp"}:
+        return ".jpg" if suffix == ".jpeg" else suffix
+    return fallback
 
 
 def note_type(payload: NotePayload) -> str:
@@ -1776,27 +1785,89 @@ def write_note_download(
     index: int,
     folder_template: str = "",
     media_layout: str = "media",
+    max_item_bytes: int = DEFAULT_MAX_ITEM_BYTES,
+    max_total_bytes: int = DEFAULT_MAX_TOTAL_BYTES,
 ) -> Path:
     relative_folder = format_download_folder(payload, index, folder_template)
     folder = output_dir / relative_folder
     temp = folder.parent / f".{folder.name}.partial"
-    if temp.exists():
-        shutil.rmtree(temp)
-    temp.mkdir(parents=True, exist_ok=False)
+    if folder.exists() and not temp.exists():
+        existing_manifest = _load_manifest(folder / "download_manifest.json")
+        if existing_manifest and all(item.get("status") in {"success", "skipped"} for item in existing_manifest):
+            return folder
+        shutil.copytree(folder, temp)
+    temp.mkdir(parents=True, exist_ok=True)
     saved_images: list[str] = []
+    saved_videos: list[str] = []
+    download_manifest = _load_manifest(temp / "download_manifest.json")
+    previous_manifest = {
+        (str(item.get("type") or ""), str(item.get("url") or "")): item
+        for item in download_manifest
+    }
+    consumed_bytes = 0
     try:
         media_dir = temp / "media" if media_layout == "media" else temp
         for image_index, image_url in enumerate(payload.image_urls, start=1):
-            image_name = download_image(image_url, media_dir, image_index)
-            if image_name:
-                saved_images.append(f"media/{image_name}" if media_layout == "media" else image_name)
+            image_name = f"img-{image_index:02d}{media_suffix(image_url, '.jpg')}"
+            result = download_image(
+                image_url,
+                media_dir / image_name,
+                max_item_bytes=max_item_bytes,
+                max_total_bytes=max_total_bytes,
+                consumed_bytes=consumed_bytes,
+                previous=previous_manifest.get(("image", image_url)),
+                referer=payload.source_url or "https://www.xiaohongshu.com/",
+            )
+            item = {"type": "image", "url": image_url, **result}
+            download_manifest = [
+                old for old in download_manifest if (old.get("type"), old.get("url")) != ("image", image_url)
+            ] + [item]
+            write_json_atomic(temp / "download_manifest.json", download_manifest)
+            if result.get("status") in {"success", "skipped"}:
+                saved_path = f"media/{image_name}" if media_layout == "media" else image_name
+                saved_images.append(saved_path)
+                consumed_bytes += int(result.get("size") or 0)
                 sleep_between(0.8, 1.5)
-        markdown = render_note_markdown(payload, saved_images)
+        if payload.video_url:
+            video_name = "video-01.mp4"
+            result = download_video(
+                payload.video_url,
+                media_dir / video_name,
+                max_item_bytes=max_item_bytes,
+                max_total_bytes=max_total_bytes,
+                consumed_bytes=consumed_bytes,
+                previous=previous_manifest.get(("video", payload.video_url)),
+                referer=payload.source_url or "https://www.xiaohongshu.com/",
+            )
+            item = {"type": "video", "url": payload.video_url, **result}
+            download_manifest = [
+                old for old in download_manifest if (old.get("type"), old.get("url")) != ("video", payload.video_url)
+            ] + [item]
+            write_json_atomic(temp / "download_manifest.json", download_manifest)
+            if result.get("status") in {"success", "skipped"}:
+                saved_path = f"media/{video_name}" if media_layout == "media" else video_name
+                saved_videos.append(saved_path)
+                consumed_bytes += int(result.get("size") or 0)
+        elif payload.is_video:
+            download_manifest.append(
+                {
+                    "type": "video",
+                    "url": "",
+                    "status": "skipped",
+                    "reason": "missing_direct_video_url",
+                    "path": "",
+                    "size": 0,
+                }
+            )
+        markdown = render_note_markdown(payload, saved_images + saved_videos)
         (temp / "content.md").write_text(markdown, encoding="utf-8")
         (temp / "content.txt").write_text(markdown, encoding="utf-8")
         (temp / "raw.txt").write_text(render_raw_text(payload), encoding="utf-8")
+        write_json_atomic(temp / "download_manifest.json", download_manifest)
         metadata = asdict(payload)
         metadata["saved_images"] = saved_images
+        metadata["saved_videos"] = saved_videos
+        metadata["download_manifest"] = download_manifest
         metadata["note_type"] = note_type(payload)
         metadata["media_flags"] = note_media_flags(payload)
         metadata["media_layout"] = media_layout
@@ -1804,15 +1875,18 @@ def write_note_download(
             json.dumps(metadata, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",
         )
-        final = folder
-        suffix = 2
-        while final.exists():
-            final = folder.parent / f"{folder.name}-{suffix}"
-            suffix += 1
-        temp.replace(final)
-        return final
+        if folder.exists():
+            previous_folder = folder.parent / f".{folder.name}.previous"
+            shutil.rmtree(previous_folder, ignore_errors=True)
+            folder.replace(previous_folder)
+            temp.replace(folder)
+            shutil.rmtree(previous_folder, ignore_errors=True)
+        else:
+            temp.replace(folder)
+        return folder
     except BaseException:
-        shutil.rmtree(temp, ignore_errors=True)
+        # Keep the partial directory and manifest so the next run can resume
+        # completed media and retry only unfinished items.
         raise
 
 
@@ -1851,10 +1925,61 @@ def write_summary(
         )
     (output_dir / "summary.md").write_text("\n".join(lines).strip() + "\n", encoding="utf-8")
     failure_records = [asdict(item) for item in (failures or [])]
+    for manifest_path in output_dir.rglob("download_manifest.json"):
+        for item in _load_manifest(manifest_path):
+            if item.get("status") != "failed":
+                continue
+            failure_records.append(
+                {
+                    "type": "download",
+                    "path": str(manifest_path.parent),
+                    "url": str(item.get("url") or ""),
+                    "reason": str(item.get("reason") or "download_failed"),
+                    "message": str(item.get("message") or ""),
+                    "partial_path": str(item.get("partial_path") or ""),
+                }
+            )
     (output_dir / "failures.json").write_text(
         json.dumps(failure_records, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
+
+
+def write_download_progress(
+    output_dir: Path,
+    *,
+    status: str,
+    stage: str,
+    current_post: dict[str, str] | None,
+    completed_items: int,
+    requested_items: int,
+    failed_items: int = 0,
+) -> None:
+    """Persist a small resumable snapshot and a local heartbeat."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    now = datetime.now().astimezone().isoformat(timespec="seconds")
+    progress = {
+        "schema_version": 1,
+        "task_id": str(os.environ.get("ACTIONBOOK_TASK_ID") or ""),
+        "status": status,
+        "stage": stage,
+        "current_post": current_post,
+        "completed_items": completed_items,
+        "requested_items": requested_items,
+        "failed_items": failed_items,
+        "last_progress_at": now,
+        "updated_at": now,
+    }
+    write_json_atomic(output_dir / "progress.json", progress)
+    (output_dir / "heartbeat").touch()
+
+
+def _load_manifest(path: Path) -> list[dict[str, Any]]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, OSError, json.JSONDecodeError):
+        return []
+    return [item for item in payload if isinstance(item, dict)] if isinstance(payload, list) else []
 
 
 def write_ai_answer(payload: AiAnswerPayload, output_dir: Path) -> None:
@@ -1907,10 +2032,21 @@ def process_profile_notes(
     max_idle_batches: int,
     folder_template: str = "",
     media_layout: str = "media",
+    max_item_bytes: int = DEFAULT_MAX_ITEM_BYTES,
+    max_total_bytes: int = DEFAULT_MAX_TOTAL_BYTES,
 ) -> list[NotePayload]:
     payloads: list[NotePayload] = []
     processed_keys: set[str] = set()
     known_note_ids = load_existing_profile_note_ids(output_dir)
+    if action == "download":
+        write_download_progress(
+            output_dir,
+            status="running",
+            stage="collecting_results",
+            current_post=None,
+            completed_items=0,
+            requested_items=count or 0,
+        )
     idle_batches = 0
     batch_no = 0
 
@@ -1945,9 +2081,27 @@ def process_profile_notes(
             check_interrupt()
             if count is not None and len(payloads) >= count:
                 write_summary(payloads, output_dir, title)
+                if action == "download":
+                    write_download_progress(
+                        output_dir,
+                        status="completed",
+                        stage="writing_results",
+                        current_post=None,
+                        completed_items=len(payloads),
+                        requested_items=count,
+                    )
                 return payloads
 
             last_visible = visible
+            if action == "download":
+                write_download_progress(
+                    output_dir,
+                    status="running",
+                    stage="opening_site",
+                    current_post={"note_id": card.note_id, "url": card.href or card.profile_href, "title": card.title},
+                    completed_items=len(payloads),
+                    requested_items=count or 0,
+                )
             log(f"打开帖子: {len(payloads) + 1} title={card.title or card.note_id}")
             payload: NotePayload | None = None
             close_mode = ""
@@ -1981,8 +2135,19 @@ def process_profile_notes(
                         f"images={len(payload.image_urls)} close={close_mode or 'pending'}"
                     )
                     if action == "download":
-                        folder = write_note_download(payload, output_dir, len(payloads), folder_template, media_layout)
+                        folder = write_note_download(
+                            payload, output_dir, len(payloads), folder_template, media_layout,
+                            max_item_bytes, max_total_bytes,
+                        )
                         log(f"已下载: {folder}")
+                        write_download_progress(
+                            output_dir,
+                            status="running",
+                            stage="collecting_results",
+                            current_post=None,
+                            completed_items=len(payloads),
+                            requested_items=count or 0,
+                        )
             finally:
                 if not is_interrupted():
                     state = get_page_state(book)
@@ -2009,6 +2174,15 @@ def process_profile_notes(
             idle_batches = 0
 
     write_summary(payloads, output_dir, title)
+    if action == "download":
+        write_download_progress(
+            output_dir,
+            status="completed",
+            stage="writing_results",
+            current_post=None,
+            completed_items=len(payloads),
+            requested_items=count or len(payloads),
+        )
     return payloads
 
 
@@ -2020,12 +2194,33 @@ def process_notes(
     title: str,
     folder_template: str = "",
     media_layout: str = "media",
+    max_item_bytes: int = DEFAULT_MAX_ITEM_BYTES,
+    max_total_bytes: int = DEFAULT_MAX_TOTAL_BYTES,
 ) -> list[NotePayload]:
     payloads: list[NotePayload] = []
     failures: list[WorkflowFailure] = []
     output_dir.mkdir(parents=True, exist_ok=True)
+    if action == "download":
+        write_download_progress(
+            output_dir,
+            status="running",
+            stage="collecting_results",
+            current_post=None,
+            completed_items=0,
+            requested_items=len(notes),
+        )
     for index, note in enumerate(notes, start=1):
         check_interrupt()
+        if action == "download":
+            write_download_progress(
+                output_dir,
+                status="running",
+                stage="opening_site",
+                current_post={"note_id": note.note_id, "url": note.href or note.profile_href, "title": note.title},
+                completed_items=len(payloads),
+                requested_items=len(notes),
+                failed_items=len(failures),
+            )
         log(f"打开帖子: {index}/{len(notes)} title={note.title or note.note_id}")
         opened = click_note(book, note)
         if not opened:
@@ -2104,9 +2299,32 @@ def process_notes(
             f"已抽取: title={payload.title or payload.note_id} images={len(payload.image_urls)} close={close_mode}"
         )
         if action == "download":
-            folder = write_note_download(payload, output_dir, index, folder_template, media_layout)
+            folder = write_note_download(
+                payload, output_dir, index, folder_template, media_layout,
+                max_item_bytes, max_total_bytes,
+            )
             log(f"已下载: {folder}")
+            if action == "download":
+                write_download_progress(
+                    output_dir,
+                    status="running",
+                    stage="collecting_results",
+                    current_post=None,
+                    completed_items=len(payloads),
+                    requested_items=len(notes),
+                    failed_items=len(failures),
+                )
     write_summary(payloads, output_dir, title, failures)
+    if action == "download":
+        write_download_progress(
+            output_dir,
+            status="completed" if not failures else "completed_partial",
+            stage="writing_results",
+            current_post=None,
+            completed_items=len(payloads),
+            requested_items=len(notes),
+            failed_items=len(failures),
+        )
     return payloads
 
 
@@ -2118,13 +2336,34 @@ def process_note_urls(
     title: str,
     folder_template: str = "",
     media_layout: str = "media",
+    max_item_bytes: int = DEFAULT_MAX_ITEM_BYTES,
+    max_total_bytes: int = DEFAULT_MAX_TOTAL_BYTES,
 ) -> list[NotePayload]:
     payloads: list[NotePayload] = []
     failures: list[WorkflowFailure] = []
     output_dir.mkdir(parents=True, exist_ok=True)
+    if action == "download":
+        write_download_progress(
+            output_dir,
+            status="running",
+            stage="collecting_results",
+            current_post=None,
+            completed_items=0,
+            requested_items=len(notes),
+        )
     for index, note in enumerate(notes, start=1):
         check_interrupt()
         note_url = note.href or note.profile_href
+        if action == "download":
+            write_download_progress(
+                output_dir,
+                status="running",
+                stage="opening_site",
+                current_post={"note_id": note.note_id, "url": note_url, "title": note.title},
+                completed_items=len(payloads),
+                requested_items=len(notes),
+                failed_items=len(failures),
+            )
         log(f"打开帖子 URL: {index}/{len(notes)} title={note.title or note.note_id}")
         if not note_url:
             failures.append(
@@ -2185,8 +2424,20 @@ def process_note_urls(
             payloads.append(payload)
             log(f"已抽取: title={payload.title or payload.note_id} images={len(payload.image_urls)}")
             if action == "download":
-                folder = write_note_download(payload, output_dir, len(payloads), folder_template, media_layout)
+                folder = write_note_download(
+                    payload, output_dir, len(payloads), folder_template, media_layout,
+                    max_item_bytes, max_total_bytes,
+                )
                 log(f"已下载: {folder}")
+                write_download_progress(
+                    output_dir,
+                    status="running",
+                    stage="collecting_results",
+                    current_post=None,
+                    completed_items=len(payloads),
+                    requested_items=len(notes),
+                    failed_items=len(failures),
+                )
         except Exception as exc:  # noqa: BLE001
             failures.append(
                 WorkflowFailure(
@@ -2200,6 +2451,16 @@ def process_note_urls(
             )
             log(f"跳过帖子: reason=exception message={exc}")
     write_summary(payloads, output_dir, title, failures)
+    if action == "download":
+        write_download_progress(
+            output_dir,
+            status="completed" if not failures else "completed_partial",
+            stage="writing_results",
+            current_post=None,
+            completed_items=len(payloads),
+            requested_items=len(notes),
+            failed_items=len(failures),
+        )
     return payloads
 
 
@@ -2253,9 +2514,29 @@ def run_note(args: argparse.Namespace) -> int:
     if payload is None:
         raise RuntimeError(f"note payload not found: {note_url}")
     if args.action == "download":
-        folder = write_note_download(payload, output_dir, 1, args.folder_template, args.media_layout)
+        write_download_progress(
+            output_dir,
+            status="running",
+            stage="downloading",
+            current_post={"note_id": payload.note_id, "url": note_url, "title": payload.title},
+            completed_items=0,
+            requested_items=1,
+        )
+        folder = write_note_download(
+            payload, output_dir, 1, args.folder_template, args.media_layout,
+            args.max_item_bytes, args.max_total_bytes,
+        )
         log(f"已下载: {folder}")
     write_summary([payload], output_dir, f"小红书笔记: {payload.title or payload.note_id or note_id}")
+    if args.action == "download":
+        write_download_progress(
+            output_dir,
+            status="completed",
+            stage="writing_results",
+            current_post=None,
+            completed_items=1,
+            requested_items=1,
+        )
     result = {
         "source": "note",
         "url": note_url,
@@ -2296,6 +2577,8 @@ def run_search(args: argparse.Namespace) -> int:
         f"小红书搜索结果: {args.keyword}",
         args.folder_template,
         args.media_layout,
+        args.max_item_bytes,
+        args.max_total_bytes,
     )
     log(f"完成: output={output_dir}")
     return 0
@@ -2312,7 +2595,10 @@ def run_feed(args: argparse.Namespace) -> int:
     sleep_between(1.0, 1.6)
     notes = collect_feed_notes(book, "feed", count, args.max_scrolls)
     log(f"推荐流候选收集完成: requested={count} collected={len(notes)}")
-    process_notes(book, notes, args.action, output_dir, "小红书推荐流", args.folder_template, args.media_layout)
+    process_notes(
+        book, notes, args.action, output_dir, "小红书推荐流", args.folder_template, args.media_layout,
+        args.max_item_bytes, args.max_total_bytes,
+    )
     log(f"完成: output={output_dir}")
     return 0
 
@@ -2341,7 +2627,10 @@ def run_profile_tab(args: argparse.Namespace, source: str, labels: tuple[str, ..
     sleep_between(1.0, 1.6)
     notes = collect_profile_tab_notes(book, source, count, args.max_scrolls)
     log(f"{title_prefix}候选收集完成: requested={count} collected={len(notes)}")
-    process_notes(book, notes, args.action, output_dir, title_prefix, args.folder_template, args.media_layout)
+    process_notes(
+        book, notes, args.action, output_dir, title_prefix, args.folder_template, args.media_layout,
+        args.max_item_bytes, args.max_total_bytes,
+    )
     profile_path = output_dir / "profile.json"
     profile_path.write_text(json.dumps(profile, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     log(f"完成: output={output_dir}")
@@ -2383,6 +2672,8 @@ def run_profile(args: argparse.Namespace) -> int:
         args.max_idle_scrolls,
         args.folder_template,
         args.media_layout,
+        args.max_item_bytes,
+        args.max_total_bytes,
     )
     log(f"博主帖子处理完成: requested={requested} collected={len(payloads)}")
     profile_path = output_dir / "profile.json"
@@ -2417,6 +2708,8 @@ def run_me(args: argparse.Namespace) -> int:
         args.max_idle_scrolls,
         args.folder_template,
         args.media_layout,
+        args.max_item_bytes,
+        args.max_total_bytes,
     )
     log(f"当前账号帖子处理完成: requested={requested} collected={len(payloads)}")
     profile_path = output_dir / "profile.json"
@@ -2447,7 +2740,19 @@ def build_parser() -> argparse.ArgumentParser:
             "--media-layout",
             choices=("media", "flat"),
             default="media",
-            help="Image save layout for downloads: 'media' saves images under media/, 'flat' saves images beside content files.",
+            help="Media save layout: 'media' saves files under media/, 'flat' saves files beside content files.",
+        )
+        target.add_argument(
+            "--max-item-mb",
+            type=float,
+            default=DEFAULT_MAX_ITEM_BYTES / 1024 / 1024,
+            help="Skip one image/video when it exceeds this size; 0 is invalid, default 100 MB.",
+        )
+        target.add_argument(
+            "--max-total-mb",
+            type=float,
+            default=DEFAULT_MAX_TOTAL_BYTES / 1024 / 1024,
+            help="Bound the total media bytes per note; 0 is invalid, default 1024 MB.",
         )
 
     def add_leaf(
@@ -2535,6 +2840,10 @@ def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
     try:
+        args.max_item_bytes = int(float(args.max_item_mb) * 1024 * 1024)
+        args.max_total_bytes = int(float(args.max_total_mb) * 1024 * 1024)
+        if args.max_item_bytes <= 0 or args.max_total_bytes <= 0:
+            raise ValueError("--max-item-mb and --max-total-mb must be greater than 0")
         return int(args.func(args))
     except KeyboardInterrupt:
         print("Interrupted", file=sys.stderr)

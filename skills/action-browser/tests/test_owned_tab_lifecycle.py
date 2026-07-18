@@ -131,7 +131,13 @@ def test_failed_cleanup_retains_lease_for_exact_retry(tmp_path: Path, monkeypatc
     configure_store(tmp_path, monkeypatch)
     acquired = lifecycle.acquire_owned_tab(task_id="task-a", session_id="shared", url="https://example.com")
 
-    monkeypatch.setattr(lifecycle, "close_and_verify_tab", lambda session, tab: (_ for _ in ()).throw(ActionBookFailure("TAB_CLOSE_FAILED", "still open")))
+    monkeypatch.setattr(
+        lifecycle,
+        "close_and_verify_tab",
+        lambda session, tab, chrome_tab_id="": (_ for _ in ()).throw(
+            ActionBookFailure("TAB_CLOSE_FAILED", "still open")
+        ),
+    )
 
     with pytest.raises(ActionBookFailure, match="TAB_CLOSE_FAILED"):
         lifecycle.release_owned_tab("task-a")
@@ -176,7 +182,13 @@ def test_temporary_tab_restores_parent_and_preserves_primary_error(tmp_path: Pat
     assert book.tab == "owned"
     assert FakeSession.live_tabs == {"owned"}
 
-    monkeypatch.setattr(lifecycle, "close_and_verify_tab", lambda session, tab: (_ for _ in ()).throw(ActionBookFailure("TAB_CLOSE_FAILED", "close failed")))
+    monkeypatch.setattr(
+        lifecycle,
+        "close_and_verify_tab",
+        lambda session, tab, chrome_tab_id="": (_ for _ in ()).throw(
+            ActionBookFailure("TAB_CLOSE_FAILED", "close failed")
+        ),
+    )
     with pytest.raises(RuntimeError, match="body failed") as error:
         with lifecycle.temporary_tab(book, "https://detail.example"):
             raise RuntimeError("body failed")
@@ -206,6 +218,55 @@ def test_close_verification_handles_replacement_and_rejects_ambiguity(tmp_path: 
     monkeypatch.setattr(lifecycle, "close_unique_chrome_tab", lambda url, title: closed.append((url, title)) or True)
     lifecycle.close_and_verify_tab(ReplacingSession(), "owned")
     assert closed == [("https://example.com", "Loading")]
+
+
+def test_close_verification_uses_stable_chrome_id_for_duplicate_urls(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    configure_store(tmp_path, monkeypatch)
+    snapshots = iter(
+        [
+            [{"tab_id": "owned", "url": "https://example.com", "title": "Example"}],
+            [{"tab_id": "replacement", "url": "https://example.com", "title": "Loading"}],
+            [],
+        ]
+    )
+
+    class ReplacingSession:
+        session = "shared"
+
+        def list_tabs(self) -> list[dict[str, str]]:
+            return next(snapshots)
+
+        def close_tab(self, tab_id: str) -> dict[str, str]:
+            return {"status": "closed"}
+
+    closed: list[str] = []
+    monkeypatch.setattr(lifecycle, "close_chrome_tab_by_id", lambda tab_id: closed.append(tab_id) or True)
+    monkeypatch.setattr(
+        lifecycle,
+        "close_unique_chrome_tab",
+        lambda *_args: (_ for _ in ()).throw(AssertionError("URL/title fallback must not run")),
+    )
+
+    lifecycle.close_and_verify_tab(ReplacingSession(), "owned", "chrome-tab-1")
+    assert closed == ["chrome-tab-1"]
+
+
+def test_release_retries_stale_actionbook_id_by_stable_chrome_id(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    configure_store(tmp_path, monkeypatch)
+    acquired = lifecycle.acquire_owned_tab(task_id="task-a", session_id="shared", url="https://example.com")
+    lifecycle.OwnedTabStore().update(acquired["lease_id"], chrome_tab_id="chrome-tab-1")
+    monkeypatch.setattr(
+        lifecycle,
+        "close_and_verify_tab",
+        lambda *_args: (_ for _ in ()).throw(ActionBookFailure("TAB_NOT_FOUND", "replacement id is stale")),
+    )
+    monkeypatch.setattr(lifecycle, "close_chrome_tab_by_id", lambda tab_id: tab_id == "chrome-tab-1")
+
+    released = lifecycle.release_owned_tab("task-a")
+
+    assert released["status"] == "released"
+    assert released["cleanup_recovered"] is True
+    assert lifecycle.get_owned_tab("task-a") is None
 
 
 def test_schema_v1_store_is_rejected_without_compatibility_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

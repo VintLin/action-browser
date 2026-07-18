@@ -1,5 +1,7 @@
 import json
+import os
 from pathlib import Path
+import subprocess
 import sys
 
 import pytest
@@ -11,6 +13,24 @@ if str(ROOT_DIR) not in sys.path:
 
 from scripts import actionbook_session
 from scripts.actionbook_session import ActionBookSession
+
+
+def test_session_cli_imports_from_arbitrary_cwd(tmp_path: Path) -> None:
+    state_file = tmp_path / "owned-tabs.json"
+    script = Path(__file__).resolve().parents[1] / "scripts" / "actionbook_session.py"
+    env = os.environ.copy()
+    env["ACTION_BROWSER_OWNED_TABS_FILE"] = str(state_file)
+    result = subprocess.run(
+        [sys.executable, str(script), "list-owned-tabs", "--json"],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["owned_tabs"] == []
 
 
 def test_describe_uses_explicit_tab() -> None:

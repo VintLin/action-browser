@@ -31,6 +31,8 @@ RUNS_DIR = Path.home() / ".action-browser" / "runs"
 RUNNING_STATUS = "running"
 STALE_STATUS = "stale"
 TERMINAL_STATUSES = {"exited", "failed", "stopped", "stale"}
+DEFAULT_HEARTBEAT_INTERVAL = 10.0
+DEFAULT_HEARTBEAT_STALE_SECONDS = 60.0
 
 
 def state_path(run_id: str, runs_dir: Path) -> Path:
@@ -38,6 +40,10 @@ def state_path(run_id: str, runs_dir: Path) -> Path:
     if not safe:
         raise ValueError("run id is empty after sanitization")
     return runs_dir / f"{safe}.json"
+
+
+def monitor_path(path: Path, suffix: str) -> Path:
+    return path.with_suffix(f".{suffix}")
 
 
 def load_state(path: Path) -> dict[str, Any] | None:
@@ -57,6 +63,38 @@ def write_state(path: Path, state: dict[str, Any]) -> None:
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(json.dumps(state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     tmp.replace(path)
+    monitor_path(path, "status").write_text(
+        f"{str(state.get('status') or 'unknown').upper()}\n",
+        encoding="utf-8",
+    )
+
+
+def touch_heartbeat(path: Path) -> None:
+    heartbeat = monitor_path(path, "heartbeat")
+    heartbeat.parent.mkdir(parents=True, exist_ok=True)
+    heartbeat.touch()
+
+
+def sync_progress(path: Path, state: dict[str, Any]) -> None:
+    progress_file = str(state.get("progress_file") or "").strip()
+    if not progress_file:
+        return
+    progress_path = Path(progress_file).expanduser()
+    try:
+        progress = json.loads(progress_path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return
+    if not isinstance(progress, dict):
+        return
+    state["progress_file"] = str(progress_path)
+    state["last_progress_at"] = progress.get("last_progress_at") or progress.get("updated_at")
+    state["current_item"] = progress.get("current_item") or progress.get("current_post")
+    state["current_post"] = progress.get("current_post") or progress.get("current_item")
+    state["last_stage"] = progress.get("stage") or progress.get("last_stage")
+    state["last_observed_url"] = progress.get("last_observed_url") or progress.get("current_url")
+    state["completed_items"] = progress.get("completed_items")
+    state["requested_items"] = progress.get("requested_items")
+    state["progress_status"] = progress.get("status")
 
 
 def process_alive(pid: int) -> bool:
@@ -80,6 +118,20 @@ def refresh_state(path: Path, state: dict[str, Any] | None = None) -> dict[str, 
         current["status"] = STALE_STATUS
         current["exit_code"] = None
         write_state(path, current)
+    elif str(current.get("status") or "") == RUNNING_STATUS:
+        heartbeat_path = Path(
+            str(current.get("heartbeat_file") or monitor_path(path, "heartbeat"))
+        ).expanduser()
+        stale_after = float(current.get("heartbeat_stale_seconds") or DEFAULT_HEARTBEAT_STALE_SECONDS)
+        try:
+            heartbeat_stale = heartbeat_path.exists() and time.time() - heartbeat_path.stat().st_mtime > stale_after
+        except OSError:
+            heartbeat_stale = False
+        if heartbeat_stale:
+            current["status"] = STALE_STATUS
+            current["stale_reason"] = "heartbeat_expired"
+            current["exit_code"] = None
+            write_state(path, current)
     return current
 
 
@@ -123,6 +175,10 @@ def terminate_group(pgid: int, grace_seconds: float) -> str:
 
 
 def run_command_cli(args: argparse.Namespace) -> int:
+    if float(args.heartbeat_interval) <= 0:
+        raise ValueError("heartbeat interval must be greater than 0")
+    if float(args.heartbeat_stale_seconds) <= 0:
+        raise ValueError("heartbeat stale seconds must be greater than 0")
     runs_dir = Path(args.runs_dir).expanduser()
     path = state_path(args.id, runs_dir)
     existing = running_state(path)
@@ -143,13 +199,34 @@ def run_command_cli(args: argparse.Namespace) -> int:
         "pid": None,
         "pgid": None,
         "exit_code": None,
+        "progress_file": str(Path(args.progress_file).expanduser()) if args.progress_file else "",
+        "heartbeat_interval_seconds": float(args.heartbeat_interval),
+        "heartbeat_stale_seconds": float(args.heartbeat_stale_seconds),
+        "heartbeat_file": str(monitor_path(path, "heartbeat")),
+        "pid_file": str(monitor_path(path, "pid")),
+        "status_file": str(monitor_path(path, "status")),
+        "last_heartbeat_at": None,
+        "last_progress_at": None,
+        "current_item": None,
+        "current_post": None,
     }
     write_state(path, state)
 
-    proc = subprocess.Popen(command, cwd=cwd, start_new_session=True)
+    try:
+        proc = subprocess.Popen(command, cwd=cwd, start_new_session=True)
+    except OSError as exc:
+        state["status"] = "failed"
+        state["error"] = str(exc)
+        state["exit_code"] = 127
+        write_state(path, state)
+        raise
     state["status"] = "running"
     state["pid"] = proc.pid
     state["pgid"] = os.getpgid(proc.pid)
+    monitor_path(path, "pid").write_text(f"{proc.pid}\n", encoding="utf-8")
+    touch_heartbeat(path)
+    state["last_heartbeat_at"] = utc_now()
+    sync_progress(path, state)
     write_state(path, state)
 
     stopping = {"active": False}
@@ -166,9 +243,13 @@ def run_command_cli(args: argparse.Namespace) -> int:
     old_int = signal.signal(signal.SIGINT, handle_signal)
     old_term = signal.signal(signal.SIGTERM, handle_signal)
     try:
+        last_heartbeat = time.monotonic()
         while True:
             code = proc.poll()
             if code is not None:
+                touch_heartbeat(path)
+                state["last_heartbeat_at"] = utc_now()
+                sync_progress(path, state)
                 state["exit_code"] = code
                 if stopping["active"] or code in (-signal.SIGINT, -signal.SIGTERM, -signal.SIGKILL, 130, 143):
                     state["status"] = "stopped"
@@ -181,6 +262,12 @@ def run_command_cli(args: argparse.Namespace) -> int:
                     wrapper_code = int(code)
                 write_state(path, state)
                 return wrapper_code
+            if time.monotonic() - last_heartbeat >= float(args.heartbeat_interval):
+                touch_heartbeat(path)
+                state["last_heartbeat_at"] = utc_now()
+                sync_progress(path, state)
+                write_state(path, state)
+                last_heartbeat = time.monotonic()
             time.sleep(0.4)
     finally:
         signal.signal(signal.SIGINT, old_int)
@@ -195,7 +282,7 @@ def stop_one(path: Path, grace_seconds: float) -> dict[str, Any]:
     status = str(state.get("status") or "")
     pid = int(state.get("pid") or 0)
     pgid = int(state.get("pgid") or pid)
-    if status in TERMINAL_STATUSES or not process_alive(pid):
+    if status in {"exited", "failed", "stopped"} or not process_alive(pid):
         return {"run_id": state.get("run_id") or path.stem, "status": state.get("status"), "pid": pid, "pgid": pgid}
     result = terminate_group(pgid, grace_seconds)
     latest = load_state(path)
@@ -270,6 +357,23 @@ def build_parser() -> argparse.ArgumentParser:
     run = sub.add_parser("run", help="Run a command in a tracked process group")
     run.add_argument("--id", required=True, help="Stable run id")
     run.add_argument("--cwd", default="", help="Working directory for the command")
+    run.add_argument(
+        "--progress-file",
+        default="",
+        help="Adapter contract/progress.json to mirror into the run state",
+    )
+    run.add_argument(
+        "--heartbeat-interval",
+        type=float,
+        default=DEFAULT_HEARTBEAT_INTERVAL,
+        help="Seconds between wrapper heartbeat and progress refreshes",
+    )
+    run.add_argument(
+        "--heartbeat-stale-seconds",
+        type=float,
+        default=DEFAULT_HEARTBEAT_STALE_SECONDS,
+        help="Mark a live wrapper stale after this heartbeat age",
+    )
     run.add_argument("--replace", action="store_true", help="Stop an existing active run with the same id first")
     run.add_argument("--grace", type=float, default=5.0, help="Seconds to wait after SIGTERM before SIGKILL")
     run.add_argument("command", nargs=argparse.REMAINDER, help="Command after --")

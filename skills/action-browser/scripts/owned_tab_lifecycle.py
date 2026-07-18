@@ -14,7 +14,12 @@ from urllib.parse import urlparse
 from uuid import uuid4
 
 from scripts.actionbook_errors import ActionBookFailure, has_failure_code
-from scripts.actionbook_session import ActionBookSession, close_unique_chrome_tab
+from scripts.actionbook_session import (
+    ActionBookSession,
+    close_chrome_tab_by_id,
+    close_unique_chrome_tab,
+    list_chrome_tabs,
+)
 
 
 OWNED_TABS_SCHEMA_VERSION = 2
@@ -65,11 +70,22 @@ class OwnedTabLease:
     status: str
     url: str
     title: str
+    chrome_tab_id: str
+    replacement_tab_ids: tuple[str, ...]
+    cleanup_error: str
+    cleanup_attempts: int
     created_at: str
     updated_at: str
 
     @classmethod
     def from_record(cls, record: dict[str, Any]) -> "OwnedTabLease":
+        raw_replacements = record.get("replacement_tab_ids")
+        if not isinstance(raw_replacements, (list, tuple)):
+            raw_replacements = []
+        try:
+            cleanup_attempts = int(record.get("cleanup_attempts") or 0)
+        except (TypeError, ValueError):
+            cleanup_attempts = 0
         return cls(
             lease_id=str(record.get("lease_id") or ""),
             task_id=str(record.get("task_id") or ""),
@@ -79,6 +95,10 @@ class OwnedTabLease:
             status=str(record.get("status") or ""),
             url=str(record.get("url") or ""),
             title=str(record.get("title") or ""),
+            chrome_tab_id=str(record.get("chrome_tab_id") or ""),
+            replacement_tab_ids=tuple(str(item).strip() for item in raw_replacements if str(item).strip()),
+            cleanup_error=str(record.get("cleanup_error") or ""),
+            cleanup_attempts=cleanup_attempts,
             created_at=str(record.get("created_at") or ""),
             updated_at=str(record.get("updated_at") or ""),
         )
@@ -94,6 +114,10 @@ class OwnedTabLease:
             "status": self.status,
             "url": self.url,
             "title": self.title,
+            "chrome_tab_id": self.chrome_tab_id,
+            "replacement_tab_ids": list(self.replacement_tab_ids),
+            "cleanup_error": self.cleanup_error,
+            "cleanup_attempts": self.cleanup_attempts,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
         }
@@ -145,6 +169,10 @@ class OwnedTabStore:
                 return False
             if not isinstance(record.get("tab_id"), str) or not record["tab_id"].strip():
                 return False
+        if not isinstance(record.get("replacement_tab_ids", []), list):
+            return False
+        if type(record.get("cleanup_attempts", 0)) is not int or record.get("cleanup_attempts", 0) < 0:
+            return False
         return True
 
     @contextmanager
@@ -193,6 +221,10 @@ class OwnedTabStore:
                 "status": "acquiring",
                 "url": str(url or ""),
                 "title": "",
+                "chrome_tab_id": "",
+                "replacement_tab_ids": [],
+                "cleanup_error": "",
+                "cleanup_attempts": 0,
                 "created_at": now,
                 "updated_at": now,
             }
@@ -234,7 +266,7 @@ def tab_mutation_lock() -> Iterator[None]:
             fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
 
-def close_and_verify_tab(session: Any, tab_id: str) -> None:
+def close_and_verify_tab(session: Any, tab_id: str, chrome_tab_id: str = "") -> None:
     with tab_mutation_lock():
         before = session.list_tabs()
         before_ids = {
@@ -264,14 +296,30 @@ def close_and_verify_tab(session: Any, tab_id: str) -> None:
             for tab in after
             if isinstance(tab, dict) and str(tab.get("tab_id") or "").strip() in replacement_ids
         ]
-        if not all(
+        if chrome_tab_id:
+            if not close_chrome_tab_by_id(chrome_tab_id):
+                raise ActionBookFailure(
+                    "TAB_REPLACEMENT_CLOSE_FAILED",
+                    f"could not close replacement Chrome tab by stable id: {chrome_tab_id}",
+                    details={
+                        "session_id": session.session,
+                        "old_tab_id": tab_id,
+                        "chrome_tab_id": chrome_tab_id,
+                        "replacement_tab_ids": sorted(replacement_ids),
+                    },
+                )
+        elif not all(
             close_unique_chrome_tab(str(tab.get("url") or ""), str(tab.get("title") or ""))
             for tab in replacements
         ):
             raise ActionBookFailure(
                 "TAB_REPLACEMENT_AMBIGUOUS",
-                "could not close replacement tab by unique Chrome URL/title: "
-                f"session={session.session} old_tab={tab_id} new_tabs={sorted(replacement_ids)}",
+                "could not close replacement tab by unique Chrome URL/title; retry with a stable Chrome tab id",
+                details={
+                    "session_id": session.session,
+                    "old_tab_id": tab_id,
+                    "replacement_tab_ids": sorted(replacement_ids),
+                },
             )
         deadline = time.monotonic() + 2.0
         while time.monotonic() < deadline:
@@ -287,6 +335,12 @@ def close_and_verify_tab(session: Any, tab_id: str) -> None:
             "TAB_CLOSE_FAILED",
             "replacement tab still visible after exact Chrome close: "
             f"session={session.session} new_tabs={sorted(replacement_ids)}",
+            details={
+                "session_id": session.session,
+                "old_tab_id": tab_id,
+                "chrome_tab_id": chrome_tab_id,
+                "replacement_tab_ids": sorted(replacement_ids),
+            },
         )
 
 
@@ -305,6 +359,24 @@ def _transition_is_fresh(lease: OwnedTabLease) -> bool:
     if updated_at is None:
         return False
     return (datetime.now(timezone.utc) - updated_at).total_seconds() < ACQUISITION_STALE_SECONDS
+
+
+def _new_chrome_tab_id(before: list[dict[str, str]], after: list[dict[str, str]], url: str) -> str:
+    """Find the one Chrome tab created by a force-new-tab acquisition."""
+    before_ids = {str(item.get("chrome_tab_id") or "").strip() for item in before}
+    candidates = [
+        item
+        for item in after
+        if str(item.get("chrome_tab_id") or "").strip() not in before_ids
+    ]
+    normalized_url = str(url or "").strip().rstrip("/")
+    matching = [
+        item
+        for item in candidates
+        if str(item.get("url") or "").strip().rstrip("/") == normalized_url
+    ]
+    candidates = matching or candidates
+    return str(candidates[0].get("chrome_tab_id") or "").strip() if len(candidates) == 1 else ""
 
 
 def acquire_owned_tab(
@@ -341,11 +413,15 @@ def acquire_owned_tab(
     )
     try:
         with tab_mutation_lock():
+            chrome_tabs_before = list_chrome_tabs()
             session.start(url, force_new_tab=True)
+            chrome_tabs_after = list_chrome_tabs()
+            chrome_tab_id = _new_chrome_tab_id(chrome_tabs_before, chrome_tabs_after, url)
         reservation = store.update(
             reservation.lease_id,
             session_id=session.session,
             tab_id=session.tab,
+            chrome_tab_id=chrome_tab_id,
             status="acquiring",
         )
         state = session.describe()
@@ -367,10 +443,17 @@ def acquire_owned_tab(
                     tab_id=session.tab,
                     status="acquiring",
                 )
-                close_and_verify_tab(session, session.tab)
+                close_and_verify_tab(session, session.tab, reservation.chrome_tab_id)
             except Exception as cleanup_error:
                 try:
-                    store.update(reservation.lease_id, status="cleanup_failed")
+                    details = getattr(cleanup_error, "details", {})
+                    store.update(
+                        reservation.lease_id,
+                        status="cleanup_failed",
+                        replacement_tab_ids=list(details.get("replacement_tab_ids") or []),
+                        cleanup_error=str(cleanup_error),
+                        cleanup_attempts=reservation.cleanup_attempts + 1,
+                    )
                 except Exception:
                     pass
                 if hasattr(primary_error, "add_note"):
@@ -392,11 +475,23 @@ def release_owned_tab(task_id: str) -> dict[str, Any]:
     lease = store.update(lease.lease_id, status="releasing")
     session = ActionBookSession.owned(lease.session_id, lease.tab_id)
     try:
-        close_and_verify_tab(session, lease.tab_id)
+        close_and_verify_tab(session, lease.tab_id, lease.chrome_tab_id)
     except Exception as exc:
-        if not has_failure_code(exc, MISSING_RESOURCE_CODES):
-            store.update(lease.lease_id, status="cleanup_failed")
-            raise
+        details = getattr(exc, "details", {})
+        if has_failure_code(exc, MISSING_RESOURCE_CODES) and not lease.chrome_tab_id:
+            store.delete(lease.lease_id)
+            return {**lease.as_dict(), "status": "released", "cleanup_recovered": True}
+        if lease.chrome_tab_id and close_chrome_tab_by_id(lease.chrome_tab_id):
+            store.delete(lease.lease_id)
+            return {**lease.as_dict(), "status": "released", "cleanup_recovered": True}
+        store.update(
+            lease.lease_id,
+            status="cleanup_failed",
+            replacement_tab_ids=list(details.get("replacement_tab_ids") or lease.replacement_tab_ids),
+            cleanup_error=str(exc),
+            cleanup_attempts=lease.cleanup_attempts + 1,
+        )
+        raise
     store.delete(lease.lease_id)
     return {**lease.as_dict(), "status": "released"}
 
@@ -478,7 +573,9 @@ def temporary_tab(book: Any, url: str) -> Iterator[str]:
     if not parent_tab:
         raise ActionBookFailure("TAB_NOT_READY", "temporary tab requires an active parent owned tab")
     with tab_mutation_lock():
+        chrome_tabs_before = list_chrome_tabs()
         tab_id = book.open_new_tab(url)
+        chrome_tab_id = _new_chrome_tab_id(chrome_tabs_before, list_chrome_tabs(), url)
     primary_error: BaseException | None = None
     try:
         book.use_tab(tab_id)
@@ -489,7 +586,7 @@ def temporary_tab(book: Any, url: str) -> Iterator[str]:
     finally:
         cleanup_errors: list[BaseException] = []
         try:
-            close_and_verify_tab(book, tab_id)
+            close_and_verify_tab(book, tab_id, chrome_tab_id)
         except BaseException as exc:
             cleanup_errors.append(exc)
         try:

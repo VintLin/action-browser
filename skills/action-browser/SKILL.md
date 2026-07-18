@@ -15,7 +15,7 @@ Use ActionBook for real browser pages. Prefer `extension` mode when the task nee
 - If a supported site or capability is named, read `references/adapters/<site>.md` before running commands.
 - If a supported site's UI drift breaks the documented workflow, or an unsupported site is likely to be reused, the agent may update this skill's adapter script and reference docs. Read `references/adapter-authoring.md` first and keep the patch scoped to observed site behavior.
 - Treat `session` as the browser container and `tab` as the task page. Give every independent task a stable task id and acquire one owned tab with `acquire-tab`; tasks may run concurrently in separate tabs of the same healthy session.
-- Use `scripts/actionbook_session.py` for `acquire-tab`, `list-owned-tabs`, and `release-tab`. The deep owned-tab lifecycle module persists a schema-v2 lease before browser I/O, keeps persistence locks short, and serializes only tab mutations. If ActionBook reattaches a closed page under a replacement id, the module closes the unique Chrome tab matching its URL/title and verifies that the replacement disappeared. Ambiguous duplicate URLs remain a safe failure for manual `chrome:control-chrome` cleanup. Keep `ensure`, raw tab commands, and raw `actionbook browser start/new-tab/list-tabs/close-tab` for one-off work or diagnostics.
+- Use `scripts/actionbook_session.py` for `acquire-tab`, `list-owned-tabs`, and `release-tab`. The deep owned-tab lifecycle module persists a schema-v2 lease before browser I/O, keeps persistence locks short, and serializes only tab mutations. If ActionBook reattaches a closed page under a replacement id, the lease records Chrome's stable tab id when available and cleanup closes that exact tab; URL/title matching remains a guarded fallback and duplicate matches are retained for repair rather than guessed. Keep `ensure`, raw tab commands, and raw `actionbook browser start/new-tab/list-tabs/close-tab` for one-off work or diagnostics.
 - If `acquire-tab` cannot create the named extension session but another running extension session is healthy, opt in with `--adopt-running-session` before falling back to diagnostics.
 - Continue only after a second CLI command proves the session and selected tab are still accessible.
 - If the host may reap child processes when one exec call returns, do not split acquire and workflow work across exec calls. A successful acquire followed by `SESSION_NOT_FOUND` only after the outer call exits is a process-lifetime failure, not proof that the extension is broken. Use `scripts/actionbook_task.py` for one atomic workflow that is expected to finish without user interaction; use a 持久 PTY when several commands must reuse the same session/tab or 可能出现 User Gate。
@@ -23,7 +23,7 @@ Use ActionBook for real browser pages. Prefer `extension` mode when the task nee
 - For page operations, take a fresh `snapshot` after structure changes, use current refs, and verify URL/title/key elements after each click, fill, press, navigation, or list/detail transition.
 - If login, CAPTCHA, MFA, or risk-control appears, keep the same Chrome window and ask the user to complete it there.
 - If the task is public-page reading, archival, or content extraction and does not need login state, extension cookies, live clicking, or dynamic postback behavior, prefer a non-interactive fetch/extract path first. Use ActionBook only when static HTTP fetch is blocked, incomplete, or loses required data.
-- Start long workflows through `scripts/actionbook_run.py` so later `中断` / `停止` can stop the process group.
+- Start long workflows through `scripts/actionbook_run.py` so later `中断` / `停止` can stop the process group. Pass `--progress-file <output>/progress.json` for heartbeat mirroring; the wrapper records PID/PGID, heartbeat, stage, current post/item, and progress freshness while the adapter owns the item-level checkpoint and download manifest.
 
 ## Default Loop
 
@@ -69,7 +69,8 @@ python3 scripts/actionbook_session.py release-tab --task task-b --json
 For long runs:
 
 ```bash
-python3 scripts/actionbook_run.py run --id <run-id> --cwd "$PWD" -- \
+python3 scripts/actionbook_run.py run --id <run-id> --cwd "$PWD" \
+  --progress-file "$PWD/<output>/progress.json" -- \
   python3 scripts/actionbook_task.py \
     --task <task-id> --session <session-id> --url "https://example.com" --adopt-running-session --cwd "$PWD" -- \
     python3 scripts/adapters/<site>_workflow.py ...
@@ -77,6 +78,8 @@ python3 scripts/actionbook_run.py stop --id <run-id>
 ```
 
 `actionbook_task.py` exports `ACTIONBOOK_TASK_ID`, `ACTIONBOOK_SESSION_ID`, and `ACTIONBOOK_TAB_ID` to the child workflow and releases its newly acquired tab on success, failure, SIGINT, or SIGTERM. It refuses to take over an existing task tab. Use it only when the child can finish without user interaction, including any same-tab retries. When several separate commands must share one tab or 可能出现 User Gate，start a 持久 PTY, run `acquire-tab` and the second CLI verification inside it, send later commands through that PTY, then release before exiting.
+
+When `browser eval` returns data, keep the result JSON-safe: plain strings, numbers, booleans, arrays, and objects without DOM nodes, `Response` objects, cyclic references, or live handles. For complex page data, serialize inside the page with `JSON.stringify(...)` and parse it locally; CDP object-chain errors are not fixed by blindly retrying the same expression.
 
 For manual checks:
 

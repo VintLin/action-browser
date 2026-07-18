@@ -2,8 +2,13 @@ from __future__ import annotations
 
 from io import BytesIO
 from pathlib import Path
+import sys
 
 import pytest
+
+ROOT_DIR = Path(__file__).resolve().parents[1]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
 
 from scripts import download_primitive
 
@@ -70,3 +75,27 @@ def test_download_rejects_total_limit_and_checksum_mismatch_retries(monkeypatch,
     retry = download_primitive.download_image("https://example.test/image", target, max_item_bytes=100, max_total_bytes=100, consumed_bytes=0, previous={"status": "success", "path": "image.png", "checksum": "wrong"})
     assert retry["status"] == "success"
     assert retry["checksum"] != "wrong"
+
+
+def test_download_video_accepts_direct_video_content_type(monkeypatch, tmp_path: Path) -> None:
+    body = b"fake-mp4-bytes"
+    monkeypatch.setattr(
+        download_primitive.urllib.request,
+        "urlopen",
+        lambda *_args, **_kwargs: Response(body, "video/mp4"),
+    )
+
+    target = tmp_path / "video-01.mp4"
+    result = download_primitive.download_video(
+        "https://sns-video-bd.xhscdn.com/example.mp4",
+        target,
+        max_item_bytes=100,
+        max_total_bytes=100,
+        consumed_bytes=0,
+        referer="https://www.xiaohongshu.com/",
+    )
+
+    assert result["status"] == "success"
+    assert result["content_type"] == "video/mp4"
+    assert target.read_bytes() == body
+    assert not list(tmp_path.glob("*.part"))

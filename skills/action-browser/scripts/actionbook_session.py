@@ -14,12 +14,21 @@ from __future__ import annotations
 
 import argparse
 import json
+from pathlib import Path
 import random
 import subprocess
 import sys
 import time
 from typing import Any
 from urllib.parse import urlparse
+
+
+# Running this file by absolute path sets sys.path to ``scripts/`` rather than
+# the skill root. Keep the package import contract valid from any cwd.
+if __package__ in {None, ""}:
+    ROOT_DIR = Path(__file__).resolve().parents[1]
+    if str(ROOT_DIR) not in sys.path:
+        sys.path.insert(0, str(ROOT_DIR))
 
 try:
     from diagnostics.actionbook_chrome_extension_state import chrome_root, inspect_profiles
@@ -94,6 +103,39 @@ on run argv
 end run
 """
 
+CHROME_LIST_TABS_SCRIPT = r"""
+tell application "Google Chrome"
+    set outputText to ""
+    repeat with windowIndex from 1 to count windows
+        set currentWindow to window windowIndex
+        repeat with tabIndex from 1 to count tabs of currentWindow
+            set currentTab to tab tabIndex of currentWindow
+            set outputText to outputText & (id of currentTab as text) & tab & (URL of currentTab as text) & tab & (title of currentTab as text) & linefeed
+        end repeat
+    end repeat
+    return outputText
+end tell
+"""
+
+CHROME_CLOSE_TAB_BY_ID_SCRIPT = r"""
+on run argv
+    set targetId to item 1 of argv
+    tell application "Google Chrome"
+        repeat with windowIndex from 1 to count windows
+            set currentWindow to window windowIndex
+            repeat with tabIndex from 1 to count tabs of currentWindow
+                set currentTab to tab tabIndex of currentWindow
+                if (id of currentTab as text) is targetId then
+                    close tab tabIndex of window windowIndex
+                    return "closed"
+                end if
+            end repeat
+        end repeat
+    end tell
+    return "not_found"
+end run
+"""
+
 
 def sleep_between(low: float = 0.8, high: float = 1.8) -> None:
     time.sleep(random.uniform(low, high))
@@ -127,6 +169,40 @@ def close_unique_chrome_tab(url: str, title: str) -> bool:
         return False
     result = subprocess.run(
         ["osascript", "-e", CHROME_CLOSE_EXACT_TAB_SCRIPT, url, title],
+        capture_output=True,
+        text=True,
+        timeout=10.0,
+    )
+    return result.returncode == 0 and str(result.stdout or "").strip() == "closed"
+
+
+def list_chrome_tabs() -> list[dict[str, str]]:
+    """Return Chrome's stable tab ids for exact replacement cleanup."""
+    if sys.platform != "darwin":
+        return []
+    result = subprocess.run(
+        ["osascript", "-e", CHROME_LIST_TABS_SCRIPT],
+        capture_output=True,
+        text=True,
+        timeout=10.0,
+    )
+    if result.returncode != 0:
+        return []
+    tabs: list[dict[str, str]] = []
+    for line in str(result.stdout or "").splitlines():
+        parts = line.split("\t", 2)
+        if len(parts) != 3 or not parts[0].strip():
+            continue
+        tabs.append({"chrome_tab_id": parts[0].strip(), "url": parts[1], "title": parts[2]})
+    return tabs
+
+
+def close_chrome_tab_by_id(chrome_tab_id: str) -> bool:
+    """Close one Chrome tab by its stable AppleScript id."""
+    if sys.platform != "darwin" or not str(chrome_tab_id or "").strip():
+        return False
+    result = subprocess.run(
+        ["osascript", "-e", CHROME_CLOSE_TAB_BY_ID_SCRIPT, str(chrome_tab_id).strip()],
         capture_output=True,
         text=True,
         timeout=10.0,

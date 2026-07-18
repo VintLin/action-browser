@@ -21,6 +21,20 @@ Minimum scheduler files:
   progress/<task_id>.json
 ```
 
+Tracked long runs add a sibling monitor set next to their run state:
+
+```text
+~/.action-browser/runs/<run_id>.json
+~/.action-browser/runs/<run_id>.pid
+~/.action-browser/runs/<run_id>.heartbeat
+~/.action-browser/runs/<run_id>.status
+```
+
+`actionbook_run.py` owns process liveness and mirrors the adapter progress
+pointer, current item/post, and last progress timestamp. It must not invent
+item completion; the adapter-owned progress snapshot and Download Manifest are
+authoritative for business recovery.
+
 Owned browser tabs use one separate source of truth:
 
 ```text
@@ -59,6 +73,14 @@ Conflict rule:
   back into `<output>/contract/progress.json`
 - if timestamps disagree but the adapter file is malformed, keep the scheduler
   mirror, record a warning, and treat the adapter progress as unusable
+
+For download capabilities, the adapter progress snapshot should include
+`current_post` or `current_item`, `completed_items`, `requested_items`,
+`failed_items`, `stage`, and `last_progress_at`. Each media item belongs in a
+Download Manifest with its source identity, final path, `.partial` path while
+active, byte count, checksum, verification state, and typed failure reason.
+Reruns skip only checksum-verified final files; an interrupted `.partial` file
+is evidence for retry and must never be reported as a completed artifact.
 
 ## Statuses
 
